@@ -1,7 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/cupertino.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'core/supabase_client.dart';
+import 'core/models/user_role.dart';
+import 'core/translations.dart';
+import 'features/admin/admin_dashboard.dart';
+import 'features/admin/screens/user_management_screen.dart';
+import 'features/auth/login_screen.dart';
+import 'features/facilitator/facilitator_dashboard.dart';
+import 'features/klant/client_dashboard.dart';
+import 'features/operator/operator_dashboard.dart';
+import 'features/auth/no_portals_assigned_screen.dart';
+import 'features/admin/screens/factuur_editor_screen.dart';
+import 'providers/theme_provider.dart';
+import 'providers/user_provider.dart';
+import 'providers/theme_mode_provider.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppSupabase.init();
+
+  // Load theme first (await), then start realtime updates.
+  final themeProvider = ThemeProvider();
+  await themeProvider.load();
+  themeProvider.startLiveUpdates();
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeModeProvider()),
+        ChangeNotifierProvider.value(value: themeProvider),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -10,113 +47,451 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, _) {
+        const radius = BorderRadius.all(Radius.circular(24));
+        final shape = RoundedRectangleBorder(borderRadius: radius);
+
+        // Apple-style day/night palettes (reference aligned).
+        const lightBg = Color(0xFFF5F5F7);
+        // Dark mode should feel truly deep (less matte, more premium).
+        const darkBg = Color(0xFF05040A);
+        // Keep cards close to background for a "glass" vibe.
+        const darkCard = Color(0xFF0A0912);
+        const accentCoral = Color(0xFFFF6B35);
+        const navy = Color(0xFF0F172A);
+        const lightText = Color(0xFF1C1C1E);
+        const darkText = Color(0xFFF5F5F7);
+
+        ThemeData buildTheme({required Brightness brightness}) {
+          final isDark = brightness == Brightness.dark;
+          final scheme = ColorScheme.fromSeed(
+            seedColor: isDark ? accentCoral : navy,
+            brightness: brightness,
+            primary: isDark ? accentCoral : navy,
+            secondary: isDark ? accentCoral : accentCoral,
+            surface: isDark ? darkCard : Colors.white,
+            onSurface: isDark ? darkText : lightText,
+          );
+
+          final base = ThemeData(
+            colorScheme: scheme,
+            useMaterial3: true,
+            scaffoldBackgroundColor: isDark ? darkBg : lightBg,
+          );
+
+          final textTheme = GoogleFonts.interTextTheme(base.textTheme).copyWith(
+            displayLarge: GoogleFonts.inter(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: scheme.onSurface,
+            ),
+            displayMedium: GoogleFonts.inter(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: scheme.onSurface,
+            ),
+            displaySmall: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              color: scheme.onSurface,
+            ),
+            headlineLarge: GoogleFonts.inter(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: scheme.onSurface,
+            ),
+            headlineMedium: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              color: scheme.onSurface,
+            ),
+            headlineSmall: GoogleFonts.inter(
+              fontSize: 30,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              color: scheme.onSurface,
+            ),
+            titleLarge: GoogleFonts.inter(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              color: scheme.onSurface,
+            ),
+            titleMedium: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface.withValues(alpha: 0.82),
+            ),
+            titleSmall: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface.withValues(alpha: 0.82),
+            ),
+            bodyLarge: GoogleFonts.inter(
+              fontWeight: FontWeight.w400,
+              color: scheme.onSurface,
+            ),
+            bodyMedium: GoogleFonts.inter(
+              fontWeight: FontWeight.w400,
+              color: scheme.onSurface,
+            ),
+            bodySmall: GoogleFonts.inter(
+              fontWeight: FontWeight.w400,
+              color: scheme.onSurface.withValues(alpha: 0.82),
+            ),
+            labelLarge: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface,
+            ),
+            labelMedium: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface.withValues(alpha: 0.82),
+            ),
+            labelSmall: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface.withValues(alpha: 0.82),
+            ),
+          );
+
+          return base.copyWith(
+            textTheme: textTheme,
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+              },
+            ),
+            cardTheme: CardThemeData(
+              shape: shape,
+              elevation: 0,
+              color: isDark ? darkCard : Colors.white,
+              shadowColor: Colors.black.withValues(alpha: 0.05),
+              margin: const EdgeInsets.all(0),
+            ),
+            dialogTheme: DialogThemeData(shape: shape),
+            dividerColor: scheme.onSurface.withValues(alpha: 0.10),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                shape: shape,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                backgroundColor: scheme.primary,
+                foregroundColor: Colors.white,
+              ),
+            ),
+            filledButtonTheme: FilledButtonThemeData(
+              style: FilledButton.styleFrom(
+                shape: shape,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                backgroundColor: scheme.primary,
+                foregroundColor: Colors.white,
+              ),
+            ),
+            outlinedButtonTheme: OutlinedButtonThemeData(
+              style: OutlinedButton.styleFrom(
+                shape: shape,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
+                side: BorderSide(
+                  color: scheme.onSurface.withValues(alpha: 0.16),
+                ),
+                foregroundColor: scheme.onSurface,
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                shape: shape,
+                foregroundColor: scheme.primary,
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder(borderRadius: radius),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: radius,
+                borderSide: BorderSide(
+                  color: scheme.onSurface.withValues(alpha: 0.10),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: radius,
+                borderSide: BorderSide(
+                  color: scheme.primary.withValues(alpha: 0.70),
+                ),
+              ),
+              filled: true,
+              fillColor: isDark ? darkCard : Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+            ),
+            floatingActionButtonTheme: FloatingActionButtonThemeData(
+              backgroundColor: accentCoral,
+              foregroundColor: Colors.white,
+            ),
+            appBarTheme: AppBarTheme(
+              backgroundColor: Colors.transparent,
+              foregroundColor: scheme.onSurface,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              titleTextStyle: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: scheme.onSurface,
+              ),
+            ),
+          );
+        }
+
+        final themeMode = context.watch<ThemeModeProvider>().mode;
+
+        return MaterialApp(
+          title: AppTexts.get('app_title'),
+          supportedLocales: const [Locale('nl')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          theme: buildTheme(brightness: Brightness.light),
+          darkTheme: buildTheme(brightness: Brightness.dark),
+          themeMode: themeMode,
+          onGenerateRoute: (settings) {
+            if (settings.name == '/factuur_aanmaken') {
+              return MaterialPageRoute(
+                builder: (_) => const FactuurEditorScreen(),
+              );
+            }
+            return null;
+          },
+          home: const AuthGate(),
+        );
+      },
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<AuthGate> createState() => _AuthGateState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
+  String? _identityFutureUserId;
+  Future<void>? _identityFuture;
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final user = AppSupabase.client.auth.currentUser;
+    if (user == null || !mounted) return;
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _identityFuture = null;
+      _identityFutureUserId = null;
     });
+    context.read<UserProvider>().loadForCurrentUser();
+  }
+
+  void _clearIdentityCache() {
+    setState(() {
+      _identityFuture = null;
+      _identityFutureUserId = null;
+    });
+  }
+
+  Future<void> _identityFutureForUserId(BuildContext context, String userId) {
+    if (_identityFuture == null || _identityFutureUserId != userId) {
+      _identityFutureUserId = userId;
+      _identityFuture = context.read<UserProvider>().loadForCurrentUser();
+    }
+    return _identityFuture!;
+  }
+
+  /// Default portal when multiple [portal_*] permissions exist: administrator → facilitator → operator → klant.
+  Widget _homeForPermissions(UserProvider userProvider) {
+    // Emergency: Generator always lands in administrator UI with navigation.
+    if (userProvider.isGenerator) return const UserManagementScreen();
+    if (userProvider.hasPermission('portal_admin') ||
+        userProvider.hasPermission('finance')) {
+      return const AdminDashboard();
+    }
+    if (userProvider.hasPermission('portal_facilitator')) {
+      return const FacilitatorDashboard();
+    }
+    if (userProvider.hasPermission('portal_operator')) {
+      return const OperatorDashboard();
+    }
+    if (userProvider.hasPermission('portal_klant')) {
+      return const ClientDashboard();
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _homeForRoleFallback(UserProvider userProvider) {
+    switch (userProvider.role) {
+      case UserRole.generator:
+        return const UserManagementScreen();
+      case UserRole.administrator:
+        return const AdminDashboard();
+      case UserRole.facilitator:
+        return const FacilitatorDashboard();
+      case UserRole.operator:
+        return const OperatorDashboard();
+      case UserRole.klant:
+        return const ClientDashboard();
+      case null:
+        return const SizedBox.shrink();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+    return StreamBuilder(
+      stream: AppSupabase.client.auth.onAuthStateChange,
+      builder: (context, _) {
+        final user = AppSupabase.client.auth.currentUser;
+        if (user == null) {
+          _identityFutureUserId = null;
+          _identityFuture = null;
+          context.read<UserProvider>().clear();
+          return const LoginScreen();
+        }
+
+        return FutureBuilder<void>(
+          future: _identityFutureForUserId(context, user.id),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return Scaffold(
+                appBar: AppBar(
+                  title: Text(AppTexts.get('role_lookup_failed_title')),
+                ),
+                body: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${AppTexts.get('logged_in_as')} ${user.email ?? user.id}',
+                      ),
+                      const SizedBox(height: 12),
+                      Text(AppTexts.get('role_lookup_failed_body')),
+                      const SizedBox(height: 8),
+                      Text('Fout: ${snapshot.error}'),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await Supabase.instance.client.auth.signOut();
+                          if (!context.mounted) return;
+                          context.read<UserProvider>().clear();
+                          Navigator.of(context).pushAndRemoveUntil(
+                            CupertinoPageRoute(
+                              builder: (_) => const LoginScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        child: Text(AppTexts.get('button_sign_out')),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            final userProvider = context.watch<UserProvider>();
+
+            if (userProvider.lastError != null) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('Kan gegevens niet laden')),
+                body: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Er ging iets mis bij het ophalen van uw gegevens.',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Details: ${userProvider.lastError}'),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: () {
+                          _clearIdentityCache();
+                          context.read<UserProvider>().loadForCurrentUser();
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Opnieuw proberen'),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await Supabase.instance.client.auth.signOut();
+                          if (!context.mounted) return;
+                          context.read<UserProvider>().clear();
+                          Navigator.of(context).pushAndRemoveUntil(
+                            CupertinoPageRoute(
+                              builder: (_) => const LoginScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        icon: const Icon(Icons.logout),
+                        label: const Text('Uitloggen'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            if (userProvider.hasAnyPortalPermission) {
+              return _homeForPermissions(userProvider);
+            }
+
+            if (userProvider.role != null) {
+              return _homeForRoleFallback(userProvider);
+            }
+
+            return NoPortalsAssignedScreen(onRetry: _clearIdentityCache);
+          },
+        );
+      },
     );
   }
 }

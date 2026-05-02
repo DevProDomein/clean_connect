@@ -2,6 +2,24 @@
 
 A new Flutter project.
 
+## Run the app (with Supabase keys)
+
+This app expects Supabase credentials at runtime via `--dart-define`.
+
+### Option A (recommended): run on an emulator/simulator
+
+```bash
+flutter run --dart-define=SUPABASE_URL="https://YOURPROJECT.supabase.co" --dart-define=SUPABASE_ANON_KEY="YOUR_ANON_KEY"
+```
+
+### Option B: run in a browser (fast “emulator-like” preview)
+
+```bash
+flutter run -d chrome --dart-define=SUPABASE_URL="https://YOURPROJECT.supabase.co" --dart-define=SUPABASE_ANON_KEY="YOUR_ANON_KEY"
+```
+
+If you see an error about missing keys, it means one of the `--dart-define` values wasn’t provided.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
