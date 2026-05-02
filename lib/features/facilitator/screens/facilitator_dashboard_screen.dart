@@ -49,6 +49,8 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   int _openTickets = 0;
   double? _gemiddeldeDks;
   List<Map<String, dynamic>> _agendaVandaag = const [];
+  List<String> _chartProjectNamen = const [];
+  String? _profielfotoUrl;
   int _touchedProjectIndex = -1;
 
   @override
@@ -442,6 +444,8 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     var ticketsOpen = 0;
     double? dksAvg;
     List<Map<String, dynamic>> agenda = const [];
+    List<String> chartNamen = const [];
+    String? profielfoto;
 
     try {
       await Future.wait<void>([
@@ -458,6 +462,39 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
         }(),
         () async {
           actiefProj = await _fetchActieveProjecten();
+        }(),
+        () async {
+          try {
+            final chartProjects = await AppSupabase.client
+                .from('projecten')
+                .select('project_naam')
+                .eq('status', 'actief')
+                .eq('facilitator_id', uid)
+                .limit(4);
+            chartNamen = (chartProjects as List<dynamic>)
+                .map((p) => _trim(Map<String, dynamic>.from(p as Map)['project_naam']))
+                .where((s) => s.isNotEmpty)
+                .take(4)
+                .toList();
+          } catch (_) {
+            chartNamen = [];
+          }
+        }(),
+        () async {
+          try {
+            final row = await AppSupabase.client
+                .from('gebruikers')
+                .select('profielfoto_url')
+                .eq('id', uid)
+                .maybeSingle();
+            if (row != null) {
+              final m = Map<String, dynamic>.from(row as Map);
+              final u = _trim(m['profielfoto_url']);
+              profielfoto = u.isEmpty ? null : u;
+            }
+          } catch (_) {
+            profielfoto = null;
+          }
         }(),
         () async {
           geplandeKeuringen = await _fetchGeplandeDksCount();
@@ -499,6 +536,8 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
       _openTickets = ticketsOpen;
       _gemiddeldeDks = dksAvg;
       _agendaVandaag = agenda;
+      _chartProjectNamen = chartNamen;
+      _profielfotoUrl = profielfoto;
     });
   }
 
@@ -746,17 +785,16 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
       'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80';
 
   Widget _buildHeroBanner(BuildContext context, String userName) {
-    const String dateString = 'Welkom terug op kantoor';
+    final String dateString = 'Welkom terug op kantoor';
+    final bool showAvatar =
+        _profielfotoUrl != null && _profielfotoUrl!.isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       height: 180,
       decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(32),
-        image: const DecorationImage(
-          image: NetworkImage(_heroPhotoUrl),
-          fit: BoxFit.cover,
-        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
@@ -765,44 +803,99 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           ),
         ],
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(32),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF0F172A).withValues(alpha: 0.90),
-              const Color(0xFF0052CC).withValues(alpha: 0.85),
-            ],
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: showAvatar
+                    ? const BorderRadius.only(
+                        topLeft: Radius.circular(32),
+                        bottomLeft: Radius.circular(32),
+                      )
+                    : BorderRadius.circular(32),
+                image: const DecorationImage(
+                  image: NetworkImage(_heroPhotoUrl),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: showAvatar
+                      ? const BorderRadius.only(
+                          topLeft: Radius.circular(32),
+                          bottomLeft: Radius.circular(32),
+                        )
+                      : BorderRadius.circular(32),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF0F172A).withValues(alpha: 0.95),
+                      const Color(0xFF0052CC).withValues(alpha: 0.85),
+                    ],
+                  ),
+                ),
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      dateString,
+                      style: TextStyle(
+                        color: Colors.blue.shade100,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Goedemorgen, $userName! 👋',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Text(
-              dateString,
-              style: TextStyle(
-                color: Colors.blue.shade100,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.2,
+          if (showAvatar)
+            Container(
+              width: 120,
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(32),
+                  bottomRight: Radius.circular(32),
+                ),
+              ),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: CircleAvatar(
+                    radius: 36,
+                    backgroundColor: Colors.transparent,
+                    backgroundImage: NetworkImage(_profielfotoUrl!),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Goedemorgen, $userName! 👋',
-              style: GoogleFonts.lato(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -814,7 +907,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   }
 
   Widget _buildAnalyticsGrid(BuildContext context) {
-    const double squareHeight = 160.0;
+    const double squareHeight = 175.0;
     const double spacing = 16.0;
     final double tallHeight = (squareHeight * 2) + spacing;
 
@@ -1071,6 +1164,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
             ],
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.max,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
@@ -1092,31 +1186,41 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                   color: Colors.grey.shade700,
                 ),
               ),
-              const Spacer(),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  value,
-                  style: GoogleFonts.lato(
-                    fontSize: belowValue != null ? 24 : 28,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black87,
-                  ),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        value,
+                        style: GoogleFonts.lato(
+                          fontSize: belowValue != null ? 24 : 28,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                    ?belowValue,
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: warning
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        color:
+                            warning ? color : Colors.grey.shade500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-              ),
-              ?belowValue,
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight:
-                      warning ? FontWeight.bold : FontWeight.normal,
-                  color: warning ? color : Colors.grey.shade500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -1159,14 +1263,38 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Actieve Projecten',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade700,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Actieve Projecten',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.arrow_forward_ios,
+                        color: Colors.black54,
+                        size: 18,
+                      ),
+                      onPressed: onTap,
+                      tooltip: 'Bekijk alle projecten',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 6),
               Expanded(
@@ -1180,42 +1308,56 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                               (FlTouchEvent event, pieTouchResponse) {
                             setState(() {
                               if (!event.isInterestedForInteractions ||
-                                  pieTouchResponse?.touchedSection == null) {
+                                  pieTouchResponse == null ||
+                                  pieTouchResponse.touchedSection == null) {
                                 _touchedProjectIndex = -1;
+
+                                if (event is FlTapUpEvent) {
+                                  onTap?.call();
+                                }
                                 return;
                               }
-                              _touchedProjectIndex = pieTouchResponse!
+                              _touchedProjectIndex = pieTouchResponse
                                   .touchedSection!.touchedSectionIndex;
                             });
                           },
                         ),
-                        borderData: FlBorderData(show: false),
-                        sectionsSpace: 4,
-                        centerSpaceRadius: 40,
-                        sections: List.generate(4, (i) {
-                          final isTouched = i == _touchedProjectIndex;
-                          final radius = isTouched ? 58.0 : 48.0;
-                          final color = colors[i % colors.length];
-                          return PieChartSectionData(
-                            color: color,
-                            value: 25,
-                            title: isTouched ? 'Projecten' : '',
-                            radius: radius,
-                            titleStyle: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                            borderSide: isTouched
-                                ? BorderSide(
-                                    color: color.withValues(alpha: 0.55),
-                                    width: 4,
-                                  )
-                                : BorderSide.none,
-                          );
-                        }),
+                          borderData: FlBorderData(show: false),
+                          sectionsSpace: 4,
+                          centerSpaceRadius: 40,
+                          sections: List.generate(4, (i) {
+                            final isTouched = i == _touchedProjectIndex;
+                            final radius = isTouched ? 85.0 : 55.0;
+                            final color = colors[i % colors.length];
+                            final projName = _chartProjectNamen.length > i
+                                ? _chartProjectNamen[i]
+                                : 'Project';
+                            final displayTitle = projName.length > 12
+                                ? '${projName.substring(0, 12)}..'
+                                : projName;
+                            return PieChartSectionData(
+                              color: color,
+                              value: 25,
+                              title: isTouched ? displayTitle : '',
+                              radius: radius,
+                              titleStyle: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              borderSide: isTouched
+                                  ? BorderSide(
+                                      color: color.withValues(alpha: 0.55),
+                                      width: 4,
+                                    )
+                                  : BorderSide(
+                                      color: color.withValues(alpha: 0.35),
+                                      width: 2,
+                                    ),
+                            );
+                          }),
+                        ),
                       ),
-                    ),
                     IgnorePointer(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,

@@ -27,34 +27,28 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   static const Color _pageBg = Color(0xFFF7F8FB);
   static const Color _blue = Color(0xFF2563EB);
 
-  static const List<String> _regioOptions = [
-    'Amsterdam',
-    "'t Gooi",
-    'Stichtse Vecht',
-    'Utrecht',
-    'Amersfoort',
-    'De Ronde Venen',
-    'Wijdemeren',
-  ];
-
-  static const List<String> _statusOptions = [
-    'actief',
-    'gepauzeerd',
-    'afgerond',
-    'beeindigd',
-    'concept',
+  static const List<({String key, String label})> _weekdayChips = [
+    (key: 'maandag', label: 'Ma'),
+    (key: 'dinsdag', label: 'Di'),
+    (key: 'woensdag', label: 'Wo'),
+    (key: 'donderdag', label: 'Do'),
+    (key: 'vrijdag', label: 'Vr'),
+    (key: 'zaterdag', label: 'Za'),
+    (key: 'zondag', label: 'Zo'),
   ];
 
   final _nameCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
+  final _omschrijvingCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   bool _loading = true;
   bool _saving = false;
   bool _isDirty = false;
+  bool _scheduleChanged = false;
   Object? _error;
 
   Map<String, dynamic>? _project;
+  Map<String, dynamic>? _projectStats;
   String? _bedrijfId;
   String _bedrijfNaam = '';
   String? _bedrijfLogoUrl;
@@ -64,13 +58,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   String _aangemaaktLabel = '—';
   bool _uploadingPand = false;
 
-  List<String> get _werkRegioChoices {
-    final set = <String>{..._regioOptions};
-    final w = _werkRegio;
-    if (w != null && w.isNotEmpty) set.add(w);
-    final list = set.toList()..sort();
-    return list;
-  }
+  final Set<String> _weekdaysSelected = {};
+  TimeOfDay _tijdslotStart = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay _tijdslotEind = const TimeOfDay(hour: 17, minute: 0);
 
   @override
   void initState() {
@@ -81,7 +71,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _descCtrl.dispose();
+    _omschrijvingCtrl.dispose();
     super.dispose();
   }
 
@@ -90,6 +80,40 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void _markDirty() {
     if (_isDirty) return;
     setState(() => _isDirty = true);
+  }
+
+  String _formatTimeDb(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+
+  TimeOfDay _parseTime(dynamic raw) {
+    final s = _text(raw);
+    if (s.isEmpty) return const TimeOfDay(hour: 9, minute: 0);
+    final parts = s.split(':');
+    if (parts.length >= 2) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h != null && m != null) {
+        return TimeOfDay(hour: h.clamp(0, 23), minute: m.clamp(0, 59));
+      }
+    }
+    return const TimeOfDay(hour: 9, minute: 0);
+  }
+
+  void _parseWeekdays(dynamic raw) {
+    _weekdaysSelected.clear();
+    if (raw is List) {
+      for (final e in raw) {
+        final k = _text(e).toLowerCase();
+        if (k.isNotEmpty) _weekdaysSelected.add(k);
+      }
+      return;
+    }
+    final s = _text(raw);
+    if (s.isEmpty) return;
+    for (final part in s.split(',')) {
+      final k = part.trim().toLowerCase();
+      if (k.isNotEmpty) _weekdaysSelected.add(k);
+    }
   }
 
   Future<bool> _confirmLeave() async {
@@ -114,6 +138,43 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('Verlaten', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    return go == true;
+  }
+
+  Future<bool> _confirmPlanningSave() async {
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
+        title: Text(
+          'Waarschuwing: Planning Wijziging',
+          style: GoogleFonts.lato(
+            fontWeight: FontWeight.w900,
+            fontSize: 18,
+            color: Colors.red.shade700,
+          ),
+        ),
+        content: Text(
+          'Het aanpassen van start- en eindtijd is een ingrijpende actie. Het heeft directe invloed op het planbord en zal toekomstige gegenereerde opdrachten wijzigen. Weet u zeker dat u dit wilt doorvoeren?',
+          style: GoogleFonts.lato(fontWeight: FontWeight.w600, fontSize: 15, height: 1.35),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Annuleren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Ja, pas planning aan',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -159,6 +220,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         return;
       }
 
+      Map<String, dynamic>? stats;
+      try {
+        final sv = await AppSupabase.client
+            .from('app_dks_project_info')
+            .select()
+            .eq('project_id', widget.projectId)
+            .maybeSingle();
+        if (sv != null) {
+          stats = Map<String, dynamic>.from(sv as Map);
+        }
+      } catch (_) {
+        stats = null;
+      }
+
       Map<String, dynamic>? b;
       final join = row['bedrijven'];
       if (join is Map) {
@@ -195,21 +270,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       final rawSt =
           _text(row['status']).isEmpty ? 'actief' : _text(row['status']).toLowerCase();
       final pand = _text(row['pand_foto_url']);
-      final notes = _text(row['notities']);
+      final oms = _text(row['omschrijving']);
 
       if (!mounted) return;
       setState(() {
         _project = row;
+        _projectStats = stats;
         _bedrijfId = bid;
         _bedrijfNaam = naam.isEmpty ? 'Klant' : naam;
         _bedrijfLogoUrl = logo;
         _pandFotoUrl = pand.isEmpty ? null : pand;
         _werkRegio = wr.isEmpty ? null : wr;
-        _status =
-            _statusOptions.contains(rawSt) ? rawSt : _statusOptions.first;
+        _status = rawSt;
         _aangemaaktLabel = aoLabel;
         _nameCtrl.text = naamProj;
-        _descCtrl.text = notes;
+        _omschrijvingCtrl.text = oms;
+        _parseWeekdays(row['reguliere_weekdagen']);
+        _tijdslotStart = _parseTime(row['tijdslot_start']);
+        _tijdslotEind = _parseTime(row['tijdslot_eind']);
+        _scheduleChanged = false;
         _loading = false;
         _isDirty = false;
       });
@@ -269,49 +348,91 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  Future<void> _pickTime({required bool isStart}) async {
+    final initial = isStart ? _tijdslotStart : _tijdslotEind;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (ctx, child) {
+        return Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: ColorScheme.light(primary: _blue, surface: Colors.white),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+    );
+    if (t == null || !mounted) return;
+    setState(() {
+      if (isStart) {
+        _tijdslotStart = t;
+      } else {
+        _tijdslotEind = t;
+      }
+      _scheduleChanged = true;
+      _isDirty = true;
+    });
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_scheduleChanged) {
+      final ok = await _confirmPlanningSave();
+      if (!ok || !mounted) return;
+    }
+
     setState(() => _saving = true);
     try {
       final patch = <String, dynamic>{
         'project_naam': _nameCtrl.text.trim(),
-        'werk_regio': _werkRegio,
-        'status': _status,
+        'omschrijving': _omschrijvingCtrl.text.trim(),
+        'tijdslot_start': _formatTimeDb(_tijdslotStart),
+        'tijdslot_eind': _formatTimeDb(_tijdslotEind),
       };
-      if (_descCtrl.text.trim().isNotEmpty) {
-        patch['notities'] = _descCtrl.text.trim();
-      }
-      var notesWarn = false;
+
       try {
         await AppSupabase.client
             .from('projecten')
             .update(patch)
             .eq('id', widget.projectId);
       } catch (_) {
-        if (patch.containsKey('notities')) {
-          patch.remove('notities');
-          notesWarn = true;
-          await AppSupabase.client
-              .from('projecten')
-              .update(patch)
-              .eq('id', widget.projectId);
-        } else {
-          rethrow;
-        }
+        final fallback = Map<String, dynamic>.from(patch)..remove('omschrijving');
+        await AppSupabase.client
+            .from('projecten')
+            .update(fallback)
+            .eq('id', widget.projectId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Project opgeslagen. Kolom omschrijving wordt niet ondersteund — overige velden wel.',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: Colors.amber.shade800,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+        setState(() {
+          _isDirty = false;
+          _scheduleChanged = false;
+          _saving = false;
+        });
+        return;
       }
 
       if (!mounted) return;
-      setState(() => _isDirty = false);
+      setState(() {
+        _isDirty = false;
+        _scheduleChanged = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            notesWarn
-                ? 'Project opgeslagen. Omschrijving kon niet worden opgeslagen.'
-                : 'Wijzigingen opgeslagen.',
+            'Wijzigingen opgeslagen.',
             style: GoogleFonts.lato(fontWeight: FontWeight.w700),
           ),
-          backgroundColor:
-              notesWarn ? Colors.amber.shade800 : Colors.green.shade700,
+          backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -352,6 +473,104 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<void> _onBackPressed() async {
     final ok = await _confirmLeave();
     if (ok && mounted) Navigator.of(context).pop();
+  }
+
+  String _fmtTimeUi(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  int _statInt(String key) {
+    final v = _projectStats?[key];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(_text(v)) ?? 0;
+  }
+
+  Widget _buildKpiRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildKpiCard(
+            icon: Icons.meeting_room_outlined,
+            label: 'Aantal Ruimtes',
+            value: '${_statInt('aantal_ruimtes')}',
+          ),
+          const SizedBox(width: 10),
+          _buildKpiCard(
+            icon: Icons.event_note_outlined,
+            label: 'Geplande Opdrachten',
+            value: '${_statInt('aankomende_opdrachten')}',
+          ),
+          const SizedBox(width: 10),
+          _buildKpiCard(
+            icon: Icons.groups_outlined,
+            label: 'Actieve Operators',
+            value: '${_statInt('aantal_actieve_operators')}',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKpiCard({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: _blue.withValues(alpha: 0.9)),
+            const SizedBox(height: 10),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                label,
+                maxLines: 2,
+                style: GoogleFonts.lato(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: _muted,
+                  height: 1.2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: GoogleFonts.lato(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: _navy,
+                  height: 1.05,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -416,6 +635,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       ),
                       SliverToBoxAdapter(child: _buildHeader()),
                       SliverToBoxAdapter(child: _buildClientStrip()),
+                      SliverToBoxAdapter(child: _buildKpiRow()),
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
@@ -593,6 +813,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       );
     }
 
+    final statusLabel =
+        _status.isEmpty ? '—' : '${_status[0].toUpperCase()}${_status.substring(1)}';
+    final regioLabel = _werkRegio?.isEmpty ?? true ? '—' : _werkRegio!;
+
     return Form(
       key: _formKey,
       child: Column(
@@ -605,6 +829,33 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               fontSize: 18,
               color: _navy,
             ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(
+                avatar: Icon(Icons.flag_outlined, size: 18, color: _blue.withValues(alpha: 0.85)),
+                label: Text(
+                  'Status: $statusLabel',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                backgroundColor: const Color(0xFFF1F5F9),
+                side: BorderSide.none,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              ),
+              Chip(
+                avatar: Icon(Icons.map_outlined, size: 18, color: _blue.withValues(alpha: 0.85)),
+                label: Text(
+                  'Werkregio: $regioLabel',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                backgroundColor: const Color(0xFFF1F5F9),
+                side: BorderSide.none,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -621,58 +872,169 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
           const SizedBox(height: 14),
           TextFormField(
-            controller: _descCtrl,
-            maxLines: 4,
+            controller: _omschrijvingCtrl,
+            maxLines: 3,
             style: GoogleFonts.lato(fontWeight: FontWeight.w600, color: _navy),
-            decoration: deco(
-              'Omschrijving / notities',
-              hint: 'Optioneel — wordt opgeslagen indien ondersteund door database',
-            ),
+            decoration: deco('Omschrijving'),
             onChanged: (_) => _markDirty(),
           ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            // ignore: deprecated_member_use
-            value: _werkRegio == null || _werkRegio!.isEmpty
-                ? null
-                : (_werkRegioChoices.contains(_werkRegio) ? _werkRegio : null),
-            decoration: deco('Werkregio'),
-            items: [
-              const DropdownMenuItem<String>(
-                value: null,
-                child: Text('—'),
+          const SizedBox(height: 18),
+          Tooltip(
+            message:
+                'Werkdagen zijn vastgezet. Neem contact op met support om dit te wijzigen.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Werkdagen (Neem contact op met support om dit te wijzigen)',
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: _muted,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _weekdayChips.map((e) {
+                    final sel = _weekdaysSelected.contains(e.key);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: sel
+                            ? _blue.withValues(alpha: 0.14)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: sel
+                              ? _blue.withValues(alpha: 0.45)
+                              : Colors.black.withValues(alpha: 0.06),
+                        ),
+                      ),
+                      child: Text(
+                        e.label,
+                        style: GoogleFonts.lato(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: sel ? _blue : _muted,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Tijdslot',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              color: _muted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => _pickTime(isStart: true),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.schedule_rounded, color: _blue.withValues(alpha: 0.85)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Start',
+                                  style: GoogleFonts.lato(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: _muted,
+                                  ),
+                                ),
+                                Text(
+                                  _fmtTimeUi(_tijdslotStart),
+                                  style: GoogleFonts.lato(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: _navy,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              ..._werkRegioChoices.map(
-                (r) => DropdownMenuItem(value: r, child: Text(r)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => _pickTime(isStart: false),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.schedule_send_rounded, color: _blue.withValues(alpha: 0.85)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Einde',
+                                  style: GoogleFonts.lato(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: _muted,
+                                  ),
+                                ),
+                                Text(
+                                  _fmtTimeUi(_tijdslotEind),
+                                  style: GoogleFonts.lato(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: _navy,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
-            onChanged: (v) {
-              setState(() {
-                _werkRegio = v;
-                _isDirty = true;
-              });
-            },
-            style: GoogleFonts.lato(fontWeight: FontWeight.w700, color: _navy),
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            // ignore: deprecated_member_use
-            value: _statusOptions.contains(_status) ? _status : _statusOptions.first,
-            decoration: deco('Status'),
-            items: _statusOptions
-                .map((s) => DropdownMenuItem(
-                      value: s,
-                      child: Text(s[0].toUpperCase() + s.substring(1)),
-                    ))
-                .toList(),
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() {
-                _status = v;
-                _isDirty = true;
-              });
-            },
-            style: GoogleFonts.lato(fontWeight: FontWeight.w700, color: _navy),
           ),
           const SizedBox(height: 20),
           Container(

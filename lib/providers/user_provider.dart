@@ -8,6 +8,7 @@ class UserProvider extends ChangeNotifier {
   String? _userId;
   String? _email;
   String? _firstName;
+  String? _profilePhotoUrl;
   UserRole? _role;
   final Set<String> _permissions = {};
   Object? _lastError;
@@ -15,6 +16,8 @@ class UserProvider extends ChangeNotifier {
   String? get userId => _userId;
   String? get email => _email;
   String? get firstName => _firstName;
+  /// Public URL for the logged-in user’s profile photo (`gebruikers.profielfoto_url`), when known.
+  String? get profilePhotoUrl => _profilePhotoUrl;
   UserRole? get role => _role;
   Set<String> get permissions => Set.unmodifiable(_permissions);
   Object? get lastError => _lastError;
@@ -129,6 +132,19 @@ class UserProvider extends ChangeNotifier {
     _role = _parseRole(rawRole);
     _firstName = data['voornaam']?.toString();
 
+    try {
+      final g = await Supabase.instance.client
+          .from('gebruikers')
+          .select('profielfoto_url')
+          .eq('id', user.id)
+          .maybeSingle();
+      final raw = g?['profielfoto_url']?.toString().trim();
+      _profilePhotoUrl =
+          (raw != null && raw.isNotEmpty) ? raw : null;
+    } catch (_) {
+      // RLS or schema variance — profile UI still loads its own row.
+    }
+
     if (_role == null) {
       _permissions.clear();
       _lastError = StateError(
@@ -161,10 +177,18 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Call after the user saves a new profile photo URL so shell/widgets can refresh.
+  void setProfilePhotoUrl(String? url) {
+    final t = url?.trim();
+    _profilePhotoUrl = (t != null && t.isNotEmpty) ? t : null;
+    notifyListeners();
+  }
+
   void clear() {
     _userId = null;
     _email = null;
     _firstName = null;
+    _profilePhotoUrl = null;
     _role = null;
     _permissions.clear();
     _lastError = null;

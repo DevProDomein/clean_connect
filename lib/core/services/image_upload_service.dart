@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../supabase_client.dart';
 
-/// Picks an image and uploads it to Supabase Storage (`public_assets` bucket).
+/// Picks an image and uploads it to Supabase Storage (default `public_assets`).
 /// Reusable for company logos, avatars, etc.
 class ImageUploadService {
   ImageUploadService._();
@@ -12,11 +12,12 @@ class ImageUploadService {
   static final ImagePicker _picker = ImagePicker();
 
   /// Lets the user choose camera or gallery, then uploads JPEG bytes to
-  /// `public_assets/{folderName}/{timestamp}.jpg` and returns the public URL.
+  /// `{storageBucket}/{folderName}/{timestamp}.jpg` and returns the public URL.
   static Future<String?> pickAndUploadImage(
     BuildContext context,
-    String folderName,
-  ) async {
+    String folderName, {
+    String storageBucket = 'public_assets',
+  }) async {
     if (!context.mounted) return null;
 
     final source = await showModalBottomSheet<ImageSource>(
@@ -71,7 +72,7 @@ class ImageUploadService {
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
       final path = '$folderName/$fileName';
 
-      await AppSupabase.client.storage.from('public_assets').uploadBinary(
+      await AppSupabase.client.storage.from(storageBucket).uploadBinary(
             path,
             bytes,
             fileOptions: const FileOptions(
@@ -81,7 +82,7 @@ class ImageUploadService {
           );
 
       final imageUrl = AppSupabase.client.storage
-          .from('public_assets')
+          .from(storageBucket)
           .getPublicUrl(path);
 
       if (context.mounted) {

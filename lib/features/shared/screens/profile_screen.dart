@@ -1,10 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/services/image_upload_service.dart';
+import '../../../providers/user_provider.dart';
 import '../../../core/widgets/app_drawer.dart';
 
 /// Persoonlijk profiel: foto, vaste loginvelden, telefoon bewerkbaar.
@@ -107,54 +109,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final newUrl = await ImageUploadService.pickAndUploadImage(
       context,
-      'profielen',
+      uid,
+      storageBucket: 'profielen',
     );
     if (!mounted || newUrl == null) return;
 
-    try {
-      await Supabase.instance.client.from(GebruikersTable.name).update({
-        _colProfielfoto: newUrl,
-      }).eq(GebruikersTable.id, uid);
-      setState(() => _profielfotoUrl = newUrl);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profielfoto bijgewerkt.'),
-          backgroundColor: Colors.green,
+    setState(() => _profielfotoUrl = newUrl);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Foto geladen. Druk op “Wijzigingen Opslaan” om op te slaan.',
+          style: GoogleFonts.lato(fontWeight: FontWeight.w600),
         ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Opslaan mislukt: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+        backgroundColor: _navy.withValues(alpha: 0.92),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
-  Future<void> _saveTelefoon() async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
+  Future<void> _saveProfile() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final uid = currentUser?.id;
     if (uid == null) return;
+
     setState(() => _saving = true);
     try {
-      await Supabase.instance.client.from(GebruikersTable.name).update({
-        _colTelefoon: _telefoonCtrl.text.trim(),
-      }).eq(GebruikersTable.id, uid);
+      final trimmedPhone = _telefoonCtrl.text.trim();
+      final trimmedFoto = _profielfotoUrl?.trim();
+      final Map<String, dynamic> updates = {
+        'telefoon': trimmedPhone,
+        if (trimmedFoto != null && trimmedFoto.isNotEmpty)
+          _colProfielfoto: trimmedFoto,
+      };
+
+      await Supabase.instance.client
+          .from(GebruikersTable.name)
+          .update(updates)
+          .eq(GebruikersTable.id, uid);
+
       if (!mounted) return;
+      context.read<UserProvider>().setProfilePhotoUrl(_profielfotoUrl);
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Wijzigingen opgeslagen.'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Text(
+            'Profiel succesvol opgeslagen!',
+            style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+          ),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Opslaan mislukt: $e'),
-          backgroundColor: Colors.red,
+          content: Text(
+            'Opslaan mislukt: $e',
+            style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: Colors.red.shade700,
         ),
       );
     } finally {
@@ -276,7 +291,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 24),
                         FilledButton(
-                          onPressed: _saving ? null : _saveTelefoon,
+                          onPressed: _saving ? null : _saveProfile,
                           style: FilledButton.styleFrom(
                             backgroundColor: _blue,
                             foregroundColor: Colors.white,
