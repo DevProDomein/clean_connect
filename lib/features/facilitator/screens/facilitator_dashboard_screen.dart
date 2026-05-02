@@ -23,8 +23,6 @@ class FacilitatorDashboard extends StatefulWidget {
 
 class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   static const Color _pageBg = Color(0xFFF7F8FB);
-  static const Color _navyHeroStart = Color(0xFF1A237E);
-  static const Color _navyHeroEnd = Color(0xFF0052CC);
 
   final _scr = ScrollController();
 
@@ -432,25 +430,6 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     });
   }
 
-  String _datumLabelNl(DateTime day) {
-    final wd = DateFormat.EEEE('nl_NL').format(day);
-    final d = DateFormat('d').format(day);
-    final m = DateFormat.MMMM('nl_NL').format(day);
-    return '${_cap(wd)} $d $m';
-  }
-
-  String _cap(String s) {
-    if (s.isEmpty) return s;
-    return s[0].toUpperCase() + s.substring(1);
-  }
-
-  String _groet() {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'Goedemorgen';
-    if (h < 18) return 'Goedemiddag';
-    return 'Goedenavond';
-  }
-
   String _eur(double v) {
     final f = NumberFormat.currency(
       locale: 'nl_NL',
@@ -581,15 +560,9 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final today = DateTime.now();
     final displayName = _userName.isNotEmpty
         ? _userName
         : 'Facilitator';
-    final afspraken = _agendaVandaag.length;
-    final sub = 'Je hebt vandaag $afspraken '
-        '${afspraken == 1 ? 'afspraak' : 'afspraken'} gepland staan en '
-        '$_ongeplandeTaken openstaande '
-        '${_ongeplandeTaken == 1 ? 'taak' : 'taken'} om in te plannen.';
 
     final showBlockingLoader = _loading && !_hasEverLoaded;
 
@@ -620,69 +593,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                       SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                          child: ClipRRect(
-                            borderRadius: const BorderRadius.only(
-                              bottomLeft: Radius.circular(32),
-                              bottomRight: Radius.circular(32),
-                            ),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.fromLTRB(
-                                24,
-                                28,
-                                24,
-                                32,
-                              ),
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [_navyHeroStart, _navyHeroEnd],
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _datumLabelNl(today),
-                                    style: GoogleFonts.lato(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.82,
-                                      ),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                      letterSpacing: 0.2,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    '${_groet()}, $displayName!',
-                                    style: GoogleFonts.lato(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 26,
-                                      height: 1.15,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    sub,
-                                    style: GoogleFonts.lato(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.9),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 15,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                        child: _buildHeroBanner(context, displayName),
                       ),
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(
@@ -707,90 +618,9 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                         ),
                       ),
                       SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.only(top: 0),
                         sliver: SliverToBoxAdapter(
-                          child: LayoutBuilder(
-                            builder: (context, c) {
-                              final wide = c.maxWidth > 620;
-                              if (wide) {
-                                return Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      flex: 3,
-                                      child: _salesCard(),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      flex: 2,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          _planCard(),
-                                          const SizedBox(height: 12),
-                                          Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Expanded(
-                                                flex: 2,
-                                                child: _kwaliteitDksCard(),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                flex: 1,
-                                                child: Column(
-                                                  children: [
-                                                    _actieveProjectenMetricCard(),
-                                                    const SizedBox(height: 12),
-                                                    _geplandeKeuringenMetricCard(),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }
-                              final narrowStackMetrics = c.maxWidth < 360;
-                              return Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.stretch,
-                                children: [
-                                  _salesCard(),
-                                  const SizedBox(height: 12),
-                                  _kwaliteitDksCard(),
-                                  const SizedBox(height: 12),
-                                  if (narrowStackMetrics) ...[
-                                    _actieveProjectenMetricCard(),
-                                    const SizedBox(height: 12),
-                                    _geplandeKeuringenMetricCard(),
-                                  ] else
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(
-                                          child: _actieveProjectenMetricCard(),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child:
-                                              _geplandeKeuringenMetricCard(),
-                                        ),
-                                      ],
-                                    ),
-                                  const SizedBox(height: 12),
-                                  _planCard(),
-                                ],
-                              );
-                            },
-                          ),
+                          child: _buildAnalyticsGrid(),
                         ),
                       ),
                       SliverPadding(
@@ -840,155 +670,267 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     );
   }
 
-  Widget _salesCard() {
+  static const String _heroPhotoUrl =
+      'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80';
+
+  Widget _buildHeroBanner(BuildContext context, String userName) {
+    const String dateString = 'Welkom terug op kantoor';
+
     return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: _softCard(),
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      height: 180,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(32),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+        image: DecorationImage(
+          image: const NetworkImage(_heroPhotoUrl),
+          fit: BoxFit.cover,
+          colorFilter: ColorFilter.mode(
+            Colors.black.withValues(alpha: 0.55),
+            BlendMode.darken,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              dateString,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Goedemorgen, $userName! 👋',
+              style: GoogleFonts.lato(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsGrid() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useRow = constraints.maxWidth >= 720;
+        const gap = 12.0;
+        const scrollCardWidth = 260.0;
+
+        final salesCard = _buildKpiCard(
+          title: 'Openstaande Offertes',
+          value: _eur(_pipelineTotaal),
+          icon: Icons.trending_up,
+          color: Colors.blueAccent,
+          subtitle:
+              'Potentiële omzet · $_offerteAantal '
+              '${_offerteAantal == 1 ? 'offerte' : 'offertes'}',
+        );
+
+        final warn = _ongeplandeTaken > 0;
+        final operatieColor =
+            warn ? Colors.orangeAccent : Colors.green;
+        final operatieCard = _buildKpiCard(
+          title: 'Actieve Projecten',
+          value: '$_actieveProjecten',
+          icon: Icons.business_center,
+          color: operatieColor,
+          subtitle: warn
+              ? '$_ongeplandeTaken taken ongepland! · $_geplandeDks gepland'
+              : 'Alles ingepland · $_geplandeDks keuringen gepland',
+          warning: warn,
+        );
+
+        final dksCard = _buildDksCard();
+
+        if (useRow) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: salesCard),
+                const SizedBox(width: gap),
+                Expanded(child: operatieCard),
+                const SizedBox(width: gap),
+                Expanded(child: dksCard),
+              ],
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: scrollCardWidth, child: salesCard),
+              const SizedBox(width: gap),
+              SizedBox(width: scrollCardWidth, child: operatieCard),
+              const SizedBox(width: gap),
+              SizedBox(width: scrollCardWidth, child: dksCard),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildKpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required String subtitle,
+    bool warning = false,
+  }) {
+    return Container(
+      height: 160,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: warning
+            ? Border.all(
+                color: color.withValues(alpha: 0.5),
+                width: 2,
+              )
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Openstaande Offertes',
-                style: GoogleFonts.lato(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  color: const Color(0xFF475569),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
+                child: Icon(icon, color: color, size: 24),
               ),
-              const Spacer(),
-              Icon(
-                Icons.trending_up_rounded,
-                color: Colors.green.shade600,
-                size: 28,
+              const SizedBox(height: 10),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.lato(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.grey.shade700,
+                  height: 1.2,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            '${_eur(_pipelineTotaal)},-',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w900,
-              fontSize: 34,
-              color: const Color(0xFF0F172A),
-              letterSpacing: -1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Verdeeld over $_offerteAantal '
-            '${_offerteAantal == 1 ? 'aanvraag' : 'aanvragen'}',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: const Color(0xFF64748B),
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.lato(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight:
+                      warning ? FontWeight.bold : FontWeight.normal,
+                  color: warning ? color : Colors.grey.shade600,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _planCard() {
-    final urgent = _ongeplandeTaken > 0;
-    final bg =
-        urgent ? Colors.red.shade50 : Colors.green.shade50;
-    final fg =
-        urgent ? Colors.red.shade700 : Colors.green.shade800;
+  Widget _buildDksCard() {
+    final dks = _gemiddeldeDks;
+    final double scoreNorm = dks != null
+        ? (dks / 100.0).clamp(0.0, 1.0)
+        : 0.0;
+    final Color scoreColor = dks == null
+        ? Colors.grey.shade400
+        : (scoreNorm >= 0.85
+            ? Colors.green
+            : (scoreNorm >= 0.65 ? Colors.orange : Colors.redAccent));
+
     return Container(
+      height: 160,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: bg,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Ongeplande Taken',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-              color: fg.withValues(alpha: 0.85),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '$_ongeplandeTaken',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w900,
-              fontSize: 40,
-              color: fg,
-              height: 1,
-              letterSpacing: -1,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _kwaliteitDksCard() {
-    final dks = _gemiddeldeDks;
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Kwaliteit (DKS)',
-                  style: GoogleFonts.lato(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Gemiddelde score over alle projecten (laatste 30 dagen).',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
-                ),
-              ],
+          Text(
+            'DKS Score',
+            style: GoogleFonts.lato(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
             ),
           ),
-          const SizedBox(width: 24),
           SizedBox(
-            height: 100,
-            width: 100,
+            height: 70,
+            width: 70,
             child: dks == null
                 ? Stack(
                     fit: StackFit.expand,
                     children: [
                       CircularProgressIndicator(
                         value: 0,
-                        strokeWidth: 12,
+                        strokeWidth: 8,
                         backgroundColor: Colors.grey.shade100,
                         color: Colors.grey.shade300,
                         strokeCap: StrokeCap.round,
@@ -997,7 +939,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                         child: Text(
                           '—',
                           style: GoogleFonts.lato(
-                            fontSize: 22,
+                            fontSize: 18,
                             fontWeight: FontWeight.w900,
                             color: Colors.black87,
                           ),
@@ -1009,7 +951,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                     key: ValueKey<double>(dks),
                     tween: Tween<double>(
                       begin: 0,
-                      end: (dks / 100).clamp(0.0, 1.0),
+                      end: scoreNorm,
                     ),
                     duration: const Duration(milliseconds: 1500),
                     curve: Curves.easeOutCubic,
@@ -1019,20 +961,16 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                         children: [
                           CircularProgressIndicator(
                             value: value,
-                            strokeWidth: 12,
+                            strokeWidth: 8,
                             backgroundColor: Colors.grey.shade100,
-                            color: value >= 0.85
-                                ? Colors.greenAccent.shade700
-                                : (value >= 0.65
-                                    ? Colors.orangeAccent
-                                    : Colors.redAccent),
+                            color: scoreColor,
                             strokeCap: StrokeCap.round,
                           ),
                           Center(
                             child: Text(
                               '${(value * 100).toInt()}%',
                               style: GoogleFonts.lato(
-                                fontSize: 22,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w900,
                                 color: Colors.black87,
                               ),
@@ -1043,71 +981,9 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                     },
                   ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actieveProjectenMetricCard() {
-    const accent = Color(0xFF2563EB);
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _softCard(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.business, color: accent, size: 26),
-          const SizedBox(height: 10),
           Text(
-            'Actieve Projecten',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-              color: const Color(0xFF475569),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$_actieveProjecten',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w900,
-              fontSize: 28,
-              color: const Color(0xFF0F172A),
-              height: 1,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _geplandeKeuringenMetricCard() {
-    final accent = Colors.orange.shade700;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _softCard(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.fact_check_outlined, color: accent, size: 26),
-          const SizedBox(height: 10),
-          Text(
-            'Keuringen Gepland',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-              color: const Color(0xFF475569),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$_geplandeDks',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w900,
-              fontSize: 28,
-              color: const Color(0xFF0F172A),
-              height: 1,
-            ),
+            'Laatste 30 dagen',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
           ),
         ],
       ),
