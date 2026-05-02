@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../../core/models/user_role.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../../core/widgets/network_image_fallback.dart';
 import '../../../providers/user_provider.dart';
 import 'relation_detail_screen.dart';
 
@@ -390,22 +391,13 @@ class _RelationCard extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: cs.primary.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      firstLetter(name),
-                      style: GoogleFonts.lato(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                        color: cs.primary,
-                      ),
-                    ),
+                  RelationLogoAvatar(
+                    logoUrl: text(relation['logo_url']).isEmpty
+                        ? null
+                        : text(relation['logo_url']),
+                    fallbackLetter: firstLetter(name),
+                    size: 50,
+                    accentColor: cs.primary,
                   ),
                   const SizedBox(width: 14),
                   Expanded(

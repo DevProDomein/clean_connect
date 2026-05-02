@@ -9,8 +9,8 @@ import '../../../core/models/user_role.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../providers/user_provider.dart';
-import '../../admin/screens/relation_detail_screen.dart';
 import '../../../shared/layouts/main_layout.dart';
+import 'project_detail_screen.dart';
 
 /// Facilitator-wide overview of active projects / contracts.
 class ProjectManagementScreen extends StatefulWidget {
@@ -155,12 +155,13 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
     return _grey;
   }
 
-  void _openDossier(String? bedrijfId) {
-    if (bedrijfId == null || bedrijfId.isEmpty) return;
+  void _openProjectDetail(String? projectId) {
+    final id = _text(projectId);
+    if (id.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        settings: const RouteSettings(name: '/facilitator/relations/detail'),
-        builder: (_) => RelationDetailScreen(bedrijfId: bedrijfId),
+        settings: const RouteSettings(name: '/facilitator/project-detail'),
+        builder: (_) => ProjectDetailScreen(projectId: id),
       ),
     );
   }
@@ -275,7 +276,7 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
     final freq = _freqLabel(p);
     final start = _fmtDate(p['contract_startdatum']);
     final eind = _fmtDate(p['contract_einddatum']);
-    final bedrijfId = _text(p['bedrijf_id']);
+    final projectId = _text(p['id']);
     final pillColor = _statusPillColor(status);
     final statusLabel = status[0].toUpperCase() + status.substring(1);
 
@@ -285,8 +286,7 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(_radius),
-          onTap: () => _openDossier(
-              bedrijfId.isEmpty ? null : bedrijfId),
+          onTap: () => _openProjectDetail(projectId),
           child: Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(

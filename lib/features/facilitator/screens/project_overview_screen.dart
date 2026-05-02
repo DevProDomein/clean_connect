@@ -7,12 +7,13 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../admin/screens/relation_detail_screen.dart';
 import '../../../core/models/user_role.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../../core/widgets/network_image_fallback.dart';
 import '../../../core/supabase_client.dart';
 import '../../../providers/user_provider.dart';
 import 'project_create_header_screen.dart';
+import 'project_detail_screen.dart';
 
 /// Facilitator project portfolio: KPIs, server-driven filters, actieve [projecten].
 class ProjectOverviewScreen extends StatefulWidget {
@@ -124,6 +125,20 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
     return '—';
   }
 
+  String? _bedrijfLogoUrl(Map<String, dynamic> row) {
+    final b = row['bedrijven'];
+    if (b is Map) {
+      final u = _text(b['logo_url']);
+      return u.isEmpty ? null : u;
+    }
+    return null;
+  }
+
+  String? _pandFotoUrl(Map<String, dynamic> row) {
+    final u = _text(row['pand_foto_url']);
+    return u.isEmpty ? null : u;
+  }
+
   // ---------------- KPIs (local, after fetch) ----------------
   int get _kpiActieveContracten => _projects.length;
 
@@ -217,7 +232,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
     final isFac = up.roleString == 'facilitator';
 
     const selectWithJoins =
-        '*, bedrijven!inner(id, bedrijfsnaam), offertes(contract_type)';
+        '*, bedrijven!inner(id, bedrijfsnaam, logo_url), offertes(contract_type)';
 
     PostgrestFilterBuilder<dynamic> buildQuery(String select) {
       dynamic q = AppSupabase.client
@@ -326,12 +341,13 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
     );
   }
 
-  void _openDossier(String? bedrijfId) {
-    if (bedrijfId == null || bedrijfId.isEmpty) return;
+  void _openProjectDetail(String? projectId) {
+    final id = _text(projectId);
+    if (id.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        settings: const RouteSettings(name: '/facilitator/relation-dossier'),
-        builder: (_) => RelationDetailScreen(bedrijfId: bedrijfId),
+        settings: const RouteSettings(name: '/facilitator/project-detail'),
+        builder: (_) => ProjectDetailScreen(projectId: id),
       ),
     );
   }
@@ -750,7 +766,10 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
     final contractType = _text(o?['contract_type']).isNotEmpty
         ? _text(o?['contract_type'])
         : 'eenmalig';
-    final bedrijfId = _text(p['bedrijf_id']);
+    final projectId = _text(p['id']);
+    final pandUrl = _pandFotoUrl(p);
+    final logoUrl = _bedrijfLogoUrl(p);
+    final thumbUrl = pandUrl ?? logoUrl;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -758,50 +777,72 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(_radius),
-          onTap: () => _openDossier(bedrijfId),
+          onTap: () => _openProjectDetail(projectId),
           child: _Card(
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: GoogleFonts.lato(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: _navy,
-                    letterSpacing: -0.2,
-                  ),
+                NetworkRoundedImage(
+                  imageUrl: thumbUrl,
+                  fallbackLetter: klant,
+                  width: 60,
+                  height: 60,
+                  borderRadius: 12,
+                  accentColor: _blue,
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.apartment_outlined, size: 16, color: _muted),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        klant,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
                         style: GoogleFonts.lato(
-                            fontSize: 14, fontWeight: FontWeight.w700, color: _navy),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: _navy,
+                          letterSpacing: -0.2,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                if (regio.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    regio,
-                    style: GoogleFonts.lato(
-                        fontSize: 12, color: _muted, fontWeight: FontWeight.w600),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.apartment_outlined,
+                              size: 16, color: _muted),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              klant,
+                              style: GoogleFonts.lato(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: _navy),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (regio.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          regio,
+                          style: GoogleFonts.lato(
+                              fontSize: 12,
+                              color: _muted,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (freq.isNotEmpty)
+                            _pill(freq, const Color(0xFF0EA5E9)),
+                          _pill(contractType, const Color(0xFF7C3AED)),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    if (freq.isNotEmpty) _pill(freq, const Color(0xFF0EA5E9)),
-                    _pill(contractType, const Color(0xFF7C3AED)),
-                  ],
                 ),
               ],
             ),

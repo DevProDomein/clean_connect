@@ -45,6 +45,7 @@ import '../../features/operator/screens/operator_meldingen_screen.dart';
 import '../../features/operator/screens/operator_voorraad_screen.dart';
 import '../../features/operator/screens/operator_rooster_screen.dart';
 import '../../features/operator/screens/operator_uren_screen.dart';
+import '../../features/shared/screens/profile_screen.dart';
 import '../models/user_role.dart';
 
 /// Central app navigation.
@@ -554,6 +555,33 @@ class AppDrawerPanel extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
                 children: [
+                  ListTile(
+                    leading: Icon(
+                      Icons.account_circle_outlined,
+                      color: isDark ? Colors.white70 : const Color(0xFF1C1C1E),
+                    ),
+                    title: Text(
+                      'Mijn Profiel',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : const Color(0xFF1C1C1E),
+                      ),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    onTap: () {
+                      Navigator.of(context).maybePop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          settings: const RouteSettings(name: '/profile'),
+                          builder: (_) => const ProfileScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
                   SwitchListTile(
                     value: context.watch<ThemeModeProvider>().isDark,
                     onChanged: (_) => context.read<ThemeModeProvider>().toggle(),

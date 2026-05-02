@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../../core/widgets/network_image_fallback.dart';
 import '../../admin/screens/relation_detail_screen.dart';
 
 /// Facilitator-scoped Relatiebeheer (CRM) screen.
@@ -113,6 +114,40 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
       final clients = <Map<String, dynamic>>[];
       for (final row in (crmRes as List)) {
         if (row is Map) clients.add(Map<String, dynamic>.from(row));
+      }
+
+      // Enrich logo_url from [bedrijven] when the CRM view omits it.
+      if (clients.isNotEmpty) {
+        final ids = clients
+            .map((c) => _text(c['id']))
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
+        if (ids.isNotEmpty) {
+          try {
+            final logoRes = await AppSupabase.client
+                .from('bedrijven')
+                .select('id, logo_url')
+                .inFilter('id', ids);
+            final byId = <String, String?>{};
+            for (final row in (logoRes as List)) {
+              if (row is! Map) continue;
+              final m = Map<String, dynamic>.from(row);
+              final id = _text(m['id']);
+              final lu = _text(m['logo_url']);
+              byId[id] = lu.isEmpty ? null : lu;
+            }
+            for (final c in clients) {
+              final id = _text(c['id']);
+              final fromBedrijf = byId[id];
+              if (fromBedrijf != null && fromBedrijf.isNotEmpty) {
+                c['logo_url'] = fromBedrijf;
+              }
+            }
+          } catch (_) {
+            // Non-fatal: keep whatever the view returned.
+          }
+        }
       }
 
       // 2) Quote KPIs: count total + signed for this facilitator.
@@ -447,22 +482,13 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               child: Row(
                 children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _accentBlue.withValues(alpha: 0.12),
-                    ),
-                    child: Text(
-                      _firstLetter(bedrijfsnaam),
-                      style: GoogleFonts.lato(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 20,
-                        color: _accentBlue,
-                      ),
-                    ),
+                  RelationLogoAvatar(
+                    logoUrl: _text(client['logo_url']).isEmpty
+                        ? null
+                        : _text(client['logo_url']),
+                    fallbackLetter: _firstLetter(bedrijfsnaam),
+                    size: 52,
+                    accentColor: _accentBlue,
                   ),
                   const SizedBox(width: 14),
                   Expanded(

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/services/image_upload_service.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../providers/user_provider.dart';
@@ -75,6 +76,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
   String? _id;
   String? _debiteurNummer;
   String? _crediteurNummer;
+  String? _logoUrl;
 
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _contacten = [];
@@ -327,6 +329,8 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
         : _text(bedrijf['standaard_layout']);
     final wr = _text(bedrijf['werk_regio']);
     _clientWerkRegio = wr.isEmpty ? null : wr;
+    final logo = _text(bedrijf['logo_url']);
+    _logoUrl = logo.isEmpty ? null : logo;
   }
 
   // ---------------- save ----------------
@@ -691,6 +695,38 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     );
   }
 
+  Future<void> _onLogoTap() async {
+    final id = _id;
+    if (id == null || id.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sla de relatie eerst op om een logo toe te voegen.')),
+      );
+      return;
+    }
+
+    final newUrl =
+        await ImageUploadService.pickAndUploadImage(context, 'bedrijven');
+    if (!mounted || newUrl == null) return;
+
+    try {
+      await AppSupabase.client
+          .from('bedrijven')
+          .update({'logo_url': newUrl}).eq('id', id);
+      if (!mounted) return;
+      setState(() => _logoUrl = newUrl);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Logo succesvol bijgewerkt!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Logo opslaan mislukt: $e');
+    }
+  }
+
   // ---------------- header ----------------
   Widget _buildHeader() {
     final name = _bedrijfsnaamCtrl.text.trim().isEmpty
@@ -725,20 +761,41 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 58,
-              height: 58,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: _blue.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Text(
-                _firstLetter(name),
-                style: GoogleFonts.lato(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 24,
-                  color: _blue,
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _onLogoTap,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: _subtle,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: _logoUrl != null && _logoUrl!.isNotEmpty
+                        ? Image.network(
+                            _logoUrl!,
+                            width: 80,
+                            height: 80,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(
+                                Icons.add_a_photo,
+                                color: Colors.grey,
+                                size: 36,
+                              );
+                            },
+                          )
+                        : const Icon(
+                            Icons.add_a_photo,
+                            color: Colors.grey,
+                            size: 36,
+                          ),
+                  ),
                 ),
               ),
             ),
@@ -1194,103 +1251,113 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: _Card(
-        borderRadius: 16,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: _blue.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                _firstLetter(full.isEmpty ? '?' : full),
-                style: GoogleFonts.lato(
-                  fontWeight: FontWeight.w900,
-                  color: _blue,
-                  fontSize: 18,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: (_id ?? '').isEmpty || contactId.isEmpty
+              ? null
+              : () => _openEditContactDialog(c),
+          child: _Card(
+            borderRadius: 16,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _blue.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    _firstLetter(full.isEmpty ? '?' : full),
+                    style: GoogleFonts.lato(
+                      fontWeight: FontWeight.w900,
+                      color: _blue,
+                      fontSize: 18,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          full.isEmpty ? '—' : full,
-                          style: GoogleFonts.lato(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.2,
-                            color: _navy,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              full.isEmpty ? '—' : full,
+                              style: GoogleFonts.lato(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                                color: _navy,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (isFact)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: _green.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.receipt_long_rounded,
+                                    size: 14,
+                                    color: _green,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Facturatie',
+                                    style: GoogleFonts.lato(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                      color: _green,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
-                      if (isFact)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: _green.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.receipt_long_rounded,
-                                size: 14,
-                                color: _green,
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                'Facturatie',
-                                style: GoogleFonts.lato(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 11,
-                                  color: _green,
-                                ),
-                              ),
-                            ],
-                          ),
+                      if (functie.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          functie,
+                          style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w700, color: _muted),
                         ),
+                      ],
+                      const SizedBox(height: 6),
+                      if (email.isNotEmpty)
+                        _contactLine(Icons.alternate_email_rounded, email),
+                      if (telefoon.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        _contactLine(Icons.phone_rounded, telefoon),
+                      ],
                     ],
                   ),
-                  if (functie.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      functie,
-                      style: GoogleFonts.lato(
-                          fontWeight: FontWeight.w700, color: _muted),
-                    ),
-                  ],
-                  const SizedBox(height: 6),
-                  if (email.isNotEmpty)
-                    _contactLine(Icons.alternate_email_rounded, email),
-                  if (telefoon.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    _contactLine(Icons.phone_rounded, telefoon),
-                  ],
-                ],
-              ),
+                ),
+                IconButton(
+                  tooltip: 'Verwijderen',
+                  visualDensity: VisualDensity.compact,
+                  icon:
+                      Icon(Icons.delete_outline, color: Colors.grey.shade600),
+                  onPressed: contactId.isEmpty
+                      ? null
+                      : () => _confirmDeleteContact(contactId),
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Verwijderen',
-              visualDensity: VisualDensity.compact,
-              icon: Icon(Icons.delete_outline, color: Colors.grey.shade600),
-              onPressed: contactId.isEmpty
-                  ? null
-                  : () => _confirmDeleteContact(contactId),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1405,6 +1472,37 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
       messenger?.showSnackBar(
         const SnackBar(
           content: Text('Contactpersoon succesvol toegevoegd!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openEditContactDialog(Map<String, dynamic> contactData) async {
+    if ((_id ?? '').isEmpty) return;
+    final bedrijfId = _id!;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+
+    final bool? success = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: AddContactModal(
+          bedrijfId: bedrijfId,
+          existingContact: contactData,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (success == true) {
+      await _reloadContacten();
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('Wijzigingen opgeslagen.'),
           backgroundColor: Colors.green,
         ),
       );

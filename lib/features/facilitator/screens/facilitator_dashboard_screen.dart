@@ -1,15 +1,23 @@
+import 'dart:math' as math;
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/contracts/tickets_contract.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../admin/screens/relation_detail_screen.dart';
 import 'dks_dashboard_screen.dart';
 import 'dks_project_dossier_screen.dart';
 import 'planbord_screen.dart';
+import 'project_overview_screen.dart';
 import 'quote_create_header_screen.dart';
+import 'quote_overview_screen.dart';
+import 'sales_centre_screen.dart';
+import 'ticket_overview_screen.dart';
 import '../widgets/opname_edit_modal.dart';
 
 /// Apple-style facilitator landing: hero, bento KPIs, quick actions,
@@ -37,8 +45,11 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   int _ongeplandeTaken = 0;
   int _actieveProjecten = 0;
   int _geplandeDks = 0;
+  int _nieuweLeads = 0;
+  int _openTickets = 0;
   double? _gemiddeldeDks;
   List<Map<String, dynamic>> _agendaVandaag = const [];
+  int _touchedProjectIndex = -1;
 
   @override
   void initState() {
@@ -181,6 +192,57 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           .select('id')
           .eq('status', 'gepland');
       return (res as List).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Open leads: jouw toewijzing óf ongeclaimd, exclusief gewonnen/verloren.
+  Future<int> _fetchLeadsCount(String uid) async {
+    try {
+      final res = await AppSupabase.client
+          .from('leads')
+          .select('id')
+          .not('status', 'in', '("gewonnen","verloren")')
+          .or('toegewezen_aan_id.eq.$uid,toegewezen_aan_id.is.null');
+      return (res as List).length;
+    } catch (_) {
+      try {
+        final res = await AppSupabase.client
+            .from('leads')
+            .select('id,status,toegewezen_aan_id')
+            .or('toegewezen_aan_id.eq.$uid,toegewezen_aan_id.is.null');
+        return (res as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .where((r) {
+              final st = _trim(r['status']).toLowerCase();
+              return st != 'gewonnen' && st != 'verloren';
+            })
+            .length;
+      } catch (_) {
+        return 0;
+      }
+    }
+  }
+
+  /// Open tickets voor deze gebruiker (status open / in behandeling).
+  Future<int> _fetchOpenTicketsCount(String uid) async {
+    try {
+      final res = await AppSupabase.client
+          .from(TicketsTable.name)
+          .select('${TicketsTable.id},${TicketsTable.status}')
+          .eq(TicketsTable.toegewezenAan, uid);
+      final openish = (res as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .where((r) {
+            final s = _trim(r[TicketsTable.status]).toLowerCase();
+            return s == 'open' ||
+                s == 'in_behandeling' ||
+                s == 'nieuw' ||
+                s == 'new';
+          })
+          .length;
+      return openish;
     } catch (_) {
       return 0;
     }
@@ -376,6 +438,8 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     var taken = 0;
     var actiefProj = 0;
     var geplandeKeuringen = 0;
+    var leadsCount = 0;
+    var ticketsOpen = 0;
     double? dksAvg;
     List<Map<String, dynamic>> agenda = const [];
 
@@ -397,6 +461,12 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
         }(),
         () async {
           geplandeKeuringen = await _fetchGeplandeDksCount();
+        }(),
+        () async {
+          leadsCount = await _fetchLeadsCount(uid);
+        }(),
+        () async {
+          ticketsOpen = await _fetchOpenTicketsCount(uid);
         }(),
         () async {
           dksAvg = await _fetchGemiddeldeDks30d();
@@ -425,6 +495,8 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
       _ongeplandeTaken = taken;
       _actieveProjecten = actiefProj;
       _geplandeDks = geplandeKeuringen;
+      _nieuweLeads = leadsCount;
+      _openTickets = ticketsOpen;
       _gemiddeldeDks = dksAvg;
       _agendaVandaag = agenda;
     });
@@ -620,7 +692,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                       SliverPadding(
                         padding: const EdgeInsets.only(top: 0),
                         sliver: SliverToBoxAdapter(
-                          child: _buildAnalyticsGrid(),
+                          child: _buildAnalyticsGrid(context),
                         ),
                       ),
                       SliverPadding(
@@ -681,6 +753,10 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
       height: 180,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(32),
+        image: const DecorationImage(
+          image: NetworkImage(_heroPhotoUrl),
+          fit: BoxFit.cover,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
@@ -688,16 +764,19 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
             offset: const Offset(0, 10),
           ),
         ],
-        image: DecorationImage(
-          image: const NetworkImage(_heroPhotoUrl),
-          fit: BoxFit.cover,
-          colorFilter: ColorFilter.mode(
-            Colors.black.withValues(alpha: 0.55),
-            BlendMode.darken,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF0F172A).withValues(alpha: 0.90),
+              const Color(0xFF0052CC).withValues(alpha: 0.85),
+            ],
           ),
         ),
-      ),
-      child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -706,7 +785,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
             Text(
               dateString,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: Colors.blue.shade100,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 1.2,
@@ -728,264 +807,585 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     );
   }
 
-  Widget _buildAnalyticsGrid() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useRow = constraints.maxWidth >= 720;
-        const gap = 12.0;
-        const scrollCardWidth = 260.0;
-
-        final salesCard = _buildKpiCard(
-          title: 'Openstaande Offertes',
-          value: _eur(_pipelineTotaal),
-          icon: Icons.trending_up,
-          color: Colors.blueAccent,
-          subtitle:
-              'Potentiële omzet · $_offerteAantal '
-              '${_offerteAantal == 1 ? 'offerte' : 'offertes'}',
-        );
-
-        final warn = _ongeplandeTaken > 0;
-        final operatieColor =
-            warn ? Colors.orangeAccent : Colors.green;
-        final operatieCard = _buildKpiCard(
-          title: 'Actieve Projecten',
-          value: '$_actieveProjecten',
-          icon: Icons.business_center,
-          color: operatieColor,
-          subtitle: warn
-              ? '$_ongeplandeTaken taken ongepland! · $_geplandeDks gepland'
-              : 'Alles ingepland · $_geplandeDks keuringen gepland',
-          warning: warn,
-        );
-
-        final dksCard = _buildDksCard();
-
-        if (useRow) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: salesCard),
-                const SizedBox(width: gap),
-                Expanded(child: operatieCard),
-                const SizedBox(width: gap),
-                Expanded(child: dksCard),
-              ],
-            ),
-          );
-        }
-
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(width: scrollCardWidth, child: salesCard),
-              const SizedBox(width: gap),
-              SizedBox(width: scrollCardWidth, child: operatieCard),
-              const SizedBox(width: gap),
-              SizedBox(width: scrollCardWidth, child: dksCard),
-            ],
-          ),
-        );
-      },
+  void _openDashboardPage(Widget page) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => page),
     );
   }
 
-  Widget _buildKpiCard({
+  Widget _buildAnalyticsGrid(BuildContext context) {
+    const double squareHeight = 160.0;
+    const double spacing = 16.0;
+    final double tallHeight = (squareHeight * 2) + spacing;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          _buildWideKpiCard(
+            title: 'Openstaande Offertes',
+            value: _eur(_pipelineTotaal),
+            icon: Icons.trending_up,
+            color: Colors.blueAccent,
+            subtitle:
+                'Potentiële omzet in pijplijn · $_offerteAantal offertes',
+            onTap: () =>
+                _openDashboardPage(const QuoteOverviewScreen()),
+          ),
+          const SizedBox(height: spacing),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildSquareKpiCard(
+                      title: 'Ongeplande Taken',
+                      value: '$_ongeplandeTaken',
+                      icon: Icons.calendar_today_rounded,
+                      color: _ongeplandeTaken > 0
+                          ? Colors.orangeAccent
+                          : Colors.grey,
+                      subtitle: 'Wacht op inplanning',
+                      warning: _ongeplandeTaken > 0,
+                      height: squareHeight,
+                      onTap: () =>
+                          _openDashboardPage(const PlanbordScreen()),
+                    ),
+                    const SizedBox(height: spacing),
+                    _buildSquareKpiCard(
+                      title: 'Nieuwe Leads',
+                      value: '$_nieuweLeads',
+                      icon: Icons.campaign_outlined,
+                      color: Colors.purpleAccent,
+                      subtitle: 'Openstaande leads',
+                      height: squareHeight,
+                      belowValue: _buildLeadsNeonProgressBar(),
+                      onTap: () =>
+                          _openDashboardPage(const SalesCentreScreen()),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: spacing),
+              Expanded(
+                flex: 4,
+                child: _buildActieveProjectenCard(
+                  height: tallHeight,
+                  onTap: () => _openDashboardPage(
+                    const ProjectOverviewScreen(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: spacing),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildDksCard(height: squareHeight),
+                    const SizedBox(height: spacing),
+                    _buildSquareKpiCard(
+                      title: 'Open Tickets',
+                      value: '$_openTickets',
+                      icon: Icons.warning_amber_rounded,
+                      color: _openTickets > 0
+                          ? Colors.redAccent
+                          : Colors.grey,
+                      subtitle: 'Klantmeldingen',
+                      warning: _openTickets > 0,
+                      height: squareHeight,
+                      onTap: () => _openDashboardPage(
+                        const TicketOverviewScreen(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWideKpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required String subtitle,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 32),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      style: GoogleFonts.lato(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade300),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double get _leadsOpenBarFactor {
+    if (_nieuweLeads <= 0) return 0.06;
+    return math.min(_nieuweLeads / 25.0, 1.0);
+  }
+
+  Widget _buildLeadsNeonProgressBar() {
+    final purple = Colors.purpleAccent;
+    final deep = Colors.deepPurple;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      height: 12,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: _leadsOpenBarFactor,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            gradient: LinearGradient(
+              colors: [purple, deep],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: purple.withValues(alpha: 0.85),
+                blurRadius: 14,
+                spreadRadius: 2,
+                offset: const Offset(0, 2),
+              ),
+              BoxShadow(
+                color: deep.withValues(alpha: 0.55),
+                blurRadius: 22,
+                spreadRadius: 1,
+                offset: Offset.zero,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSquareKpiCard({
     required String title,
     required String value,
     required IconData icon,
     required Color color,
     required String subtitle,
     bool warning = false,
+    required double height,
+    Widget? belowValue,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      height: 160,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(24),
-        border: warning
-            ? Border.all(
-                color: color.withValues(alpha: 0.5),
-                width: 2,
-              )
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+        child: Container(
+          width: double.infinity,
+          height: height,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: warning
+                ? Border.all(
+                    color: color.withValues(alpha: 0.5),
+                    width: 2,
+                  )
+                : Border.all(color: Colors.transparent, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(icon, color: color, size: 20),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               Text(
                 title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.lato(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
                   color: Colors.grey.shade700,
-                  height: 1.2,
                 ),
               ),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.lato(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.black87,
+              const Spacer(),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: GoogleFonts.lato(
+                    fontSize: belowValue != null ? 24 : 28,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.black87,
+                  ),
                 ),
               ),
+              ?belowValue,
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight:
                       warning ? FontWeight.bold : FontWeight.normal,
-                  color: warning ? color : Colors.grey.shade600,
+                  color: warning ? color : Colors.grey.shade500,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildDksCard() {
-    final dks = _gemiddeldeDks;
-    final double scoreNorm = dks != null
-        ? (dks / 100.0).clamp(0.0, 1.0)
-        : 0.0;
-    final Color scoreColor = dks == null
-        ? Colors.grey.shade400
-        : (scoreNorm >= 0.85
-            ? Colors.green
-            : (scoreNorm >= 0.65 ? Colors.orange : Colors.redAccent));
+  Widget _buildActieveProjectenCard({
+    required double height,
+    VoidCallback? onTap,
+  }) {
+    const colors = <Color>[
+      Colors.blueAccent,
+      Colors.greenAccent,
+      Colors.orangeAccent,
+      Colors.purpleAccent,
+    ];
 
-    return Container(
-      height: 160,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+        child: Container(
+          width: double.infinity,
+          height: height,
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            'DKS Score',
-            style: GoogleFonts.lato(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade700,
-            ),
-          ),
-          SizedBox(
-            height: 70,
-            width: 70,
-            child: dks == null
-                ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CircularProgressIndicator(
-                        value: 0,
-                        strokeWidth: 8,
-                        backgroundColor: Colors.grey.shade100,
-                        color: Colors.grey.shade300,
-                        strokeCap: StrokeCap.round,
-                      ),
-                      Center(
-                        child: Text(
-                          '—',
-                          style: GoogleFonts.lato(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.black87,
-                          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Actieve Projecten',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    PieChart(
+                      PieChartData(
+                        pieTouchData: PieTouchData(
+                          touchCallback:
+                              (FlTouchEvent event, pieTouchResponse) {
+                            setState(() {
+                              if (!event.isInterestedForInteractions ||
+                                  pieTouchResponse?.touchedSection == null) {
+                                _touchedProjectIndex = -1;
+                                return;
+                              }
+                              _touchedProjectIndex = pieTouchResponse!
+                                  .touchedSection!.touchedSectionIndex;
+                            });
+                          },
                         ),
+                        borderData: FlBorderData(show: false),
+                        sectionsSpace: 4,
+                        centerSpaceRadius: 40,
+                        sections: List.generate(4, (i) {
+                          final isTouched = i == _touchedProjectIndex;
+                          final radius = isTouched ? 58.0 : 48.0;
+                          final color = colors[i % colors.length];
+                          return PieChartSectionData(
+                            color: color,
+                            value: 25,
+                            title: isTouched ? 'Projecten' : '',
+                            radius: radius,
+                            titleStyle: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            borderSide: isTouched
+                                ? BorderSide(
+                                    color: color.withValues(alpha: 0.55),
+                                    width: 4,
+                                  )
+                                : BorderSide.none,
+                          );
+                        }),
                       ),
-                    ],
-                  )
-                : TweenAnimationBuilder<double>(
-                    key: ValueKey<double>(dks),
-                    tween: Tween<double>(
-                      begin: 0,
-                      end: scoreNorm,
                     ),
-                    duration: const Duration(milliseconds: 1500),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, value, child) {
-                      return Stack(
-                        fit: StackFit.expand,
+                    IgnorePointer(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircularProgressIndicator(
-                            value: value,
-                            strokeWidth: 8,
-                            backgroundColor: Colors.grey.shade100,
-                            color: scoreColor,
-                            strokeCap: StrokeCap.round,
+                          Text(
+                            '$_actieveProjecten',
+                            style: GoogleFonts.lato(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.black87,
+                              height: 1.05,
+                            ),
                           ),
-                          Center(
-                            child: Text(
-                              '${(value * 100).toInt()}%',
-                              style: GoogleFonts.lato(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.black87,
-                              ),
+                          Text(
+                            'projecten',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade600,
                             ),
                           ),
                         ],
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Lopende contracten',
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+            ],
           ),
-          Text(
-            'Laatste 30 dagen',
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDksCard({required double height}) {
+    final double? dks = _gemiddeldeDks;
+    final double scoreNorm = dks == null
+        ? 0.0
+        : (dks / 100.0).clamp(0.0, 1.0);
+    final Color scoreColor = dks == null
+        ? Colors.grey
+        : (scoreNorm >= 0.85
+            ? Colors.green
+            : (scoreNorm >= 0.65
+                ? Colors.orange
+                : Colors.redAccent));
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openDashboardPage(const DksDashboardScreen()),
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          width: double.infinity,
+          height: height,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
+            ],
           ),
-        ],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'DKS Score',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: dks == null
+                      ? SizedBox(
+                          height: 80,
+                          width: 80,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              CircularProgressIndicator(
+                                value: 0,
+                                strokeWidth: 12,
+                                backgroundColor: Colors.grey.shade100,
+                                color: Colors.grey.shade400,
+                                strokeCap: StrokeCap.round,
+                              ),
+                              Center(
+                                child: Text(
+                                  '—',
+                                  style: GoogleFonts.lato(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : TweenAnimationBuilder<double>(
+                          tween: Tween<double>(
+                            begin: 0.0,
+                            end: scoreNorm,
+                          ),
+                          duration: const Duration(milliseconds: 1500),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, value, child) {
+                            return SizedBox(
+                              height: 80,
+                              width: 80,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  CircularProgressIndicator(
+                                    value: value,
+                                    strokeWidth: 12,
+                                    backgroundColor: Colors.grey.shade100,
+                                    color: scoreColor,
+                                    strokeCap: StrokeCap.round,
+                                  ),
+                                  Center(
+                                    child: Text(
+                                      '${(value * 100).toInt()}%',
+                                      style: GoogleFonts.lato(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ),
+              Text(
+                'Laatste 30 dagen · $_geplandeDks gepland',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

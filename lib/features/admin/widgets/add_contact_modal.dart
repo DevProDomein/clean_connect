@@ -5,7 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AddContactModal extends StatefulWidget {
   final String bedrijfId;
-  const AddContactModal({super.key, required this.bedrijfId});
+  final Map<String, dynamic>? existingContact;
+
+  const AddContactModal({
+    super.key,
+    required this.bedrijfId,
+    this.existingContact,
+  });
 
   @override
   State<AddContactModal> createState() => _AddContactModalState();
@@ -19,6 +25,26 @@ class _AddContactModalState extends State<AddContactModal> {
   final _functionController = TextEditingController();
   bool _isBillingContact = false;
   bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existingContact;
+    if (existing != null) {
+      _firstNameController.text =
+          (existing['voornaam'] ?? '').toString();
+      _lastNameController.text =
+          (existing['achternaam'] ?? '').toString();
+      _emailController.text = (existing['email'] ?? '').toString();
+      _phoneController.text = (existing['telefoon'] ?? '').toString();
+      _functionController.text = (existing['functie'] ?? '').toString();
+      final fact = existing['is_facturatie_contact'];
+      _isBillingContact = fact is bool
+          ? fact
+          : (fact?.toString().toLowerCase() == 'true' ||
+              fact == 1);
+    }
+  }
 
   @override
   void dispose() {
@@ -36,7 +62,7 @@ class _AddContactModalState extends State<AddContactModal> {
 
     setState(() => _isSaving = true);
     try {
-      await Supabase.instance.client.from('contactpersonen').insert({
+      final payload = <String, dynamic>{
         'bedrijf_id': widget.bedrijfId,
         'voornaam': _firstNameController.text.trim(),
         'achternaam': _lastNameController.text.trim(),
@@ -44,10 +70,20 @@ class _AddContactModalState extends State<AddContactModal> {
         'telefoon': _phoneController.text.trim(),
         'functie': _functionController.text.trim(),
         'is_facturatie_contact': _isBillingContact,
-      });
+      };
+
+      if (widget.existingContact == null) {
+        await Supabase.instance.client
+            .from('contactpersonen')
+            .insert(payload);
+      } else {
+        await Supabase.instance.client
+            .from('contactpersonen')
+            .update(payload)
+            .eq('id', widget.existingContact!['id']);
+      }
 
       if (mounted) {
-        // Return 'true' to signal success to the parent screen safely
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -84,7 +120,9 @@ class _AddContactModalState extends State<AddContactModal> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Nieuw Contact',
+                    widget.existingContact == null
+                        ? 'Nieuw Contact'
+                        : 'Contact Bewerken',
                     style: GoogleFonts.lato(
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
@@ -145,9 +183,11 @@ class _AddContactModalState extends State<AddContactModal> {
                 ),
                 child: _isSaving
                     ? const CupertinoActivityIndicator(color: Colors.white)
-                    : const Text(
-                        'Contact Opslaan',
-                        style: TextStyle(
+                    : Text(
+                        widget.existingContact == null
+                            ? 'Contact Opslaan'
+                            : 'Wijzigingen Opslaan',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
