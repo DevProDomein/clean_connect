@@ -26,7 +26,6 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
     with SingleTickerProviderStateMixin {
   // Design tokens
   static const Color _deepNavy = Color(0xFF1A1A2E);
-  static const Color _heroPurple = Color(0xFF16213E);
   static const Color _coral = Color(0xFFFF6B35);
   static const Color _electricBlue = Color(0xFF0077FF);
   static const Color _pageBg = Color(0xFFF4F6FA);
@@ -40,6 +39,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
   Object? _loadError;
 
   Map<String, dynamic>? _statsRow;
+  String? _profielfotoUrl;
   List<Map<String, dynamic>> _recentVoltooid = [];
   Map<String, dynamic>? _latestDks;
   List<Map<String, dynamic>> _vandaagRows = [];
@@ -213,6 +213,21 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
         stats = null;
       }
 
+      try {
+        final userData = await _client
+            .from('gebruikers')
+            .select('profielfoto_url')
+            .eq('id', _client.auth.currentUser!.id)
+            .maybeSingle();
+        if (userData != null && mounted) {
+          setState(() {
+            _profielfotoUrl = userData['profielfoto_url'];
+          });
+        }
+      } catch (e) {
+        debugPrint('Fout bij ophalen profielfoto: $e');
+      }
+
       List<Map<String, dynamic>> recent = [];
       try {
         final r = await _client
@@ -295,16 +310,6 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
     }
   }
 
-  String _heroSubtitle() {
-    if (_vandaagRows.isEmpty) {
-      return 'Lekker bezig! Je bent klaar voor vandaag.';
-    }
-    final first = _vandaagRows.first;
-    final t = _safeTime(first['rooster_starttijd'] ?? first['geplande_starttijd']);
-    final naam = _bedrijfsnaamFromPlanning(first);
-    return 'Je eerste klus start om $t bij $naam.';
-  }
-
   Map<String, dynamic>? _resolvedVolgendeKlus() {
     final fromStats = _parseVolgendeKlus(_statsRow?['volgende_klus']);
     if (fromStats != null && fromStats.isNotEmpty) return fromStats;
@@ -378,50 +383,113 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
     );
   }
 
-  Widget _heroSliver(String voorNaam) {
-    return SliverToBoxAdapter(
-      child: Container(
-        width: double.infinity,
-        margin: const EdgeInsets.fromLTRB(0, 0, 0, 8),
-        decoration: const BoxDecoration(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_deepNavy, _heroPurple],
+  Widget _buildHeroBanner(String voornaam) {
+    final String dateString = "Klaar voor je shift?";
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      height: 160,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(32),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Hoi $voorNaam! 👋',
-                  style: GoogleFonts.lato(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.8,
-                    height: 1.15,
-                    color: Colors.white,
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Container(
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32),
+                  bottomLeft: Radius.circular(32),
+                ),
+                image: DecorationImage(
+                  image: NetworkImage(
+                    'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80',
+                  ),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(32),
+                    bottomLeft: Radius.circular(32),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF0F172A).withValues(alpha: 0.95),
+                      const Color(0xFF0052CC).withValues(alpha: 0.85),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  _heroSubtitle(),
-                  style: GoogleFonts.lato(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    height: 1.4,
-                    color: Colors.white.withValues(alpha: 0.82),
-                  ),
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      dateString,
+                      style: TextStyle(
+                        color: Colors.blue.shade100,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Hoi, $voornaam! 👋',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+          if (_profielfotoUrl != null && _profielfotoUrl!.isNotEmpty)
+            Container(
+              width: 110,
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(32),
+                  bottomRight: Radius.circular(32),
+                ),
+              ),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: CircleAvatar(
+                    radius: 32,
+                    backgroundImage: NetworkImage(_profielfotoUrl!),
+                    backgroundColor: Colors.transparent,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -986,7 +1054,9 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                       parent: BouncingScrollPhysics(),
                     ),
                     slivers: [
-                      _heroSliver(voorNaam),
+                      SliverToBoxAdapter(
+                        child: _buildHeroBanner(voorNaam),
+                      ),
                       SliverToBoxAdapter(child: _bentoBlock()),
                     ],
                   ),
