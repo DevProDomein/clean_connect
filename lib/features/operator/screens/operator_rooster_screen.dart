@@ -21,6 +21,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   bool _isLoading = true;
   String _errorMessage = '';
 
+  String _voornaam = 'Collega';
+  String? _profielfotoUrl;
+
   List<Map<String, dynamic>> _todaysTasks = [];
   List<Map<String, dynamic>> _upcomingTasks = [];
   int _kpiTakenVandaag = 0;
@@ -58,6 +61,20 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     try {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) throw 'Niet ingelogd.';
+
+      try {
+        final userData = await _supabase
+            .from('gebruikers')
+            .select('voornaam, profielfoto_url')
+            .eq('id', userId)
+            .maybeSingle();
+        if (userData != null) {
+          _voornaam = userData['voornaam'] ?? 'Collega';
+          _profielfotoUrl = userData['profielfoto_url'];
+        }
+      } catch (e) {
+        debugPrint('Fout bij ophalen profiel: $e');
+      }
 
       final response = await _supabase
           .from('app_operator_vandaag')
@@ -121,6 +138,117 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         });
       }
     }
+  }
+
+  Widget _buildHeroBanner() {
+    final String dateString = "Klaar voor je shift?";
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      height: 160,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(32),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Container(
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(32),
+                  bottomLeft: Radius.circular(32),
+                ),
+                image: DecorationImage(
+                  image: NetworkImage(
+                    'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80',
+                  ),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(32),
+                    bottomLeft: Radius.circular(32),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF0F172A).withValues(alpha: 0.95),
+                      const Color(0xFF0052CC).withValues(alpha: 0.85),
+                    ],
+                  ),
+                ),
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      dateString,
+                      style: TextStyle(
+                        color: Colors.blue.shade100,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Hoi, $_voornaam! 👋',
+                        style: GoogleFonts.lato(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_profielfotoUrl != null && _profielfotoUrl!.isNotEmpty)
+            Container(
+              width: 110,
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(32),
+                  bottomRight: Radius.circular(32),
+                ),
+              ),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: CircleAvatar(
+                    radius: 32,
+                    backgroundImage: NetworkImage(_profielfotoUrl!),
+                    backgroundColor: Colors.transparent,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   String _getLiveDuration(dynamic startTimeStr) {
@@ -242,10 +370,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        title: Text(
-          'Mijn Rooster',
-          style: GoogleFonts.lato(fontWeight: FontWeight.w900, color: Colors.black, fontSize: 24, letterSpacing: -0.5),
-        ),
+        title: const Text(''),
         actions: [
           IconButton(icon: const Icon(Icons.refresh, color: Colors.black), onPressed: _loadData),
         ],
@@ -265,6 +390,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          SliverToBoxAdapter(child: _buildHeroBanner()),
           SliverToBoxAdapter(child: _buildKpis()),
           SliverToBoxAdapter(
             child: Padding(
