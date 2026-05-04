@@ -24,23 +24,23 @@ import 'providers/theme_mode_provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load environment variables
-  // Load environment variables
-   await dotenv.load(fileName: ".env");
-   
-   // Read variables securely (LET OP: Gebruik exact deze namen, niet je echte URL's hier!)
-   final supabaseUrl = dotenv.env['SUPABASE_URL'];
-   final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
-   
-   if (supabaseUrl == null || supabaseAnonKey == null) {
-     throw Exception('Supabase configuratie ontbreekt in .env bestand');
-   }
-   
-   // Initialize Supabase
-   await Supabase.initialize(
-     url: supabaseUrl,
-     anonKey: supabaseAnonKey,
-   );
+  // Load environment variables.
+  // Note: If you renamed it for Netlify earlier, make sure this says "env.txt" instead of ".env".
+  await dotenv.load(fileName: "env.txt");
+
+  // Read variables securely - USE THE EXACT VARIABLE NAMES, NOT THE ACTUAL URL!
+  final supabaseUrl = dotenv.env['SUPABASE_URL'];
+  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
+
+  if (supabaseUrl == null || supabaseAnonKey == null) {
+    throw Exception('Supabase configuratie ontbreekt in env bestand');
+  }
+
+  // Initialize Supabase
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
+  );
 
   // Load theme first (await), then start realtime updates.
   final themeProvider = ThemeProvider();
