@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "build/web",
+    "public": "rm firebase.json .firebaserc && rm -rf .github/workflows/firebase*",
     "ignore": [
       "firebase.json",
       "**/.*",
