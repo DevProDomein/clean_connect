@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "public": "rm firebase.json .firebaserc && rm -rf .github/workflows/firebase*",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
