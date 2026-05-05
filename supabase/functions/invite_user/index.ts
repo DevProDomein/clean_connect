@@ -24,10 +24,12 @@ serve(async (req) => {
     )
 
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      // DIT IS CRUCIAAL: Deze data komt in NEW.raw_user_meta_data in de database terecht
       data: { 
         role: role, 
         full_name: fullName 
       },
+      // Gebruik de standaard confirmation URL, de redirect regelen we in het dashboard
       redirectTo: 'https://cleanconnect-erp.web.app/set-password', 
     });
 

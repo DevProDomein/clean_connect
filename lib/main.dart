@@ -371,6 +371,8 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     final path = uri.path.toLowerCase();
     final frag = uri.fragment.toLowerCase();
     final qpType = (uri.queryParameters['type'] ?? '').toLowerCase();
+    final hasAccessToken =
+        uri.queryParameters.containsKey('access_token') || frag.contains('access_token=');
 
     final fragQuery = Uri.tryParse('https://local/?$frag');
     final fragType = (fragQuery?.queryParameters['type'] ?? '').toLowerCase();
@@ -381,7 +383,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         path == '/set-password' || frag.startsWith('/set-password');
     final isRecoveryOrInvite = type == 'recovery' || type == 'invite';
 
-    return isSetPasswordPath || isRecoveryOrInvite;
+    return isSetPasswordPath || isRecoveryOrInvite || hasAccessToken;
   }
 
   @override
