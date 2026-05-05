@@ -12,10 +12,12 @@ class OpenItemsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Openstaande posten'),
       ),
-      body: const Center(
-        child: Text(
-          'Openstaande posten (placeholder)',
-          style: TextStyle(fontSize: 13),
+      body: const SelectionArea(
+        child: Center(
+          child: Text(
+            'Openstaande posten (placeholder)',
+            style: TextStyle(fontSize: 13),
+          ),
         ),
       ),
     );

@@ -50,7 +50,9 @@ class PackingListModal extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => PackingListModal(opdrachtId: opdrachtId),
+      builder: (_) => SelectionArea(
+        child: PackingListModal(opdrachtId: opdrachtId),
+      ),
     );
   }
 
@@ -358,167 +360,172 @@ class _PackingListModalState extends State<PackingListModal> {
         final g = (gebruiksdoel ?? '').trim();
         final iText = (instructie ?? '').trim();
 
-        return Padding(
-          padding: EdgeInsets.only(bottom: bottomInset),
-          child: Container(
-            constraints: BoxConstraints(maxHeight: mq.height * 0.78),
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            decoration: BoxDecoration(
-              color: _card,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  height: 5,
-                  width: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
+        return SelectionArea(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomInset),
+            child: Container(
+              constraints: BoxConstraints(maxHeight: mq.height * 0.78),
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              decoration: BoxDecoration(
+                color: _card,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 12, 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEEF2FF),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(icon, color: _accentIndigo, size: 26),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          materiaalNaam,
-                          style: GoogleFonts.lato(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: _navy,
-                            height: 1.2,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    height: 5,
+                    width: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                ),
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: mq.height * 0.52),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 12, 8),
+                    child: Row(
                       children: [
-                        Text(
-                          'Gebruiksdoel',
-                          style: GoogleFonts.lato(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.grey.shade600,
-                            letterSpacing: 0.6,
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF2FF),
+                            borderRadius: BorderRadius.circular(16),
                           ),
+                          child: Icon(icon, color: _accentIndigo, size: 26),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          g.isEmpty ? '—' : g,
-                          style: GoogleFonts.lato(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            height: 1.45,
-                            color: g.isEmpty
-                                ? Colors.grey.shade500
-                                : _navy.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        Text(
-                          'Omschrijving',
-                          style: GoogleFonts.lato(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.grey.shade600,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          iText.isEmpty ? '—' : iText,
-                          style: GoogleFonts.lato(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            height: 1.45,
-                            color: iText.isEmpty
-                                ? Colors.grey.shade500
-                                : _navy.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        Text(
-                          'Diensten / taken',
-                          style: GoogleFonts.lato(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.grey.shade600,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (taken.isEmpty)
-                          Text(
-                            'Geen taken gekoppeld in deze weergave.',
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            materiaalNaam,
                             style: GoogleFonts.lato(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
-                            ),
-                          )
-                        else
-                          ...taken.map(
-                            (t) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(Icons.check_circle_outline_rounded,
-                                      size: 18,
-                                      color: _accentIndigo
-                                          .withValues(alpha: 0.85)),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      t,
-                                      style: GoogleFonts.lato(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        height: 1.35,
-                                        color: _navy,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: _navy,
+                              height: 1.2,
                             ),
                           ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: mq.height * 0.52),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Gebruiksdoel',
+                            style: GoogleFonts.lato(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.grey.shade600,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            g.isEmpty ? '—' : g,
+                            style: GoogleFonts.lato(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              height: 1.45,
+                              color: g.isEmpty
+                                  ? Colors.grey.shade500
+                                  : _navy.withValues(alpha: 0.85),
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          Text(
+                            'Omschrijving',
+                            style: GoogleFonts.lato(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.grey.shade600,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            iText.isEmpty ? '—' : iText,
+                            style: GoogleFonts.lato(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              height: 1.45,
+                              color: iText.isEmpty
+                                  ? Colors.grey.shade500
+                                  : _navy.withValues(alpha: 0.85),
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          Text(
+                            'Diensten / taken',
+                            style: GoogleFonts.lato(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.grey.shade600,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          if (taken.isEmpty)
+                            Text(
+                              'Geen taken gekoppeld in deze weergave.',
+                              style: GoogleFonts.lato(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
+                              ),
+                            )
+                          else
+                            ...taken.map(
+                              (t) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_outline_rounded,
+                                      size: 18,
+                                      color: _accentIndigo.withValues(
+                                        alpha: 0.85,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        t,
+                                        style: GoogleFonts.lato(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.35,
+                                          color: _navy,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

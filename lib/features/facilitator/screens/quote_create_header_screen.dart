@@ -469,15 +469,16 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
           style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
         ),
       ),
-      body: Form(
-        key: _formKey,
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 800),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
-              children: [
+      body: SelectionArea(
+        child: Form(
+          key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+                children: [
                 Text(
                   'De Kaft',
                   style: GoogleFonts.inter(
@@ -972,11 +973,12 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                     ),
                   ),
                 ),
-              ],
-            ),
+                ],
+              ),
             ),
           ),
         ),
+      ),
     );
   }
 }

@@ -123,21 +123,26 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
 
     final bool? shouldLeave = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Niet opgeslagen wijzigingen', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('Alles gaat verloren. Doorgaan?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Blijven')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Verlaten', style: TextStyle(color: Colors.white)),
+      builder: (context) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            'Niet opgeslagen wijzigingen',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-        ],
+          content: const Text('Alles gaat verloren. Doorgaan?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Blijven')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Verlaten', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -282,14 +287,15 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
       builder: (context) {
         final search = TextEditingController();
         var filtered = List<Map<String, dynamic>>.from(list);
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 860, maxHeight: 640),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: StatefulBuilder(
-                builder: (context, setLocal) {
+        return SelectionArea(
+          child: Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 860, maxHeight: 640),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: StatefulBuilder(
+                  builder: (context, setLocal) {
                   void apply(String q) {
                     final needle = q.trim().toLowerCase();
                     setLocal(() {
@@ -334,7 +340,8 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
                       ),
                     ],
                   );
-                },
+                  },
+                ),
               ),
             ),
           ),
@@ -424,14 +431,15 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
       builder: (context) {
         final search = TextEditingController();
         var filtered = List<Map<String, dynamic>>.from(list);
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960, maxHeight: 680),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: StatefulBuilder(
-                builder: (context, setLocal) {
+        return SelectionArea(
+          child: Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960, maxHeight: 680),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: StatefulBuilder(
+                  builder: (context, setLocal) {
                   void apply(String q) {
                     final needle = q.trim().toLowerCase();
                     setLocal(() {
@@ -484,7 +492,8 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
                       ),
                     ],
                   );
-                },
+                  },
+                ),
               ),
             ),
           ),
@@ -1190,9 +1199,11 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
           leading: BackButton(onPressed: _handleBackButton),
           title: const Text('Factuur Editor'),
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: body,
+        body: SelectionArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: body,
+          ),
         ),
       ),
     );

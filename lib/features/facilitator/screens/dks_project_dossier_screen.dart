@@ -88,36 +88,37 @@ class _DksProjectDossierScreenState extends State<DksProjectDossierScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return Container(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 16,
-            bottom: 20 + MediaQuery.of(context).padding.bottom,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(999),
+        return SelectionArea(
+          child: Container(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 16,
+              bottom: 20 + MediaQuery.of(context).padding.bottom,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                bedrijfsnaam.isEmpty ? 'Projectinformatie' : bedrijfsnaam,
-                style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.w900),
-              ),
+                const SizedBox(height: 16),
+                Text(
+                  bedrijfsnaam.isEmpty ? 'Projectinformatie' : bedrijfsnaam,
+                  style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
               const SizedBox(height: 12),
               if (adres.isNotEmpty) ...[
                 Text('Adres', style: GoogleFonts.lato(fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
@@ -143,7 +144,8 @@ class _DksProjectDossierScreenState extends State<DksProjectDossierScreen> {
                   child: const Text('Sluiten'),
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -169,35 +171,55 @@ class _DksProjectDossierScreenState extends State<DksProjectDossierScreen> {
         foregroundColor: Colors.black,
         elevation: 0,
       ),
-      body: _isLoading
-          ? const Center(child: CupertinoActivityIndicator())
-          : RefreshIndicator(
-              onRefresh: _fetchData,
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  // --- SECTIE 1: AANSTAANDE INSPECTIE ---
-                  Text('Ingeplande Keuringen', style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
-                  const SizedBox(height: 12),
-                  
-                  if (geplandeRondes.isEmpty)
-                    _buildEmptyState('Geen geplande DKS inspecties. Inspecties worden automatisch ingepland.')
-                  else
-                    _buildAanstaandeInspectieKaart(geplandeRondes.first),
+      body: SelectionArea(
+        child: _isLoading
+            ? const Center(child: CupertinoActivityIndicator())
+            : RefreshIndicator(
+                onRefresh: _fetchData,
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    // --- SECTIE 1: AANSTAANDE INSPECTIE ---
+                    Text(
+                      'Ingeplande Keuringen',
+                      style: GoogleFonts.lato(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
 
-                  const SizedBox(height: 40),
+                    if (geplandeRondes.isEmpty)
+                      _buildEmptyState(
+                        'Geen geplande DKS inspecties. Inspecties worden automatisch ingepland.',
+                      )
+                    else
+                      _buildAanstaandeInspectieKaart(geplandeRondes.first),
 
-                  // --- SECTIE 2: HISTORIE ---
-                  Text('Historie', style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
-                  const SizedBox(height: 12),
-                  
-                  if (historieRondes.isEmpty)
-                    _buildEmptyState('Nog geen afgeronde inspecties.')
-                  else
-                    ...historieRondes.map((rapport) => _buildHistorieKaart(rapport)),
-                ],
+                    const SizedBox(height: 40),
+
+                    // --- SECTIE 2: HISTORIE ---
+                    Text(
+                      'Historie',
+                      style: GoogleFonts.lato(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (historieRondes.isEmpty)
+                      _buildEmptyState('Nog geen afgeronde inspecties.')
+                    else
+                      ...historieRondes.map(
+                        (rapport) => _buildHistorieKaart(rapport),
+                      ),
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 

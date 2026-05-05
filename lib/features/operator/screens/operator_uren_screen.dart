@@ -718,15 +718,17 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final height = MediaQuery.sizeOf(sheetContext).height * 0.8;
-        return ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          child: Container(
-            height: height,
-            color: _pageBg,
-            child: _MaandShiftsModal(
-              kalenderMaand: kalenderMaand,
-              headerTitle: _formatMaand(kalenderMaand),
-              shiftTile: _premiumShiftCard,
+        return SelectionArea(
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Container(
+              height: height,
+              color: _pageBg,
+              child: _MaandShiftsModal(
+                kalenderMaand: kalenderMaand,
+                headerTitle: _formatMaand(kalenderMaand),
+                shiftTile: _premiumShiftCard,
+              ),
             ),
           ),
         );

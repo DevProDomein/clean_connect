@@ -84,60 +84,62 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(AppTexts.get('login_title'))),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: AutofillGroup(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.email],
-                    decoration:
-                        InputDecoration(labelText: AppTexts.get('email_label')),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _passwordCtrl,
-                    obscureText: true,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const [AutofillHints.password],
-                    onSubmitted: (_) {
-                      if (_isLoading) return;
-                      TextInput.finishAutofillContext(shouldSave: true);
-                      _login();
-                    },
-                    decoration: InputDecoration(
-                      labelText: AppTexts.get('password_label'),
+      body: SelectionArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: AutofillGroup(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.email],
+                      decoration:
+                          InputDecoration(labelText: AppTexts.get('email_label')),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () {
-                              TextInput.finishAutofillContext(shouldSave: true);
-                              _login();
-                            },
-                      child: Text(
-                        _isLoading
-                            ? AppTexts.get('button_wait')
-                            : AppTexts.get('button_login'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _passwordCtrl,
+                      obscureText: true,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.password],
+                      onSubmitted: (_) {
+                        if (_isLoading) return;
+                        TextInput.finishAutofillContext(shouldSave: true);
+                        _login();
+                      },
+                      decoration: InputDecoration(
+                        labelText: AppTexts.get('password_label'),
                       ),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: _isLoading ? null : _forgotPassword,
-                    child: Text(AppTexts.get('button_forgot_password')),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _isLoading
+                            ? null
+                            : () {
+                                TextInput.finishAutofillContext(shouldSave: true);
+                                _login();
+                              },
+                        child: Text(
+                          _isLoading
+                              ? AppTexts.get('button_wait')
+                              : AppTexts.get('button_login'),
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _isLoading ? null : _forgotPassword,
+                      child: Text(AppTexts.get('button_forgot_password')),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

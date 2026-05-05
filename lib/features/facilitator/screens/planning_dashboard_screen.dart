@@ -249,73 +249,76 @@ class _PlanningDashboardScreenState extends State<PlanningDashboardScreen> {
             .where((item) => _sameDay(item.startTime, date))
             .toList(growable: false);
 
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Planning voor ${DateFormat('dd-MM-yyyy').format(date)}',
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
+        return SelectionArea(
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Planning voor ${DateFormat('dd-MM-yyyy').format(date)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      tooltip: 'Sluiten',
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (appointmentList.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Text(
-                      'Geen opdrachten gepland',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: appointmentList.length,
-                      separatorBuilder: (context, _) => const Divider(height: 1),
-                      itemBuilder: (_, index) {
-                        final appointment = appointmentList[index];
-                        final task = _taskFromAppointment(appointment);
-                        final opdrachtId = _text(task?['id']);
-                        final subtitle = DateFormat('HH:mm').format(appointment.startTime);
-
-                        return ListTile(
-                          title: Text(
-                            appointment.subject,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                          ),
-                          subtitle: Text(
-                            subtitle,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                          ),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: opdrachtId.isEmpty
-                              ? null
-                              : () async {
-                                  Navigator.of(sheetContext).pop();
-                                  await _openManualPlanModal(opdrachtId);
-                                },
-                        );
-                      },
-                    ),
+                      IconButton(
+                        tooltip: 'Sluiten',
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
                   ),
-              ],
+                  const SizedBox(height: 8),
+                  if (appointmentList.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        'Geen opdrachten gepland',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: appointmentList.length,
+                        separatorBuilder: (context, _) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final appointment = appointmentList[index];
+                          final task = _taskFromAppointment(appointment);
+                          final opdrachtId = _text(task?['id']);
+                          final subtitle =
+                              DateFormat('HH:mm').format(appointment.startTime);
+
+                          return ListTile(
+                            title: Text(
+                              appointment.subject,
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                            ),
+                            subtitle: Text(
+                              subtitle,
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: opdrachtId.isEmpty
+                                ? null
+                                : () async {
+                                    Navigator.of(sheetContext).pop();
+                                    await _openManualPlanModal(opdrachtId);
+                                  },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         );
@@ -328,7 +331,9 @@ class _PlanningDashboardScreenState extends State<PlanningDashboardScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => ManualPlanModal(opdrachtId: opdrachtId),
+      builder: (_) => SelectionArea(
+        child: ManualPlanModal(opdrachtId: opdrachtId),
+      ),
     );
     if (!mounted) return;
     await _loadOpdrachten();
@@ -867,36 +872,41 @@ class _PlanningDashboardScreenState extends State<PlanningDashboardScreen> {
     final shouldConfirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text(
-            'Definitief inplannen?',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-          ),
-          content: Text(
-            'Wilt u $name definitief inplannen op alle $available mogelijke opdrachten? '
-            'De starttijden worden volautomatisch door het systeem gevuld.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(
-                'Annuleren',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-              ),
+        return SelectionArea(
+          child: AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              'Definitief inplannen?',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              ),
-              child: Text(
-                'Bevestigen',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-              ),
+            content: Text(
+              'Wilt u $name definitief inplannen op alle $available mogelijke opdrachten? '
+              'De starttijden worden volautomatisch door het systeem gevuld.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(
+                  'Annuleren',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                ),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+                child: Text(
+                  'Bevestigen',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1538,11 +1548,13 @@ class _PlanningDashboardScreenState extends State<PlanningDashboardScreen> {
             ),
           ),
         ),
-        body: TabBarView(
-          children: [
-            _buildSmartPlannerTab(isDark),
-            _buildManualPlannerTab(isDark),
-          ],
+        body: SelectionArea(
+          child: TabBarView(
+            children: [
+              _buildSmartPlannerTab(isDark),
+              _buildManualPlannerTab(isDark),
+            ],
+          ),
         ),
       ),
     );

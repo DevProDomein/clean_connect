@@ -88,35 +88,37 @@ class _PeriodCloseScreenState extends State<PeriodCloseScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text(
-            'Maand Definitief Afsluiten?',
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.3,
-              color: Colors.redAccent,
-            ),
-          ),
-          content: Text(
-            'Weet u zeker dat u de maand $label wilt afsluiten? Zodra gesloten, beveiligt het systeem deze data voor de accountant. Facturen, inkoop en banktransacties in deze maand kunnen dan NOOIT meer worden gewijzigd.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annuleren'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        return SelectionArea(
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              'Maand Definitief Afsluiten?',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.3,
+                color: Colors.redAccent,
               ),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Bevestig & Vergrendel'),
             ),
-          ],
+            content: Text(
+              'Weet u zeker dat u de maand $label wilt afsluiten? Zodra gesloten, beveiligt het systeem deze data voor de accountant. Facturen, inkoop en banktransacties in deze maand kunnen dan NOOIT meer worden gewijzigd.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuleren'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Bevestig & Vergrendel'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -208,42 +210,44 @@ class _PeriodCloseScreenState extends State<PeriodCloseScreen> {
             ],
           ),
         ),
-        body: !canView
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: softBg,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                    ),
-                    child: Text(
-                      'U heeft geen rechten om financiële periodes te beheren.',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        body: SelectionArea(
+          child: !canView
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: softBg,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                      ),
+                      child: Text(
+                        'U heeft geen rechten om financiële periodes te beheren.',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
+                )
+              : TabBarView(
+                  children: [
+                    _PeriodsTab(
+                      future: _future,
+                      tileBg: tileBg,
+                      softBg: softBg,
+                      closingBusy: _closingBusy,
+                      closeMonth: _closeMonth,
+                      exportBusyIds: _exportBusy,
+                      downloadExport: _downloadExport,
+                      asInt: _asInt,
+                      asDate: _asDate,
+                      monthNameNl: _monthNameNl,
+                      text: _text,
+                    ),
+                    const _LedgerMappingTab(),
+                  ],
                 ),
-              )
-            : TabBarView(
-                children: [
-                  _PeriodsTab(
-                    future: _future,
-                    tileBg: tileBg,
-                    softBg: softBg,
-                    closingBusy: _closingBusy,
-                    closeMonth: _closeMonth,
-                    exportBusyIds: _exportBusy,
-                    downloadExport: _downloadExport,
-                    asInt: _asInt,
-                    asDate: _asDate,
-                    monthNameNl: _monthNameNl,
-                    text: _text,
-                  ),
-                  const _LedgerMappingTab(),
-                ],
-              ),
+        ),
       ),
     );
   }

@@ -96,8 +96,10 @@ class _BankDashboardScreenState extends State<BankDashboardScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
           ),
         ),
-        body: const _NoAccessEmptyState(
-          message: 'U heeft geen rechten om banktransacties te verwerken.',
+        body: const SelectionArea(
+          child: _NoAccessEmptyState(
+            message: 'U heeft geen rechten om banktransacties te verwerken.',
+          ),
         ),
       );
     }
@@ -117,233 +119,264 @@ class _BankDashboardScreenState extends State<BankDashboardScreen> {
           IconButton(tooltip: 'Vernieuwen', onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: FutureBuilder<_BankDashboardData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: _ErrorState(
-                title: 'Kan bankdashboard niet laden',
-                message: snapshot.error.toString(),
-                onRetry: _refresh,
-              ),
-            );
-          }
-
-          final data = snapshot.data!;
-          final rows = data.rows;
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _KpiCard(
-                      title: 'Te Verwerken Transacties',
-                      value: data.teVerwerkenCount.toString(),
-                      icon: Icons.playlist_add_check_rounded,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: SizedBox(
-                      height: 88,
-                      child: FilledButton.icon(
-                        onPressed: _autoBusy ? null : _runAutoMatch,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: cs.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                        ),
-                        icon: _autoBusy
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : const Icon(Icons.bolt_rounded),
-                        label: Text(
-                          'Auto-Match Algoritme Starten',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Transacties',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.4,
+      body: SelectionArea(
+        child: FutureBuilder<_BankDashboardData>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: _ErrorState(
+                  title: 'Kan bankdashboard niet laden',
+                  message: snapshot.error.toString(),
+                  onRetry: _refresh,
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (rows.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: isDark ? tileBg : const Color(0xFFF5F5F7),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.inbox_outlined, color: cs.onSurface.withValues(alpha: 0.65)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Geen transacties gevonden.',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w600,
-                            color: cs.onSurface.withValues(alpha: 0.80),
+              );
+            }
+
+            final data = snapshot.data!;
+            final rows = data.rows;
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _KpiCard(
+                        title: 'Te Verwerken Transacties',
+                        value: data.teVerwerkenCount.toString(),
+                        icon: Icons.playlist_add_check_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: SizedBox(
+                        height: 88,
+                        child: FilledButton.icon(
+                          onPressed: _autoBusy ? null : _runAutoMatch,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: cs.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 16,
+                            ),
+                          ),
+                          icon: _autoBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : const Icon(Icons.bolt_rounded),
+                          label: Text(
+                            'Auto-Match Algoritme Starten',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.2,
+                            ),
                           ),
                         ),
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Transacties',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
                   ),
-                )
-              else
-                ListView.separated(
-                  itemCount: rows.length,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  separatorBuilder: (_, i) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) {
-                    final r = rows[i];
-                    final id = _text(r['id'] ?? r['transactie_id']);
-                    final datum = _text(r['transactie_datum']);
-                    final tegen = _text(r['tegenrekening_naam']);
-                    final oms = _text(r['omschrijving']);
-                    final bedrag = _asDouble(r['bedrag']);
-                    final status = _text(r['matching_status']);
-
-                    final badge = _MatchTone.forStatus(status, isDark: isDark);
-                    final shortOms = oms.length > 50 ? '${oms.substring(0, 50)}…' : oms;
-
-                    return Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: id.isEmpty
-                            ? null
-                            : () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ReconciliationSplitScreen(transactionId: id),
-                                  ),
-                                );
-                              },
-                        child: Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            color: tileBg,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 20,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
+                ),
+                const SizedBox(height: 12),
+                if (rows.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: isDark ? tileBg : const Color(0xFFF5F5F7),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: cs.onSurface.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          color: cs.onSurface.withValues(alpha: 0.65),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Geen transacties gevonden.',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                              color: cs.onSurface.withValues(alpha: 0.80),
+                            ),
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  color: cs.onSurface.withValues(alpha: 0.06),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-                                ),
-                                child: Icon(badge.icon, color: badge.fg),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ListView.separated(
+                    itemCount: rows.length,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    separatorBuilder: (_, i) => const SizedBox(height: 12),
+                    itemBuilder: (context, i) {
+                      final r = rows[i];
+                      final id = _text(r['id'] ?? r['transactie_id']);
+                      final datum = _text(r['transactie_datum']);
+                      final tegen = _text(r['tegenrekening_naam']);
+                      final oms = _text(r['omschrijving']);
+                      final bedrag = _asDouble(r['bedrag']);
+                      final status = _text(r['matching_status']);
+
+                      final badge =
+                          _MatchTone.forStatus(status, isDark: isDark);
+                      final shortOms =
+                          oms.length > 50 ? '${oms.substring(0, 50)}…' : oms;
+
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(24),
+                          onTap: id.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => ReconciliationSplitScreen(
+                                        transactionId: id,
+                                      ),
+                                    ),
+                                  );
+                                },
+                          child: Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: tileBg,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: cs.onSurface.withValues(alpha: 0.06),
                               ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    color: cs.onSurface.withValues(alpha: 0.06),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: cs.onSurface.withValues(alpha: 0.08),
+                                    ),
+                                  ),
+                                  child: Icon(badge.icon, color: badge.fg),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        tegen.isEmpty
+                                            ? 'Onbekende tegenrekening'
+                                            : tegen,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        [
+                                          if (datum.isNotEmpty) datum,
+                                          if (shortOms.isNotEmpty) shortOms,
+                                        ].join(' • '),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w600,
+                                          color: cs.onSurface.withValues(
+                                            alpha: 0.65,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      tegen.isEmpty ? 'Onbekende tegenrekening' : tegen,
+                                      _eur().format(bedrag),
                                       style: GoogleFonts.inter(
-                                        fontSize: 16,
+                                        fontSize: 14,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: -0.2,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      [if (datum.isNotEmpty) datum, if (shortOms.isNotEmpty) shortOms]
-                                          .join(' • '),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.inter(
-                                        fontWeight: FontWeight.w600,
-                                        color: cs.onSurface.withValues(alpha: 0.65),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: badge.bg,
+                                        borderRadius: BorderRadius.circular(24),
+                                        border: Border.all(color: badge.border),
+                                      ),
+                                      child: Text(
+                                        badge.label,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -0.1,
+                                          color: badge.fg,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    _eur().format(bedrag),
-                                    style: GoogleFonts.inter(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -0.2,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding:
-                                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: badge.bg,
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: Border.all(color: badge.border),
-                                    ),
-                                    child: Text(
-                                      badge.label,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: -0.1,
-                                        color: badge.fg,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-            ],
-          );
-        },
+                      );
+                    },
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

@@ -144,7 +144,9 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => AgendaDetailModal(task: task),
+      builder: (_) => SelectionArea(
+        child: AgendaDetailModal(task: task),
+      ),
     );
   }
 
@@ -173,316 +175,376 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF131722) : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.10), width: 1.3),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1A2132) : const Color(0xFFEAF0FA),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: CupertinoSlidingSegmentedControl<CalendarFormat>(
-                          groupValue: _calendarFormat,
-                          thumbColor: cs.primary,
-                          backgroundColor: Colors.transparent,
-                          children: {
-                            CalendarFormat.month: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              child: Text(
-                                'Maand',
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w800,
-                                  color: _calendarFormat == CalendarFormat.month
-                                      ? Colors.white
-                                      : cs.onSurface.withValues(alpha: 0.82),
+      body: SelectionArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF131722) : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: cs.onSurface.withValues(alpha: 0.10),
+                    width: 1.3,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1A2132)
+                                : const Color(0xFFEAF0FA),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: CupertinoSlidingSegmentedControl<CalendarFormat>(
+                            groupValue: _calendarFormat,
+                            thumbColor: cs.primary,
+                            backgroundColor: Colors.transparent,
+                            children: {
+                              CalendarFormat.month: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: Text(
+                                  'Maand',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w800,
+                                    color: _calendarFormat == CalendarFormat.month
+                                        ? Colors.white
+                                        : cs.onSurface.withValues(alpha: 0.82),
+                                  ),
                                 ),
                               ),
-                            ),
-                            CalendarFormat.week: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              child: Text(
-                                'Week',
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w800,
-                                  color: _calendarFormat == CalendarFormat.week
-                                      ? Colors.white
-                                      : cs.onSurface.withValues(alpha: 0.82),
+                              CalendarFormat.week: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                child: Text(
+                                  'Week',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w800,
+                                    color: _calendarFormat == CalendarFormat.week
+                                        ? Colors.white
+                                        : cs.onSurface.withValues(alpha: 0.82),
+                                  ),
                                 ),
                               ),
-                            ),
-                          },
-                          onValueChanged: (format) {
-                            if (format == null) return;
-                            setState(() => _calendarFormat = format);
-                          },
+                            },
+                            onValueChanged: (format) {
+                              if (format == null) return;
+                              setState(() => _calendarFormat = format);
+                            },
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TableCalendar<dynamic>(
+                      locale: 'nl_NL',
+                      firstDay:
+                          DateTime.now().subtract(const Duration(days: 730)),
+                      lastDay: DateTime.now().add(const Duration(days: 730)),
+                      focusedDay: _focusedDay,
+                      calendarFormat: _calendarFormat,
+                      availableCalendarFormats: const {
+                        CalendarFormat.month: 'Maand',
+                        CalendarFormat.week: 'Week',
+                      },
+                      rowHeight: 90.0,
+                      daysOfWeekHeight: 40.0,
+                      selectedDayPredicate: (day) =>
+                          isSameDay(_selectedDay, day),
+                      startingDayOfWeek: StartingDayOfWeek.monday,
+                      eventLoader: (day) =>
+                          _groupedTasks[_normalizeDate(day)] ?? const <dynamic>[],
+                      onFormatChanged: (format) {
+                        setState(() => _calendarFormat = format);
+                      },
+                      onPageChanged: (focusedDay) {
+                        setState(() => _focusedDay = focusedDay);
+                      },
+                      onDaySelected: (selectedDay, focusedDay) {
+                        setState(() {
+                          _selectedDay = selectedDay;
+                          _focusedDay = focusedDay;
+                        });
+                      },
+                      headerStyle:
+                          const HeaderStyle(formatButtonVisible: false),
+                      calendarStyle: CalendarStyle(
+                        outsideTextStyle: TextStyle(
+                          color: cs.onSurface.withValues(alpha: 0.34),
+                        ),
+                        markerDecoration:
+                            const BoxDecoration(color: Colors.transparent),
+                        todayDecoration:
+                            const BoxDecoration(color: Colors.transparent),
+                        selectedDecoration:
+                            const BoxDecoration(color: Colors.transparent),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TableCalendar<dynamic>(
-                    locale: 'nl_NL',
-                    firstDay: DateTime.now().subtract(const Duration(days: 730)),
-                    lastDay: DateTime.now().add(const Duration(days: 730)),
-                    focusedDay: _focusedDay,
-                    calendarFormat: _calendarFormat,
-                    availableCalendarFormats: const {
-                      CalendarFormat.month: 'Maand',
-                      CalendarFormat.week: 'Week',
-                    },
-                    rowHeight: 90.0,
-                    daysOfWeekHeight: 40.0,
-                    selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-                    startingDayOfWeek: StartingDayOfWeek.monday,
-                    eventLoader: (day) => _groupedTasks[_normalizeDate(day)] ?? const <dynamic>[],
-                    onFormatChanged: (format) {
-                      setState(() => _calendarFormat = format);
-                    },
-                    onPageChanged: (focusedDay) {
-                      setState(() => _focusedDay = focusedDay);
-                    },
-                    onDaySelected: (selectedDay, focusedDay) {
-                      setState(() {
-                        _selectedDay = selectedDay;
-                        _focusedDay = focusedDay;
-                      });
-                    },
-                    headerStyle: const HeaderStyle(formatButtonVisible: false),
-                    calendarStyle: CalendarStyle(
-                      outsideTextStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.34)),
-                      markerDecoration: const BoxDecoration(color: Colors.transparent),
-                      todayDecoration: const BoxDecoration(color: Colors.transparent),
-                      selectedDecoration: const BoxDecoration(color: Colors.transparent),
-                    ),
-                    calendarBuilders: CalendarBuilders<dynamic>(
-                      defaultBuilder: (context, date, focusedDay) {
-                        return _buildCalendarDayCell(date: date, colorScheme: cs);
-                      },
-                      selectedBuilder: (context, date, focusedDay) {
-                        return _buildCalendarDayCell(
-                          date: date,
-                          colorScheme: cs,
-                          isSelected: true,
-                        );
-                      },
-                      todayBuilder: (context, date, focusedDay) {
-                        return _buildCalendarDayCell(
-                          date: date,
-                          colorScheme: cs,
-                          isToday: true,
-                        );
-                      },
-                      markerBuilder: (context, date, events) {
-                        if (events.isEmpty) return const SizedBox.shrink();
-                        return Align(
-                          alignment: Alignment.bottomCenter,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF101B35),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              '${events.length} taken',
-                              style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                height: 1.0,
+                      calendarBuilders: CalendarBuilders<dynamic>(
+                        defaultBuilder: (context, date, focusedDay) {
+                          return _buildCalendarDayCell(
+                            date: date,
+                            colorScheme: cs,
+                          );
+                        },
+                        selectedBuilder: (context, date, focusedDay) {
+                          return _buildCalendarDayCell(
+                            date: date,
+                            colorScheme: cs,
+                            isSelected: true,
+                          );
+                        },
+                        todayBuilder: (context, date, focusedDay) {
+                          return _buildCalendarDayCell(
+                            date: date,
+                            colorScheme: cs,
+                            isToday: true,
+                          );
+                        },
+                        markerBuilder: (context, date, events) {
+                          if (events.isEmpty) return const SizedBox.shrink();
+                          return Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
                               ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF131722) : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.10), width: 1.3),
-              ),
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _loadError != null
-                      ? Center(
-                          child: Text(
-                            'Agenda laden mislukt: $_loadError',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                          ),
-                        )
-                      : dayTasks.isEmpty
-                          ? Center(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF101B35),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
                               child: Text(
-                                'Geen definitieve planning op deze dag.',
+                                '${events.length} taken',
                                 style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                  color: cs.onSurface.withValues(alpha: 0.72),
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.0,
                                 ),
                               ),
-                            )
-                          : ListView.builder(
-                              itemCount: dayTasks.length,
-                              itemBuilder: (context, index) {
-                                final item = Map<String, dynamic>.from(dayTasks[index] as Map);
-                                final agendaKleur = _text(item['agenda_kleur']);
-                                final statusColor = _agendaColor(agendaKleur);
-                                final start = _formatTime(item['starttijd']);
-                                final end = _formatTime(item['eindtijd']);
-                                final project = _text(item['project_naam']).isEmpty
-                                    ? 'Onbekend'
-                                    : _text(item['project_naam']);
-                                final company = _text(item['bedrijfsnaam']).isEmpty
-                                    ? 'Onbekend'
-                                    : _text(item['bedrijfsnaam']);
-                                final operatorNames = _text(item['operator_namen']).isEmpty
-                                    ? 'Onbekend'
-                                    : _text(item['operator_namen']);
-                                final region = _text(item['werk_regio']).isEmpty
-                                    ? 'Onbekend'
-                                    : _text(item['werk_regio']);
-                                final plannedOperators = _text(item['geplande_operators_aantal']).isEmpty
-                                    ? '0'
-                                    : _text(item['geplande_operators_aantal']);
-                                final neededOperators = _text(item['benodigde_operators']).isEmpty
-                                    ? '1'
-                                    : _text(item['benodigde_operators']);
-                                final isRood = agendaKleur.toLowerCase() == 'rood';
-
-                                return InkWell(
-                                  borderRadius: const BorderRadius.only(
-                                    topRight: Radius.circular(12),
-                                    bottomRight: Radius.circular(12),
-                                  ),
-                                  onTap: () => _openAgendaDetailModal(item),
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: cs.surface,
-                                      borderRadius: const BorderRadius.only(
-                                        topRight: Radius.circular(12),
-                                        bottomRight: Radius.circular(12),
-                                      ),
-                                      border: Border(
-                                        left: BorderSide(width: 6, color: statusColor),
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(alpha: isDark ? 0.26 : 0.06),
-                                          blurRadius: 14,
-                                          spreadRadius: 0,
-                                          offset: const Offset(0, 5),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                '$start - $end',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w900,
-                                                  color: cs.primary,
-                                                ),
-                                              ),
-                                            ),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 10,
-                                                vertical: 4,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: cs.primary.withValues(alpha: 0.12),
-                                                borderRadius: BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                region,
-                                                style: GoogleFonts.inter(
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 11.5,
-                                                  color: cs.primary,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          project,
-                                          style: GoogleFonts.inter(
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 15,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          company,
-                                          style: GoogleFonts.inter(
-                                            fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.66),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.person,
-                                              size: 16,
-                                              color: cs.onSurface.withValues(alpha: 0.76),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Expanded(
-                                              child: Text(
-                                                operatorNames,
-                                                style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '$plannedOperators/$neededOperators Operators',
-                                              style: GoogleFonts.inter(
-                                                fontWeight: FontWeight.w900,
-                                                color: isRood ? Colors.redAccent : cs.onSurface,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
                             ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF131722) : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: cs.onSurface.withValues(alpha: 0.10),
+                    width: 1.3,
+                  ),
+                ),
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _loadError != null
+                        ? Center(
+                            child: Text(
+                              'Agenda laden mislukt: $_loadError',
+                              textAlign: TextAlign.center,
+                              style:
+                                  GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            ),
+                          )
+                        : dayTasks.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Geen definitieve planning op deze dag.',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface.withValues(alpha: 0.72),
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: dayTasks.length,
+                                itemBuilder: (context, index) {
+                                  final item = Map<String, dynamic>.from(
+                                    dayTasks[index] as Map,
+                                  );
+                                  final agendaKleur = _text(item['agenda_kleur']);
+                                  final statusColor = _agendaColor(agendaKleur);
+                                  final start = _formatTime(item['starttijd']);
+                                  final end = _formatTime(item['eindtijd']);
+                                  final project =
+                                      _text(item['project_naam']).isEmpty
+                                          ? 'Onbekend'
+                                          : _text(item['project_naam']);
+                                  final company = _text(item['bedrijfsnaam']).isEmpty
+                                      ? 'Onbekend'
+                                      : _text(item['bedrijfsnaam']);
+                                  final operatorNames =
+                                      _text(item['operator_namen']).isEmpty
+                                          ? 'Onbekend'
+                                          : _text(item['operator_namen']);
+                                  final region = _text(item['werk_regio']).isEmpty
+                                      ? 'Onbekend'
+                                      : _text(item['werk_regio']);
+                                  final plannedOperators =
+                                      _text(item['geplande_operators_aantal'])
+                                              .isEmpty
+                                          ? '0'
+                                          : _text(
+                                              item['geplande_operators_aantal'],
+                                            );
+                                  final neededOperators =
+                                      _text(item['benodigde_operators']).isEmpty
+                                          ? '1'
+                                          : _text(item['benodigde_operators']);
+                                  final isRood =
+                                      agendaKleur.toLowerCase() == 'rood';
+
+                                  return InkWell(
+                                    borderRadius: const BorderRadius.only(
+                                      topRight: Radius.circular(12),
+                                      bottomRight: Radius.circular(12),
+                                    ),
+                                    onTap: () => _openAgendaDetailModal(item),
+                                    child: Container(
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: cs.surface,
+                                        borderRadius: const BorderRadius.only(
+                                          topRight: Radius.circular(12),
+                                          bottomRight: Radius.circular(12),
+                                        ),
+                                        border: Border(
+                                          left: BorderSide(
+                                            width: 6,
+                                            color: statusColor,
+                                          ),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: isDark ? 0.26 : 0.06,
+                                            ),
+                                            blurRadius: 14,
+                                            spreadRadius: 0,
+                                            offset: const Offset(0, 5),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  '$start - $end',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w900,
+                                                    color: cs.primary,
+                                                  ),
+                                                ),
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 10,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: cs.primary.withValues(
+                                                    alpha: 0.12,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(999),
+                                                ),
+                                                child: Text(
+                                                  region,
+                                                  style: GoogleFonts.inter(
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 11.5,
+                                                    color: cs.primary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            project,
+                                            style: GoogleFonts.inter(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            company,
+                                            style: GoogleFonts.inter(
+                                              fontWeight: FontWeight.w700,
+                                              color: cs.onSurface.withValues(
+                                                alpha: 0.66,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.person,
+                                                size: 16,
+                                                color: cs.onSurface.withValues(
+                                                  alpha: 0.76,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  operatorNames,
+                                                  style: GoogleFonts.inter(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '$plannedOperators/$neededOperators Operators',
+                                                style: GoogleFonts.inter(
+                                                  fontWeight: FontWeight.w900,
+                                                  color: isRood
+                                                      ? Colors.redAccent
+                                                      : cs.onSurface,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

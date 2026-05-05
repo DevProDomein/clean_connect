@@ -39,46 +39,48 @@ class NoPortalsAssignedScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Uw account is geactiveerd, maar er zijn nog geen portalen aan u toegewezen. '
-              'Neem contact op met uw beheerder.',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            if (email.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text('Ingelogd als: $email', style: Theme.of(context).textTheme.bodyMedium),
-            ],
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () async {
-                onRetry();
-                final userProvider = context.read<UserProvider>();
-                await AppSupabase.client.auth.refreshSession();
-                await userProvider.loadForCurrentUser();
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Opnieuw laden'),
-            ),
-            if (up.hasPermission('security_center')) ...[
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SecurityCenterScreen(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.security),
-                label: const Text('Beveiliging'),
+      body: SelectionArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Uw account is geactiveerd, maar er zijn nog geen portalen aan u toegewezen. '
+                'Neem contact op met uw beheerder.',
+                style: Theme.of(context).textTheme.bodyLarge,
               ),
+              if (email.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('Ingelogd als: $email', style: Theme.of(context).textTheme.bodyMedium),
+              ],
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () async {
+                  onRetry();
+                  final userProvider = context.read<UserProvider>();
+                  await AppSupabase.client.auth.refreshSession();
+                  await userProvider.loadForCurrentUser();
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Opnieuw laden'),
+              ),
+              if (up.hasPermission('security_center')) ...[
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SecurityCenterScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.security),
+                  label: const Text('Beveiliging'),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

@@ -68,66 +68,87 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
       appBar: AppBar(
         title: const Text('Bulk Facturatie Run'),
       ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 920),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300, width: 1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Maandelijkse facturatie-run',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Genereert conceptfacturen voor actieve contracten in de geselecteerde maand.',
-                      style: TextStyle(fontSize: 13),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _running ? null : _pickMonth,
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            side: BorderSide(color: Colors.grey.shade300),
+      body: SelectionArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 920),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300, width: 1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Maandelijkse facturatie-run',
+                        style:
+                            TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Genereert conceptfacturen voor actieve contracten in de geselecteerde maand.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _running ? null : _pickMonth,
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              side: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            icon: const Icon(Icons.calendar_today, size: 18),
+                            label: Text(
+                              monthLabel,
+                              style: const TextStyle(fontSize: 13),
+                            ),
                           ),
-                          icon: const Icon(Icons.calendar_today, size: 18),
-                          label: Text(monthLabel, style: const TextStyle(fontSize: 13)),
-                        ),
-                        FilledButton.icon(
-                          onPressed: _running ? null : _run,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          FilledButton.icon(
+                            onPressed: _running ? null : _run,
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            icon: _running
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.play_arrow, size: 18),
+                            label: Text(
+                              _running ? 'Bezig…' : 'Run uitvoeren',
+                              style: const TextStyle(fontSize: 13),
+                            ),
                           ),
-                          icon: _running
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.play_arrow, size: 18),
-                          label: Text(_running ? 'Bezig…' : 'Run uitvoeren', style: const TextStyle(fontSize: 13)),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -66,60 +66,62 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     final picked = await showDialog<String>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Rol wijzigen'),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(user.email.isEmpty ? user.id : user.email),
-                const SizedBox(height: 12),
-                InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Nieuwe rol'),
-                  child: DropdownButtonHideUnderline(
-                    child: StatefulBuilder(
-                      builder: (context, setLocal) {
-                        return DropdownButton<String>(
-                          isExpanded: true,
-                          value: selected,
-                          items: options
-                              .map(
-                                (r) => DropdownMenuItem(
-                                  value: r,
-                                  child: Text(r),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) {
-                            if (v == null) return;
-                            setLocal(() => selected = v);
-                          },
-                        );
-                      },
+        return SelectionArea(
+          child: AlertDialog(
+            title: const Text('Rol wijzigen'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(user.email.isEmpty ? user.id : user.email),
+                  const SizedBox(height: 12),
+                  InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Nieuwe rol'),
+                    child: DropdownButtonHideUnderline(
+                      child: StatefulBuilder(
+                        builder: (context, setLocal) {
+                          return DropdownButton<String>(
+                            isExpanded: true,
+                            value: selected,
+                            items: options
+                                .map(
+                                  (r) => DropdownMenuItem(
+                                    value: r,
+                                    child: Text(r),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) {
+                              if (v == null) return;
+                              setLocal(() => selected = v);
+                            },
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Wijzigingen worden opgeslagen in `gebruikers` en '
-                  'automatisch gesynchroniseerd naar `gebruikers_metadata`.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(
+                    'Wijzigingen worden opgeslagen in `gebruikers` en '
+                    'automatisch gesynchroniseerd naar `gebruikers_metadata`.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(null),
+                child: const Text('Annuleren'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(selected),
+                child: const Text('Opslaan'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Annuleren'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(selected),
-              child: const Text('Opslaan'),
-            ),
-          ],
         );
       },
     );
@@ -134,7 +136,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _UserDeepDiveSheet(user: u),
+      builder: (context) => SelectionArea(
+        child: _UserDeepDiveSheet(user: u),
+      ),
     ).then((_) => _reload());
   }
 
@@ -148,9 +152,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     if (!canOpen) {
       return Scaffold(
         appBar: AppBar(title: const Text('Gebruikersbeheer')),
-        body: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('Geen toegang.'),
+        body: const SelectionArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Geen toegang.'),
+          ),
         ),
       );
     }
@@ -181,7 +187,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           onPressed: () async {
             final did = await showDialog<bool>(
               context: context,
-              builder: (_) => const _InviteUserDialog(),
+              builder: (_) => const SelectionArea(
+                child: _InviteUserDialog(),
+              ),
             );
             if (did == true) {
               await up.loadForCurrentUser();
@@ -190,115 +198,117 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           },
           child: const Icon(Icons.add),
         ),
-        body: FutureBuilder<List<UserSummary>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: _ErrorCard(
-                    title: 'Kan gebruikers niet laden',
-                    message: snapshot.error.toString(),
-                    onRetry: _reload,
+        body: SelectionArea(
+          child: FutureBuilder<List<UserSummary>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: _ErrorCard(
+                      title: 'Kan gebruikers niet laden',
+                      message: snapshot.error.toString(),
+                      onRetry: _reload,
+                    ),
                   ),
-                ),
-              );
-            }
+                );
+              }
 
-            final users = snapshot.data ?? const <UserSummary>[];
+              final users = snapshot.data ?? const <UserSummary>[];
 
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 6),
-                  child: _KpiRow(users: users),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
-                  child: _TopTabs(),
-                ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      // Tab 1: Medewerkers (existing list + modal)
-                      DefaultTabController(
-                        length: 5,
-                        child: Column(
-                          children: [
-                            Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(24, 10, 24, 10),
-                              child: _FilterTabs(),
-                            ),
-                            Expanded(
-                              child: TabBarView(
-                                children: [
-                                  _UserList(
-                                    users: users,
-                                    filter: (u) => true,
-                                    isGenerator: up.isGenerator,
-                                    onTap: _openDeepDive,
-                                    onShowRoleDialog: _showChangeRoleDialog,
-                                  ),
-                                  _UserList(
-                                    users: users,
-                                    filter: (u) =>
-                                        u.roleString.trim().toLowerCase() ==
-                                        'klant',
-                                    isGenerator: up.isGenerator,
-                                    onTap: _openDeepDive,
-                                    onShowRoleDialog: _showChangeRoleDialog,
-                                  ),
-                                  _UserList(
-                                    users: users,
-                                    filter: (u) =>
-                                        u.roleString.trim().toLowerCase() ==
-                                        'operator',
-                                    isGenerator: up.isGenerator,
-                                    onTap: _openDeepDive,
-                                    onShowRoleDialog: _showChangeRoleDialog,
-                                  ),
-                                  _UserList(
-                                    users: users,
-                                    filter: (u) =>
-                                        u.roleString.trim().toLowerCase() ==
-                                        'facilitator',
-                                    isGenerator: up.isGenerator,
-                                    onTap: _openDeepDive,
-                                    onShowRoleDialog: _showChangeRoleDialog,
-                                  ),
-                                  _UserList(
-                                    users: users,
-                                    filter: (u) {
-                                      final r =
-                                          u.roleString.trim().toLowerCase();
-                                      return r == 'administrator' ||
-                                          r == 'beheerder' ||
-                                          r == 'generator';
-                                    },
-                                    isGenerator: up.isGenerator,
-                                    onTap: _openDeepDive,
-                                    onShowRoleDialog: _showChangeRoleDialog,
-                                  ),
-                                ],
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 6),
+                    child: _KpiRow(users: users),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
+                    child: _TopTabs(),
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        // Tab 1: Medewerkers (existing list + modal)
+                        DefaultTabController(
+                          length: 5,
+                          child: Column(
+                            children: [
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(24, 10, 24, 10),
+                                child: _FilterTabs(),
                               ),
-                            ),
-                          ],
+                              Expanded(
+                                child: TabBarView(
+                                  children: [
+                                    _UserList(
+                                      users: users,
+                                      filter: (u) => true,
+                                      isGenerator: up.isGenerator,
+                                      onTap: _openDeepDive,
+                                      onShowRoleDialog: _showChangeRoleDialog,
+                                    ),
+                                    _UserList(
+                                      users: users,
+                                      filter: (u) =>
+                                          u.roleString.trim().toLowerCase() ==
+                                          'klant',
+                                      isGenerator: up.isGenerator,
+                                      onTap: _openDeepDive,
+                                      onShowRoleDialog: _showChangeRoleDialog,
+                                    ),
+                                    _UserList(
+                                      users: users,
+                                      filter: (u) =>
+                                          u.roleString.trim().toLowerCase() ==
+                                          'operator',
+                                      isGenerator: up.isGenerator,
+                                      onTap: _openDeepDive,
+                                      onShowRoleDialog: _showChangeRoleDialog,
+                                    ),
+                                    _UserList(
+                                      users: users,
+                                      filter: (u) =>
+                                          u.roleString.trim().toLowerCase() ==
+                                          'facilitator',
+                                      isGenerator: up.isGenerator,
+                                      onTap: _openDeepDive,
+                                      onShowRoleDialog: _showChangeRoleDialog,
+                                    ),
+                                    _UserList(
+                                      users: users,
+                                      filter: (u) {
+                                        final r =
+                                            u.roleString.trim().toLowerCase();
+                                        return r == 'administrator' ||
+                                            r == 'beheerder' ||
+                                            r == 'generator';
+                                      },
+                                      isGenerator: up.isGenerator,
+                                      onTap: _openDeepDive,
+                                      onShowRoleDialog: _showChangeRoleDialog,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
 
-                      // Tab 2: Systeemrechten Overzicht (read-only dictionary)
-                      const _SystemRightsOverviewTab(),
-                    ],
+                        // Tab 2: Systeemrechten Overzicht (read-only dictionary)
+                        const _SystemRightsOverviewTab(),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -719,15 +729,17 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
                     if (!context.mounted) return;
                     await showDialog<void>(
                       context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Instelling vereist'),
-                        content: Text(e.message),
-                        actions: [
-                          FilledButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Sluiten'),
-                          ),
-                        ],
+                      builder: (context) => SelectionArea(
+                        child: AlertDialog(
+                          title: const Text('Instelling vereist'),
+                          content: Text(e.message),
+                          actions: [
+                            FilledButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('Sluiten'),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   } catch (e) {

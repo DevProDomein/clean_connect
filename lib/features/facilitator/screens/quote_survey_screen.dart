@@ -173,9 +173,11 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => QuoteSummaryModal(
-        offerte: offerte,
-        ruimtes: ruimtes,
+      builder: (_) => SelectionArea(
+        child: QuoteSummaryModal(
+          offerte: offerte,
+          ruimtes: ruimtes,
+        ),
       ),
     );
 
@@ -408,39 +410,41 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
           },
         ),
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: ruimtesStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Kon ruimtes niet laden:\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+      body: SelectionArea(
+        child: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: ruimtesStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Kon ruimtes niet laden:\n${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                  ),
                 ),
+              );
+            }
+
+            final ruimtes = snapshot.data ?? const <Map<String, dynamic>>[];
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: ruimtes.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 320),
+                        itemCount: ruimtes.length,
+                        itemBuilder: (context, i) => _buildExpandableRoomTile(ruimtes[i]),
+                      ),
               ),
             );
-          }
-
-          final ruimtes = snapshot.data ?? const <Map<String, dynamic>>[];
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: ruimtes.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 320),
-                      itemCount: ruimtes.length,
-                      itemBuilder: (context, i) => _buildExpandableRoomTile(ruimtes[i]),
-                    ),
-            ),
-          );
-        },
+          },
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
@@ -451,20 +455,22 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
               context: context,
               isScrollControlled: true,
               backgroundColor: Colors.transparent,
-              builder: (_) => RoomAddModal(
-                offerteId: widget.offerteId,
-                onSaved: () {
-                  setState(() {});
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      behavior: SnackBarBehavior.floating,
-                      content: Text(
-                        'Ruimte toegevoegd.',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+              builder: (_) => SelectionArea(
+                child: RoomAddModal(
+                  offerteId: widget.offerteId,
+                  onSaved: () {
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        content: Text(
+                          'Ruimte toegevoegd.',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             );
           },

@@ -294,88 +294,98 @@ class _CrmOverviewScreenState extends State<CrmOverviewScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Mijn Relaties',
-              style: GoogleFonts.lato(
-                fontWeight: FontWeight.w900,
-                fontSize: 28,
-                color: isDark ? Colors.white : _navy,
+      body: SelectionArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Mijn Relaties',
+                style: GoogleFonts.lato(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 28,
+                  color: isDark ? Colors.white : _navy,
+                ),
               ),
-            ),
-            _buildSearchField(isDark),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _loadError != null
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Fout bij laden: $_loadError',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.lato(
-                                  fontWeight: FontWeight.w700,
-                                  color: isDark ? Colors.white : _navy,
+              _buildSearchField(isDark),
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _loadError != null
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Fout bij laden: $_loadError',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.lato(
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? Colors.white : _navy,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              FilledButton.icon(
-                                onPressed: _loadClients,
-                                icon: const Icon(Icons.refresh_rounded),
-                                label: Text('Opnieuw proberen', style: GoogleFonts.lato()),
-                              ),
-                            ],
-                          ),
-                        )
-                      : filtered.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.supervised_user_circle_outlined,
-                                      size: 84,
-                                      color: (isDark ? Colors.white : _navy).withValues(alpha: 0.32),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      'Geen gekoppelde klanten gevonden.',
-                                      style: GoogleFonts.lato(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 17,
-                                        color: isDark ? Colors.white : _navy,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Neem contact op met de beheerder om u toe te wijzen aan een relatie.',
-                                      style: GoogleFonts.lato(
-                                        fontWeight: FontWeight.w600,
-                                        color: (isDark ? Colors.white : _navy).withValues(alpha: 0.62),
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
+                                const SizedBox(height: 10),
+                                FilledButton.icon(
+                                  onPressed: _loadClients,
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  label:
+                                      Text('Opnieuw proberen', style: GoogleFonts.lato()),
                                 ),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: filtered.length,
-                              itemBuilder: (context, index) {
-                                return _buildClientCard(filtered[index], isDark);
-                              },
+                              ],
                             ),
-            ),
-          ],
+                          )
+                        : filtered.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 14),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.supervised_user_circle_outlined,
+                                        size: 84,
+                                        color: (isDark ? Colors.white : _navy)
+                                            .withValues(alpha: 0.32),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'Geen gekoppelde klanten gevonden.',
+                                        style: GoogleFonts.lato(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 17,
+                                          color: isDark ? Colors.white : _navy,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Neem contact op met de beheerder om u toe te wijzen aan een relatie.',
+                                        style: GoogleFonts.lato(
+                                          fontWeight: FontWeight.w600,
+                                          color:
+                                              (isDark ? Colors.white : _navy)
+                                                  .withValues(alpha: 0.62),
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: filtered.length,
+                                itemBuilder: (context, index) {
+                                  return _buildClientCard(
+                                    filtered[index],
+                                    isDark,
+                                  );
+                                },
+                              ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -24,12 +24,14 @@ class DksOverviewScreen extends StatelessWidget {
           style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
         ),
       ),
-      body: const Center(
-        child: PlaceholderPanel(
-          icon: Icons.verified_outlined,
-          title: 'Kwaliteitscontroles (DKS)',
-          subtitle: 'Kwaliteit en inspectie',
-          description: 'Deze module wordt binnenkort beschikbaar.',
+      body: const SelectionArea(
+        child: Center(
+          child: PlaceholderPanel(
+            icon: Icons.verified_outlined,
+            title: 'Kwaliteitscontroles (DKS)',
+            subtitle: 'Kwaliteit en inspectie',
+            description: 'Deze module wordt binnenkort beschikbaar.',
+          ),
         ),
       ),
     );

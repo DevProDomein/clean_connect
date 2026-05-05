@@ -52,177 +52,187 @@ class _FinanceDashboardState extends State<FinanceDashboard> {
         ],
       ),
       drawer: const AppDrawer(),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _Section(
-            title: AppTexts.get('finance_bank_matcher_title'),
-            child: FutureBuilder(
-              future: _fetchBankTransacties(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const _LoadingBox();
-                }
-                if (snapshot.hasError) {
-                  return _ErrorBox(error: snapshot.error);
-                }
-                final rows = snapshot.data ?? const [];
-                if (rows.isEmpty) {
-                  return _EmptyBox(text: AppTexts.get('finance_no_transactions'));
-                }
-                return Column(
-                  children: [
-                    ...rows.take(10).map((t) {
-                      final oms = (t['omschrijving'] ?? t['description'] ?? '')
-                          .toString();
-                      final bedrag = (t['bedrag'] ?? t['amount'] ?? '')
-                          .toString();
-                      final datum =
-                          (t['datum'] ?? t['date'] ?? '').toString();
-                      return ListTile(
-                        dense: true,
-                        title: Text(oms.isEmpty ? '(geen omschrijving)' : oms),
-                        subtitle: Text(datum),
-                        trailing: Text(bedrag),
-                      );
-                    }),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: ElevatedButton.icon(
+      body: SelectionArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _Section(
+              title: AppTexts.get('finance_bank_matcher_title'),
+              child: FutureBuilder(
+                future: _fetchBankTransacties(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const _LoadingBox();
+                  }
+                  if (snapshot.hasError) {
+                    return _ErrorBox(error: snapshot.error);
+                  }
+                  final rows = snapshot.data ?? const [];
+                  if (rows.isEmpty) {
+                    return _EmptyBox(
+                      text: AppTexts.get('finance_no_transactions'),
+                    );
+                  }
+                  return Column(
+                    children: [
+                      ...rows.take(10).map((t) {
+                        final oms =
+                            (t['omschrijving'] ?? t['description'] ?? '')
+                                .toString();
+                        final bedrag =
+                            (t['bedrag'] ?? t['amount'] ?? '').toString();
+                        final datum =
+                            (t['datum'] ?? t['date'] ?? '').toString();
+                        return ListTile(
+                          dense: true,
+                          title:
+                              Text(oms.isEmpty ? '(geen omschrijving)' : oms),
+                          subtitle: Text(datum),
+                          trailing: Text(bedrag),
+                        );
+                      }),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  AppTexts.get('finance_auto_match_todo'),
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.auto_fix_high),
+                          label: Text(AppTexts.get('finance_auto_match')),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            _Section(
+              title: AppTexts.get('finance_scan_recognize_title'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      OutlinedButton.icon(
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(AppTexts.get('finance_auto_match_todo')),
+                              content: Text(
+                                AppTexts.get('finance_take_upload_hint'),
+                              ),
                             ),
                           );
                         },
-                        icon: const Icon(Icons.auto_fix_high),
-                        label: Text(AppTexts.get('finance_auto_match')),
+                        icon: const Icon(Icons.photo_camera),
+                        label: Text(AppTexts.get('finance_take_photo')),
                       ),
-                    ),
-                  ],
-                );
-              },
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                AppTexts.get('finance_take_upload_hint'),
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.upload_file),
+                        label: Text(AppTexts.get('finance_upload_photo')),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  FutureBuilder(
+                    future: _fetchOcrScans(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const _LoadingBox();
+                      }
+                      if (snapshot.hasError) {
+                        return _ErrorBox(error: snapshot.error);
+                      }
+                      final rows = snapshot.data ?? const [];
+                      if (rows.isEmpty) {
+                        return _EmptyBox(
+                          text: AppTexts.get('finance_no_ocr_scans'),
+                        );
+                      }
+                      return Column(
+                        children: rows.take(5).map((s) {
+                          final status =
+                              (s['status'] ?? s['state'] ?? '').toString();
+                          final createdAt = (s['created_at'] ?? '').toString();
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.document_scanner),
+                            title: Text(
+                              status.isEmpty ? '(onbekende status)' : status,
+                            ),
+                            subtitle: Text(createdAt),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          _Section(
-            title: AppTexts.get('finance_scan_recognize_title'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              AppTexts.get('finance_take_upload_hint'),
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.photo_camera),
-                      label: Text(AppTexts.get('finance_take_photo')),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              AppTexts.get('finance_take_upload_hint'),
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.upload_file),
-                      label: Text(AppTexts.get('finance_upload_photo')),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                FutureBuilder(
-                  future: _fetchOcrScans(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const _LoadingBox();
-                    }
-                    if (snapshot.hasError) {
-                      return _ErrorBox(error: snapshot.error);
-                    }
-                    final rows = snapshot.data ?? const [];
-                    if (rows.isEmpty) {
-                      return _EmptyBox(text: AppTexts.get('finance_no_ocr_scans'));
-                    }
-                    return Column(
-                      children: rows.take(5).map((s) {
-                        final status =
-                            (s['status'] ?? s['state'] ?? '').toString();
-                        final createdAt =
-                            (s['created_at'] ?? '').toString();
-                        return ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.document_scanner),
+            const SizedBox(height: 16),
+            _Section(
+              title: AppTexts.get('finance_quarterly_reports_title'),
+              child: FutureBuilder(
+                future: _fetchKwartaalCijfers(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const _LoadingBox();
+                  }
+                  if (snapshot.hasError) {
+                    return _ErrorBox(error: snapshot.error);
+                  }
+                  final rows = snapshot.data ?? const [];
+                  if (rows.isEmpty) {
+                    return _EmptyBox(text: AppTexts.get('finance_no_quarterly'));
+                  }
+
+                  return Column(
+                    children: rows.map((r) {
+                      final kwartaal =
+                          (r['kwartaal'] ?? r['quarter'] ?? '').toString();
+                      final revenueNum = _toNum(r['revenue'] ?? r['omzet']);
+                      final costsNum = _toNum(r['costs'] ?? r['kosten']);
+                      final net = (revenueNum ?? 0) - (costsNum ?? 0);
+
+                      return Card(
+                        child: ListTile(
                           title: Text(
-                            status.isEmpty ? '(onbekende status)' : status,
+                            kwartaal.isEmpty
+                                ? AppTexts.get('finance_quarter_fallback')
+                                : kwartaal,
                           ),
-                          subtitle: Text(createdAt),
-                        );
-                      }).toList(),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _Section(
-            title: AppTexts.get('finance_quarterly_reports_title'),
-            child: FutureBuilder(
-              future: _fetchKwartaalCijfers(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const _LoadingBox();
-                }
-                if (snapshot.hasError) {
-                  return _ErrorBox(error: snapshot.error);
-                }
-                final rows = snapshot.data ?? const [];
-                if (rows.isEmpty) {
-                  return _EmptyBox(text: AppTexts.get('finance_no_quarterly'));
-                }
-
-                return Column(
-                  children: rows.map((r) {
-                    final kwartaal = (r['kwartaal'] ?? r['quarter'] ?? '').toString();
-                    final revenueNum = _toNum(r['revenue'] ?? r['omzet']);
-                    final costsNum = _toNum(r['costs'] ?? r['kosten']);
-                    final net = (revenueNum ?? 0) - (costsNum ?? 0);
-
-                    return Card(
-                      child: ListTile(
-                        title: Text(
-                          kwartaal.isEmpty
-                              ? AppTexts.get('finance_quarter_fallback')
-                              : kwartaal,
+                          subtitle: Text(
+                            '${AppTexts.get('finance_revenue')}: ${revenueNum ?? '-'} • '
+                            '${AppTexts.get('finance_costs')}: ${costsNum ?? '-'}',
+                          ),
+                          trailing: Text('${AppTexts.get('finance_net')}: $net'),
                         ),
-                        subtitle: Text(
-                          '${AppTexts.get('finance_revenue')}: ${revenueNum ?? '-'} • '
-                          '${AppTexts.get('finance_costs')}: ${costsNum ?? '-'}',
-                        ),
-                        trailing: Text('${AppTexts.get('finance_net')}: $net'),
-                      ),
-                    );
-                  }).toList(),
-                );
-              },
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

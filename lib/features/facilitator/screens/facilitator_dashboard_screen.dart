@@ -30,8 +30,6 @@ class FacilitatorDashboard extends StatefulWidget {
 }
 
 class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
-  static const Color _pageBg = Color(0xFFF7F8FB);
-
   final _scr = ScrollController();
 
   bool _loading = true;
@@ -550,9 +548,9 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     return f.format(v);
   }
 
-  BoxDecoration _softCard({Color? color}) {
+  BoxDecoration _softCard(BuildContext context, {Color? color}) {
     return BoxDecoration(
-      color: color ?? Colors.white,
+      color: color ?? Theme.of(context).cardColor,
       borderRadius: BorderRadius.circular(24),
       boxShadow: [
         BoxShadow(
@@ -612,13 +610,15 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => OpnameEditModal(
-          afspraakId: _trim(aid),
-          onSaved: () {
-            if (mounted) {
-              _loadDashboardData();
-            }
-          },
+        builder: (_) => SelectionArea(
+          child: OpnameEditModal(
+            afspraakId: _trim(aid),
+            onSaved: () {
+              if (mounted) {
+                _loadDashboardData();
+              }
+            },
+          ),
         ),
       );
       return;
@@ -671,6 +671,9 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final onBody = textTheme.bodyLarge?.color;
     final displayName = _userName.isNotEmpty
         ? _userName
         : 'Facilitator';
@@ -678,10 +681,10 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     final showBlockingLoader = _loading && !_hasEverLoaded;
 
     return Scaffold(
-      backgroundColor: _pageBg,
+      backgroundColor: theme.scaffoldBackgroundColor,
       drawer: const AppDrawer(),
       appBar: AppBar(
-        backgroundColor: _pageBg,
+        backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         title: Text(
@@ -689,95 +692,95 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           style: GoogleFonts.lato(
             fontWeight: FontWeight.w900,
             letterSpacing: -0.3,
-            color: const Color(0xFF0F172A),
+            color: onBody,
           ),
         ),
       ),
-      body: showBlockingLoader
-          ? const Center(
-              child: CupertinoActivityIndicator(radius: 18),
-            )
-          : RefreshIndicator(
-                  onRefresh: _loadDashboardData,
-                  child: CustomScrollView(
-                    controller: _scr,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: _buildHeroBanner(context, displayName),
+      body: SelectionArea(
+        child: showBlockingLoader
+            ? const Center(
+                child: CupertinoActivityIndicator(radius: 18),
+              )
+            : RefreshIndicator(
+                onRefresh: _loadDashboardData,
+                child: CustomScrollView(
+                  controller: _scr,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _buildHeroBanner(context, displayName),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(
+                        16,
+                        16,
+                        16,
+                        8,
                       ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(
-                          16,
-                          16,
-                          16,
-                          8,
-                        ),
-                        sliver: SliverToBoxAdapter(
-                          child: _loadError != null
-                              ? Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: Text(
-                                    'Waarschuwing bij laden: $_loadError',
-                                    style: GoogleFonts.lato(
-                                      color: cs.error,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                      sliver: SliverToBoxAdapter(
+                        child: _loadError != null
+                            ? Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Waarschuwing bij laden: $_loadError',
+                                  style: GoogleFonts.lato(
+                                    color: cs.error,
+                                    fontWeight: FontWeight.w600,
                                   ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
                       ),
-                      SliverPadding(
-                        padding: const EdgeInsets.only(top: 0),
-                        sliver: SliverToBoxAdapter(
-                          child: _buildAnalyticsGrid(context),
-                        ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.only(top: 0),
+                      sliver: SliverToBoxAdapter(
+                        child: _buildAnalyticsGrid(context),
                       ),
-                      SliverPadding(
-                        padding:
-                            const EdgeInsets.fromLTRB(16, 28, 16, 8),
-                        sliver: SliverToBoxAdapter(
-                          child: Text(
-                            'Snel Acties',
-                            style: GoogleFonts.lato(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 18,
-                              color: const Color(0xFF0F172A),
-                            ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 28, 16, 8),
+                      sliver: SliverToBoxAdapter(
+                        child: Text(
+                          'Snel Acties',
+                          style: GoogleFonts.lato(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            color: onBody,
                           ),
                         ),
                       ),
-                      SliverToBoxAdapter(
-                        child: _quickActions(),
-                      ),
-                      SliverPadding(
-                        padding:
-                            const EdgeInsets.fromLTRB(16, 28, 16, 12),
-                        sliver: SliverToBoxAdapter(
-                          child: Text(
-                            'Agenda voor Vandaag',
-                            style: GoogleFonts.lato(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 18,
-                              color: const Color(0xFF0F172A),
-                            ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _quickActions(),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 28, 16, 12),
+                      sliver: SliverToBoxAdapter(
+                        child: Text(
+                          'Agenda voor Vandaag',
+                          style: GoogleFonts.lato(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            color: onBody,
                           ),
                         ),
                       ),
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 0,
-                        ),
-                        sliver: SliverToBoxAdapter(
-                          child: _buildAgendaSection(cs),
-                        ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 0,
                       ),
-                      const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                    ],
-                  ),
+                      sliver: SliverToBoxAdapter(
+                        child: _buildAgendaSection(cs),
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                  ],
                 ),
+              ),
+      ),
     );
   }
 
@@ -788,6 +791,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     final String dateString = 'Welkom terug op kantoor';
     final bool showAvatar =
         _profielfotoUrl != null && _profielfotoUrl!.isNotEmpty;
+    final theme = Theme.of(context);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -873,8 +877,10 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           if (showAvatar)
             Container(
               width: 120,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F172A),
+              decoration: BoxDecoration(
+                color: theme.brightness == Brightness.dark
+                    ? const Color(0xFF1E1F22)
+                    : const Color(0xFF0F172A),
                 borderRadius: BorderRadius.only(
                   topRight: Radius.circular(32),
                   bottomRight: Radius.circular(32),
@@ -1012,6 +1018,11 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     required String subtitle,
     VoidCallback? onTap,
   }) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final subtitleColor = textTheme.bodyMedium?.color ??
+        textTheme.bodyLarge?.color?.withValues(alpha: 0.6);
+    final titleColor = textTheme.bodyLarge?.color?.withValues(alpha: 0.7);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(24),
@@ -1019,7 +1030,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
         width: double.infinity,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
@@ -1049,7 +1060,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade600,
+                      color: titleColor,
                     ),
                   ),
                   FittedBox(
@@ -1060,7 +1071,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                       style: GoogleFonts.lato(
                         fontSize: 32,
                         fontWeight: FontWeight.w900,
-                        color: Colors.black87,
+                        color: textTheme.bodyLarge?.color,
                       ),
                     ),
                   ),
@@ -1068,7 +1079,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                     subtitle,
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.grey.shade500,
+                      color: subtitleColor,
                     ),
                   ),
                 ],
@@ -1137,6 +1148,11 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     Widget? belowValue,
     VoidCallback? onTap,
   }) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final titleColor = textTheme.bodyLarge?.color?.withValues(alpha: 0.75);
+    final subtitleColor = textTheme.bodyMedium?.color ??
+        textTheme.bodyLarge?.color?.withValues(alpha: 0.6);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1147,7 +1163,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           height: height,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: theme.cardColor,
             borderRadius: BorderRadius.circular(24),
             border: warning
                 ? Border.all(
@@ -1183,7 +1199,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade700,
+                  color: titleColor,
                 ),
               ),
               Expanded(
@@ -1200,7 +1216,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                         style: GoogleFonts.lato(
                           fontSize: belowValue != null ? 24 : 28,
                           fontWeight: FontWeight.w900,
-                          color: Colors.black87,
+                          color: textTheme.bodyLarge?.color,
                         ),
                       ),
                     ),
@@ -1213,8 +1229,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                         fontWeight: warning
                             ? FontWeight.bold
                             : FontWeight.normal,
-                        color:
-                            warning ? color : Colors.grey.shade500,
+                        color: warning ? color : subtitleColor,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1233,6 +1248,11 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     required double height,
     VoidCallback? onTap,
   }) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final titleColor = textTheme.bodyLarge?.color?.withValues(alpha: 0.75);
+    final subtitleColor = textTheme.bodyMedium?.color ??
+        textTheme.bodyLarge?.color?.withValues(alpha: 0.6);
     const colors = <Color>[
       Colors.blueAccent,
       Colors.greenAccent,
@@ -1250,7 +1270,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           height: height,
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: theme.cardColor,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -1273,7 +1293,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700,
+                        color: titleColor,
                       ),
                     ),
                   ),
@@ -1282,7 +1302,6 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                     child: IconButton(
                       icon: const Icon(
                         Icons.arrow_forward_ios,
-                        color: Colors.black54,
                         size: 18,
                       ),
                       onPressed: onTap,
@@ -1367,7 +1386,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                             style: GoogleFonts.lato(
                               fontSize: 28,
                               fontWeight: FontWeight.w900,
-                              color: Colors.black87,
+                              color: textTheme.bodyLarge?.color,
                               height: 1.05,
                             ),
                           ),
@@ -1376,7 +1395,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
+                              color: subtitleColor,
                             ),
                           ),
                         ],
@@ -1394,7 +1413,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade500,
+                  color: subtitleColor,
                 ),
               ),
             ],
@@ -1405,6 +1424,11 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   }
 
   Widget _buildDksCard({required double height}) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final titleColor = textTheme.bodyLarge?.color?.withValues(alpha: 0.75);
+    final subtitleColor = textTheme.bodyMedium?.color ??
+        textTheme.bodyLarge?.color?.withValues(alpha: 0.6);
     final double? dks = _gemiddeldeDks;
     final double scoreNorm = dks == null
         ? 0.0
@@ -1427,7 +1451,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
           height: height,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: theme.cardColor,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -1445,7 +1469,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade700,
+                  color: titleColor,
                 ),
               ),
               Expanded(
@@ -1460,8 +1484,10 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                               CircularProgressIndicator(
                                 value: 0,
                                 strokeWidth: 12,
-                                backgroundColor: Colors.grey.shade100,
-                                color: Colors.grey.shade400,
+                                backgroundColor: theme.dividerColor
+                                    .withValues(alpha: 0.25),
+                                color: theme.dividerColor
+                                    .withValues(alpha: 0.7),
                                 strokeCap: StrokeCap.round,
                               ),
                               Center(
@@ -1470,7 +1496,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                                   style: GoogleFonts.lato(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w900,
-                                    color: Colors.black87,
+                                    color: textTheme.bodyLarge?.color,
                                   ),
                                 ),
                               ),
@@ -1494,7 +1520,8 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                                   CircularProgressIndicator(
                                     value: value,
                                     strokeWidth: 12,
-                                    backgroundColor: Colors.grey.shade100,
+                                    backgroundColor: theme.dividerColor
+                                        .withValues(alpha: 0.25),
                                     color: scoreColor,
                                     strokeCap: StrokeCap.round,
                                   ),
@@ -1504,7 +1531,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                                       style: GoogleFonts.lato(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w900,
-                                        color: Colors.black87,
+                                        color: textTheme.bodyLarge?.color,
                                       ),
                                     ),
                                   ),
@@ -1522,7 +1549,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 10,
-                  color: Colors.grey.shade500,
+                  color: subtitleColor,
                 ),
               ),
             ],
@@ -1570,6 +1597,8 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
         itemBuilder: (context, i) {
           final it = items[i];
           final accent = it.accent;
+          final theme = Theme.of(context);
+          final onBody = theme.textTheme.bodyLarge?.color;
           return Material(
             color: Colors.transparent,
             child: InkWell(
@@ -1578,7 +1607,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
               child: Container(
                 width: 154,
                 padding: const EdgeInsets.all(14),
-                decoration: _softCard(),
+                decoration: _softCard(context),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1603,7 +1632,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                       style: GoogleFonts.lato(
                         fontWeight: FontWeight.w800,
                         fontSize: 13,
-                        color: const Color(0xFF0F172A),
+                        color: onBody,
                         height: 1.2,
                       ),
                     ),
@@ -1618,11 +1647,16 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
   }
 
   Widget _buildAgendaSection(ColorScheme cs) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final onBody = textTheme.bodyLarge?.color;
+    final onMuted = textTheme.bodyMedium?.color ??
+        textTheme.bodyLarge?.color?.withValues(alpha: 0.6);
     if (_agendaVandaag.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-        decoration: _softCard(),
+        decoration: _softCard(context),
         child: Column(
           children: [
             Icon(
@@ -1637,7 +1671,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
               style: GoogleFonts.lato(
                 fontWeight: FontWeight.w900,
                 fontSize: 16,
-                color: const Color(0xFF0F172A),
+                color: onBody,
               ),
             ),
             const SizedBox(height: 8),
@@ -1647,7 +1681,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
               style: GoogleFonts.lato(
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
-                color: const Color(0xFF64748B),
+                color: onMuted,
               ),
             ),
           ],
@@ -1672,7 +1706,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
               borderRadius: BorderRadius.circular(24),
               onTap: () => _onAgendaTap(e),
               child: Container(
-                decoration: _softCard(),
+                decoration: _softCard(context),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1704,7 +1738,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                                     style: GoogleFonts.lato(
                                       fontWeight: FontWeight.w800,
                                       fontSize: 12,
-                                      color: const Color(0xFF64748B),
+                                      color: onMuted,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -1713,7 +1747,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                                     style: GoogleFonts.lato(
                                       fontWeight: FontWeight.w900,
                                       fontSize: 16,
-                                      color: const Color(0xFF0F172A),
+                                      color: onBody,
                                     ),
                                   ),
                                   if (loc.isNotEmpty) ...[
@@ -1725,7 +1759,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                                       style: GoogleFonts.lato(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13,
-                                        color: const Color(0xFF64748B),
+                                        color: onMuted,
                                       ),
                                     ),
                                   ],

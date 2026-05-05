@@ -246,52 +246,54 @@ class _OperatorVoorraadScreenState extends State<OperatorVoorraadScreen> {
           ),
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(child: _body()),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, 12 + bottomInset),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: FilledButton(
-                  onPressed: (_saving ||
-                          _items.isEmpty ||
-                          _validLocationValue() == null)
-                      ? null
-                      : _saveAll,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _accent,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey.shade300,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
+      body: SelectionArea(
+        child: Column(
+          children: [
+            Expanded(child: _body()),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 8, 20, 12 + bottomInset),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: FilledButton(
+                    onPressed: (_saving ||
+                            _items.isEmpty ||
+                            _validLocationValue() == null)
+                        ? null
+                        : _saveAll,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _accent,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.grey.shade300,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      elevation: 0,
                     ),
-                    elevation: 0,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            'Voorraadtelling Opslaan',
+                            style: GoogleFonts.lato(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                   ),
-                  child: _saving
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          'Voorraadtelling Opslaan',
-                          style: GoogleFonts.lato(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

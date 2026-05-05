@@ -224,7 +224,9 @@ class _SepaBatchScreenState extends State<SepaBatchScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
           ),
         ),
-        body: const Center(child: Text('Geen toegang.')),
+        body: const SelectionArea(
+          child: Center(child: Text('Geen toegang.')),
+        ),
       );
     }
 
@@ -239,200 +241,252 @@ class _SepaBatchScreenState extends State<SepaBatchScreen> {
           IconButton(tooltip: 'Vernieuwen', onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: FutureBuilder<_SepaData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: softBg,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                ),
-                child: Text('Kan SEPA data niet laden: ${snapshot.error}'),
-              ),
-            );
-          }
-
-          final data = snapshot.data!;
-          final total = _totalSelected(data.exportRows);
-
-          return Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 120),
-                  children: [
-                    Text(
-                      'Incasso Batch',
-                      style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (data.exportRows.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: softBg,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                        ),
-                        child: Text(
-                          'Geen facturen beschikbaar voor SEPA export.',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                        ),
-                      )
-                    else
-                      ...data.exportRows.map((r) {
-                        final id = _text(r['id'] ?? r['factuur_id']);
-                        final bedrijfsnaam = _text(r['bedrijfsnaam'] ?? r['debiteur_naam'] ?? r['klant_naam']);
-                        final nr = _text(r['factuur_nummer']);
-                        final iban = _text(r['iban'] ?? r['debiteur_iban'] ?? r['rekening_iban']);
-                        final amt = _asDouble(r['incasso_bedrag'] ?? r['totaal_inc_btw'] ?? r['openstaand_saldo']);
-                        final checked = _selectedIds.contains(id);
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: tileBg,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 20,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: CheckboxListTile(
-                            value: checked,
-                            onChanged: (v) {
-                              setState(() {
-                                if (v == true) {
-                                  _selectedIds.add(id);
-                                } else {
-                                  _selectedIds.remove(id);
-                                }
-                              });
-                            },
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            title: Text(
-                              bedrijfsnaam.isEmpty ? 'Onbekend bedrijf' : bedrijfsnaam,
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
-                            ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Factuur: ${nr.isEmpty ? '—' : nr}',
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w600,
-                                      color: cs.onSurface.withValues(alpha: 0.70),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'IBAN: ${iban.isEmpty ? '—' : iban}',
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w600,
-                                      color: cs.onSurface.withValues(alpha: 0.65),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            secondary: Text(
-                              _eur().format(amt),
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
-                            ),
-                          ),
-                        );
-                      }),
-                  ],
-                ),
-              ),
-              SafeArea(
+      body: SelectionArea(
+        child: FutureBuilder<_SepaData>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
                 child: Container(
-                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0A0912),
+                    color: softBg,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.20),
-                        blurRadius: 22,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
+                    border: Border.all(
+                      color: cs.onSurface.withValues(alpha: 0.06),
+                    ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Text('Kan SEPA data niet laden: ${snapshot.error}'),
+                ),
+              );
+            }
+
+            final data = snapshot.data!;
+            final total = _totalSelected(data.exportRows);
+
+            return Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 120),
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Totaal geselecteerd bedrag',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white.withValues(alpha: 0.72),
-                              ),
-                            ),
-                          ),
-                          Text(
-                            _eur().format(total),
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.2,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Incasso Batch',
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.4,
+                        ),
                       ),
                       const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: _busy ? null : () => _generateBatch(data.exportRows),
-                          style: FilledButton.styleFrom(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                      if (data.exportRows.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: softBg,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                            ),
                           ),
-                          icon: _busy
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.download_rounded),
-                          label: Text(
-                            'Genereer SEPA XML Batch',
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
+                          child: Text(
+                            'Geen facturen beschikbaar voor SEPA export.',
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                           ),
-                        ),
-                      ),
+                        )
+                      else
+                        ...data.exportRows.map((r) {
+                          final id = _text(r['id'] ?? r['factuur_id']);
+                          final bedrijfsnaam = _text(
+                            r['bedrijfsnaam'] ??
+                                r['debiteur_naam'] ??
+                                r['klant_naam'],
+                          );
+                          final nr = _text(r['factuur_nummer']);
+                          final iban = _text(
+                            r['iban'] ??
+                                r['debiteur_iban'] ??
+                                r['rekening_iban'],
+                          );
+                          final amt = _asDouble(
+                            r['incasso_bedrag'] ??
+                                r['totaal_inc_btw'] ??
+                                r['openstaand_saldo'],
+                          );
+                          final checked = _selectedIds.contains(id);
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: tileBg,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: cs.onSurface.withValues(alpha: 0.06),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: CheckboxListTile(
+                              value: checked,
+                              onChanged: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selectedIds.add(id);
+                                  } else {
+                                    _selectedIds.remove(id);
+                                  }
+                                });
+                              },
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              title: Text(
+                                bedrijfsnaam.isEmpty
+                                    ? 'Onbekend bedrijf'
+                                    : bedrijfsnaam,
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Factuur: ${nr.isEmpty ? '—' : nr}',
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w600,
+                                        color: cs.onSurface.withValues(
+                                          alpha: 0.70,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'IBAN: ${iban.isEmpty ? '—' : iban}',
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w600,
+                                        color: cs.onSurface.withValues(
+                                          alpha: 0.65,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              secondary: Text(
+                                _eur().format(amt),
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                     ],
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+                SafeArea(
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A0912),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.06),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.20),
+                          blurRadius: 22,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Totaal geselecteerd bedrag',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white.withValues(alpha: 0.72),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _eur().format(total),
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _busy
+                                ? null
+                                : () => _generateBatch(data.exportRows),
+                            style: FilledButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 16,
+                              ),
+                            ),
+                            icon: _busy
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.download_rounded),
+                            label: Text(
+                              'Genereer SEPA XML Batch',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

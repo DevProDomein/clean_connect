@@ -209,28 +209,30 @@ class _ExpenseValidationScreenState extends State<ExpenseValidationScreen> {
       await showDialog<void>(
         context: context,
         builder: (context) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            backgroundColor: const Color(0xFFFFE9E9),
-            title: Text(
-              'Fraude/Duplicaat Preventie',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
-            ),
-            content: Text(
-              'Deze factuur van deze leverancier is al ingeboekt in het systeem.',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-            ),
-            actions: [
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                ),
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Begrepen'),
+          return SelectionArea(
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              backgroundColor: const Color(0xFFFFE9E9),
+              title: Text(
+                'Fraude/Duplicaat Preventie',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
               ),
-            ],
+              content: Text(
+                'Deze factuur van deze leverancier is al ingeboekt in het systeem.',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+              ),
+              actions: [
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Begrepen'),
+                ),
+              ],
+            ),
           );
         },
       );
@@ -257,149 +259,154 @@ class _ExpenseValidationScreenState extends State<ExpenseValidationScreen> {
       context: context,
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              title: Text(
-                'Kostenregel toevoegen',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
-              ),
-              content: SizedBox(
-                width: 520,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InputDecorator(
-                        decoration: const InputDecoration(labelText: 'Project (cruciaal)'),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: (projectId?.isNotEmpty == true) ? projectId : null,
-                            hint: const Text('Selecteer project'),
-                            items: data.projects.map((p) {
-                              final id = _text(p['project_id'] ?? p['id']);
-                              final name = _text(p['project_naam'] ?? p['naam']);
-                              return DropdownMenuItem(value: id, child: Text(name));
-                            }).toList(),
-                            onChanged: busy ? null : (v) => setState(() => projectId = v),
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                title: Text(
+                  'Kostenregel toevoegen',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
+                ),
+                content: SizedBox(
+                  width: 520,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Project (cruciaal)'),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: (projectId?.isNotEmpty == true) ? projectId : null,
+                              hint: const Text('Selecteer project'),
+                              items: data.projects.map((p) {
+                                final id = _text(p['project_id'] ?? p['id']);
+                                final name = _text(p['project_naam'] ?? p['naam']);
+                                return DropdownMenuItem(value: id, child: Text(name));
+                              }).toList(),
+                              onChanged: busy ? null : (v) => setState(() => projectId = v),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      InputDecorator(
-                        decoration: const InputDecoration(labelText: 'Grootboekrekening'),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: (grootboekId?.isNotEmpty == true) ? grootboekId : null,
-                            hint: const Text('Selecteer grootboekrekening'),
-                            items: data.grootboek.map((g) {
-                              final id = _text(g['id']);
-                              final nr = _text(g['rekening_nummer']);
-                              final name = _text(g['naam']);
-                              return DropdownMenuItem(value: id, child: Text('$nr • $name'));
-                            }).toList(),
-                            onChanged: busy ? null : (v) => setState(() => grootboekId = v),
+                        const SizedBox(height: 12),
+                        InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Grootboekrekening'),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: (grootboekId?.isNotEmpty == true) ? grootboekId : null,
+                              hint: const Text('Selecteer grootboekrekening'),
+                              items: data.grootboek.map((g) {
+                                final id = _text(g['id']);
+                                final nr = _text(g['rekening_nummer']);
+                                final name = _text(g['naam']);
+                                return DropdownMenuItem(value: id, child: Text('$nr • $name'));
+                              }).toList(),
+                              onChanged: busy ? null : (v) => setState(() => grootboekId = v),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: omsCtrl,
-                        decoration: const InputDecoration(labelText: 'Omschrijving'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: bedragCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Bedrag (ex. BTW)'),
-                      ),
-                      const SizedBox(height: 12),
-                      InputDecorator(
-                        decoration: const InputDecoration(labelText: 'BTW-code'),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: btwCode,
-                            items: const [
-                              DropdownMenuItem(value: 'hoog_21', child: Text('Hoog (21%)')),
-                              DropdownMenuItem(value: 'laag_9', child: Text('Laag (9%)')),
-                              DropdownMenuItem(value: 'nul_0', child: Text('Nul (0%)')),
-                            ],
-                            onChanged: busy ? null : (v) => setState(() => btwCode = v ?? btwCode),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: omsCtrl,
+                          decoration: const InputDecoration(labelText: 'Omschrijving'),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: bedragCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Bedrag (ex. BTW)'),
+                        ),
+                        const SizedBox(height: 12),
+                        InputDecorator(
+                          decoration: const InputDecoration(labelText: 'BTW-code'),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              value: btwCode,
+                              items: const [
+                                DropdownMenuItem(value: 'hoog_21', child: Text('Hoog (21%)')),
+                                DropdownMenuItem(value: 'laag_9', child: Text('Laag (9%)')),
+                                DropdownMenuItem(value: 'nul_0', child: Text('Nul (0%)')),
+                              ],
+                              onChanged: busy ? null : (v) => setState(() => btwCode = v ?? btwCode),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Let op: totalen worden automatisch berekend door Supabase triggers.',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w600,
-                          color: cs.onSurface.withValues(alpha: 0.60),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Let op: totalen worden automatisch berekend door Supabase triggers.',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface.withValues(alpha: 0.60),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              actions: [
-                TextButton(onPressed: busy ? null : () => Navigator.of(context).pop(), child: const Text('Annuleren')),
-                FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          final pid = projectId?.trim() ?? '';
-                          final gid = grootboekId?.trim() ?? '';
-                          final oms = omsCtrl.text.trim();
-                          final bedrag = _asDouble(bedragCtrl.text.trim());
-                          if (pid.isEmpty || gid.isEmpty || bedrag <= 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: Colors.deepOrange.withValues(alpha: 0.92),
-                                content: const Text('Vul project, grootboek en bedrag in.'),
-                              ),
-                            );
-                            return;
-                          }
+                actions: [
+                  TextButton(
+                    onPressed: busy ? null : () => Navigator.of(context).pop(),
+                    child: const Text('Annuleren'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final pid = projectId?.trim() ?? '';
+                            final gid = grootboekId?.trim() ?? '';
+                            final oms = omsCtrl.text.trim();
+                            final bedrag = _asDouble(bedragCtrl.text.trim());
+                            if (pid.isEmpty || gid.isEmpty || bedrag <= 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  backgroundColor: Colors.deepOrange.withValues(alpha: 0.92),
+                                  content: const Text('Vul project, grootboek en bedrag in.'),
+                                ),
+                              );
+                              return;
+                            }
 
-                          setState(() => busy = true);
-                          try {
-                            await AppSupabase.client.from('inkoopfactuur_split_regels').insert({
-                              'inkoopfactuur_id': widget.invoiceId,
-                              'project_id': pid,
-                              'grootboek_rekening_id': gid,
-                              'omschrijving': oms,
-                              'bedrag_ex_btw': bedrag,
-                              'btw_code': btwCode,
-                            });
-                            if (!context.mounted) return;
-                            Navigator.of(context).pop();
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: Colors.deepOrange.withValues(alpha: 0.92),
-                                content: Text('Kon kostenregel niet toevoegen: $e'),
-                              ),
-                            );
-                          } finally {
-                            if (context.mounted) setState(() => busy = false);
-                          }
-                        },
-                  icon: busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.add_rounded),
-                  label: const Text('Toevoegen'),
-                ),
-              ],
-            );
-          },
+                            setState(() => busy = true);
+                            try {
+                              await AppSupabase.client.from('inkoopfactuur_split_regels').insert({
+                                'inkoopfactuur_id': widget.invoiceId,
+                                'project_id': pid,
+                                'grootboek_rekening_id': gid,
+                                'omschrijving': oms,
+                                'bedrag_ex_btw': bedrag,
+                                'btw_code': btwCode,
+                              });
+                              if (!context.mounted) return;
+                              Navigator.of(context).pop();
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  backgroundColor: Colors.deepOrange.withValues(alpha: 0.92),
+                                  content: Text('Kon kostenregel niet toevoegen: $e'),
+                                ),
+                              );
+                            } finally {
+                              if (context.mounted) setState(() => busy = false);
+                            }
+                          },
+                    icon: busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.add_rounded),
+                    label: const Text('Toevoegen'),
+                  ),
+                ],
+              );
+            },
+          ),
         );
       },
     );
@@ -427,100 +434,101 @@ class _ExpenseValidationScreenState extends State<ExpenseValidationScreen> {
           IconButton(tooltip: 'Vernieuwen', onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: FutureBuilder<_ExpenseValidationData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: _ErrorState(
-                title: 'Kan factuur niet laden',
-                message: snapshot.error.toString(),
-                onRetry: _refresh,
-              ),
-            );
-          }
+      body: SelectionArea(
+        child: FutureBuilder<_ExpenseValidationData>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: _ErrorState(
+                  title: 'Kan factuur niet laden',
+                  message: snapshot.error.toString(),
+                  onRetry: _refresh,
+                ),
+              );
+            }
 
-          final data = snapshot.data!;
-          final inv = data.invoice;
-          final pdfUrl = _text(inv['pdf_url']);
-          final ocrStatus = _text(inv['ocr_verwerkings_status']).toLowerCase();
-          final isProcessing = ocrStatus == 'processing';
-          final isUbl = (inv['is_ubl_xml'] == true) ||
-              _text(inv['is_ubl_xml']).toLowerCase() == 'true';
+            final data = snapshot.data!;
+            final inv = data.invoice;
+            final pdfUrl = _text(inv['pdf_url']);
+            final ocrStatus = _text(inv['ocr_verwerkings_status']).toLowerCase();
+            final isProcessing = ocrStatus == 'processing';
+            final isUbl = (inv['is_ubl_xml'] == true) ||
+                _text(inv['is_ubl_xml']).toLowerCase() == 'true';
 
-          final totaalEx = _asDouble(inv['totaal_ex_btw']);
-          final totaalBtw = _asDouble(inv['totaal_btw']);
-          final totaalInc = _asDouble(inv['totaal_inc_btw']);
-          final status = _text(inv['status']);
+            final totaalEx = _asDouble(inv['totaal_ex_btw']);
+            final totaalBtw = _asDouble(inv['totaal_btw']);
+            final totaalInc = _asDouble(inv['totaal_inc_btw']);
+            final status = _text(inv['status']);
 
-          final layout = LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 980;
+            final layout = LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 980;
 
-              Widget leftPreview() {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: softBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: InteractiveViewer(
-                      minScale: 0.6,
-                      maxScale: 4.0,
-                      child: pdfUrl.isEmpty
-                          ? Center(
-                              child: Text(
-                                'Geen scan gevonden.',
-                                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                              ),
-                            )
-                          : CachedNetworkImage(
-                              imageUrl: pdfUrl,
-                              fit: BoxFit.contain,
-                              placeholder: (context, url) =>
-                                  const Center(child: CircularProgressIndicator()),
-                              errorWidget: (context, url, error) => Center(
+                Widget leftPreview() {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: softBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: InteractiveViewer(
+                        minScale: 0.6,
+                        maxScale: 4.0,
+                        child: pdfUrl.isEmpty
+                            ? Center(
                                 child: Text(
-                                  'Kan afbeelding niet laden.',
+                                  'Geen scan gevonden.',
                                   style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                                 ),
+                              )
+                            : CachedNetworkImage(
+                                imageUrl: pdfUrl,
+                                fit: BoxFit.contain,
+                                placeholder: (context, url) =>
+                                    const Center(child: CircularProgressIndicator()),
+                                errorWidget: (context, url, error) => Center(
+                                  child: Text(
+                                    'Kan afbeelding niet laden.',
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
                               ),
-                            ),
-                    ),
-                  ),
-                );
-              }
-
-              Widget rightForm() {
-                final vendorTone = _toneFor(inv: inv, key: 'leverancier', isUbl: isUbl);
-                final invoiceNrTone =
-                    _toneFor(inv: inv, key: 'factuur_nummer_leverancier', isUbl: isUbl);
-                final dateTone = _toneFor(inv: inv, key: 'factuur_datum', isUbl: isUbl);
-                final totalTone = _toneFor(inv: inv, key: 'totaal_inc_btw', isUbl: isUbl);
-
-                return Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: tileBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 20,
-                        offset: const Offset(0, 5),
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                    ),
+                  );
+                }
+
+                Widget rightForm() {
+                  final vendorTone = _toneFor(inv: inv, key: 'leverancier', isUbl: isUbl);
+                  final invoiceNrTone =
+                      _toneFor(inv: inv, key: 'factuur_nummer_leverancier', isUbl: isUbl);
+                  final dateTone = _toneFor(inv: inv, key: 'factuur_datum', isUbl: isUbl);
+                  final totalTone = _toneFor(inv: inv, key: 'totaal_inc_btw', isUbl: isUbl);
+
+                  return Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: tileBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 20,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                       Row(
                         children: [
                           Expanded(
@@ -752,114 +760,115 @@ class _ExpenseValidationScreenState extends State<ExpenseValidationScreen> {
                         ),
                       ),
                     ],
-                  ),
-                );
-              }
+                    ),
+                  );
+                }
 
-              if (wide) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-                  child: Row(
-                    children: [
-                      Expanded(flex: 5, child: leftPreview()),
-                      const SizedBox(width: 16),
-                      Expanded(flex: 5, child: SingleChildScrollView(child: rightForm())),
-                    ],
-                  ),
-                );
-              }
+                if (wide) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                    child: Row(
+                      children: [
+                        Expanded(flex: 5, child: leftPreview()),
+                        const SizedBox(width: 16),
+                        Expanded(flex: 5, child: SingleChildScrollView(child: rightForm())),
+                      ],
+                    ),
+                  );
+                }
 
-              return DefaultTabController(
-                length: 2,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: Column(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: isDark ? softBg : const Color(0xFFF5F5F7),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                        ),
-                        child: TabBar(
-                          dividerColor: Colors.transparent,
-                          indicatorSize: TabBarIndicatorSize.tab,
-                          labelColor: Colors.white,
-                          unselectedLabelColor: cs.onSurface.withValues(alpha: 0.72),
-                          indicator: BoxDecoration(
-                            color: cs.primary,
+                return DefaultTabController(
+                  length: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                    child: Column(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: isDark ? softBg : const Color(0xFFF5F5F7),
                             borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
                           ),
-                          tabs: const [
-                            Tab(text: 'Scan'),
-                            Tab(text: 'Formulier'),
-                          ],
+                          child: TabBar(
+                            dividerColor: Colors.transparent,
+                            indicatorSize: TabBarIndicatorSize.tab,
+                            labelColor: Colors.white,
+                            unselectedLabelColor: cs.onSurface.withValues(alpha: 0.72),
+                            indicator: BoxDecoration(
+                              color: cs.primary,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            tabs: const [
+                              Tab(text: 'Scan'),
+                              Tab(text: 'Formulier'),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            leftPreview(),
-                            SingleChildScrollView(child: rightForm()),
-                          ],
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: TabBarView(
+                            children: [
+                              leftPreview(),
+                              SingleChildScrollView(child: rightForm()),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          );
+                );
+              },
+            );
 
-          return Stack(
-            children: [
-              layout,
-              if (isProcessing)
-                Positioned.fill(
-                  child: Container(
-                    color:
-                        Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.60),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: tileBg,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 22,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'AI is het document aan het lezen...',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.2,
+            return Stack(
+              children: [
+                layout,
+                if (isProcessing)
+                  Positioned.fill(
+                    child: Container(
+                      color:
+                          Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.60),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: tileBg,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.06),
+                                blurRadius: 22,
+                                offset: const Offset(0, 6),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'AI is het document aan het lezen...',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

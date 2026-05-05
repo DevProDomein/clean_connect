@@ -62,8 +62,10 @@ class _CFODashboardScreenState extends State<CFODashboardScreen> {
             ),
           ),
         ),
-        body: const _NoAccessEmptyState(
-          message: 'U heeft geen rechten om financiële rapportages in te zien.',
+        body: const SelectionArea(
+          child: _NoAccessEmptyState(
+            message: 'U heeft geen rechten om financiële rapportages in te zien.',
+          ),
         ),
       );
     }
@@ -86,42 +88,44 @@ class _CFODashboardScreenState extends State<CFODashboardScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<_CfoData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: _ErrorState(
-                title: 'Kan CFO data niet laden',
-                message: snapshot.error.toString(),
-                onRetry: () => setState(() => _future = _fetch()),
-              ),
-            );
-          }
-
-          final data = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            children: [
-              _KpiRow(kwartaalRow: data.kwartaal),
-              const SizedBox(height: 18),
-              Text(
-                'Projectmarges (laagste eerst)',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.4,
+      body: SelectionArea(
+        child: FutureBuilder<_CfoData>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: _ErrorState(
+                  title: 'Kan CFO data niet laden',
+                  message: snapshot.error.toString(),
+                  onRetry: () => setState(() => _future = _fetch()),
                 ),
-              ),
-              const SizedBox(height: 12),
-              _ProjectMarginsList(rows: data.projectMargins),
-            ],
-          );
-        },
+              );
+            }
+
+            final data = snapshot.data!;
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+              children: [
+                _KpiRow(kwartaalRow: data.kwartaal),
+                const SizedBox(height: 18),
+                Text(
+                  'Projectmarges (laagste eerst)',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _ProjectMarginsList(rows: data.projectMargins),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

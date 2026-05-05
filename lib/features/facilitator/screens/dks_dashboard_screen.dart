@@ -216,326 +216,343 @@ class _DksDashboardScreenState extends State<DksDashboardScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _loadError != null
-              ? Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: Text(
-                      'Fout bij laden van data: $_loadError',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+      body: SelectionArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _loadError != null
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Text(
+                        'Fout bij laden van data: $_loadError',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                      ),
                     ),
-                  ),
-                )
-              : CustomScrollView(
-                  slivers: [
-                    if (_inspectieVandaag != null)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Vandaag Uit Te Voeren',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFFFF6B35),
+                  )
+                : CustomScrollView(
+                    slivers: [
+                      if (_inspectieVandaag != null)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Vandaag Uit Te Voeren',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFFFF6B35),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(20),
-                                  onTap: () {
-                                    final m = _inspectieVandaag!;
-                                    final pid = _text(m['project_id']);
-                                    if (pid.isEmpty) {
-                                      return;
-                                    }
-                                    Navigator.push<void>(
-                                      context,
-                                      MaterialPageRoute<void>(
-                                        builder: (_) => DksProjectDossierScreen(
-                                          projectId: pid,
-                                          projectNaam: _text(m['project_naam'])
-                                                  .isNotEmpty
-                                              ? _text(m['project_naam'])
-                                              : 'Project',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.all(20),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: const Color(0xFFFF6B35),
-                                        width: 2,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.04),
-                                          blurRadius: 15,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.warning_amber_rounded,
-                                          color: Color(0xFFFF6B35),
-                                          size: 32,
-                                        ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                _inspectieVandaag!['project_naam']
-                                                    .toString(),
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                              ),
-                                              Text(
-                                                _inspectieVandaag!['bedrijfsnaam']
-                                                    .toString(),
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade600,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ],
+                                const SizedBox(height: 12),
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(20),
+                                    onTap: () {
+                                      final m = _inspectieVandaag!;
+                                      final pid = _text(m['project_id']);
+                                      if (pid.isEmpty) {
+                                        return;
+                                      }
+                                      Navigator.push<void>(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => DksProjectDossierScreen(
+                                            projectId: pid,
+                                            projectNaam:
+                                                _text(m['project_naam']).isNotEmpty
+                                                    ? _text(m['project_naam'])
+                                                    : 'Project',
                                           ),
                                         ),
-                                        const Icon(
-                                          Icons.arrow_forward_ios,
-                                          color: Colors.grey,
-                                          size: 16,
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(20),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: const Color(0xFFFF6B35),
+                                          width: 2,
                                         ),
-                                      ],
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withValues(alpha: 0.04),
+                                            blurRadius: 15,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.warning_amber_rounded,
+                                            color: Color(0xFFFF6B35),
+                                            size: 32,
+                                          ),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _inspectieVandaag!['project_naam']
+                                                      .toString(),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _inspectieVandaag!['bedrijfsnaam']
+                                                      .toString(),
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade600,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const Icon(
+                                            Icons.arrow_forward_ios,
+                                            color: Colors.grey,
+                                            size: 16,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _kpiCard(
+                                  context: context,
+                                  title: 'Gemiddelde Kwaliteit',
+                                  value: averageQualityLabel,
+                                  valueColor: Colors.green,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _kpiCard(
+                                  context: context,
+                                  title: 'Open Actiepunten',
+                                  value: openActionItemsLabel,
+                                  valueColor: Colors.orange,
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _kpiCard(
-                                context: context,
-                                title: 'Gemiddelde Kwaliteit',
-                                value: averageQualityLabel,
-                                valueColor: Colors.green,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _kpiCard(
-                                context: context,
-                                title: 'Open Actiepunten',
-                                value: openActionItemsLabel,
-                                valueColor: Colors.orange,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          20,
-                          _inspectieVandaag != null ? 6 : 20,
-                          20,
-                          10,
-                        ),
-                        child: Text(
-                          'Alle projecten',
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
-                            color: isDark
-                                ? cs.onSurface
-                                : _navy.withValues(alpha: 0.9),
-                            letterSpacing: -0.2,
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            20,
+                            _inspectieVandaag != null ? 6 : 20,
+                            20,
+                            10,
                           ),
-                        ),
-                      ),
-                    ),
-                    if (_projects.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
                           child: Text(
-                            'Geen projecten gevonden',
+                            'Alle projecten',
                             style: GoogleFonts.lato(
-                              fontWeight: FontWeight.w800,
-                              color: cs.onSurface.withValues(alpha: 0.72),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                              color: isDark
+                                  ? cs.onSurface
+                                  : _navy.withValues(alpha: 0.9),
+                              letterSpacing: -0.2,
                             ),
                           ),
                         ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final item = _projects[index];
-                              final projectName = _text(item['project_naam']).isEmpty
-                                  ? 'Onbekend'
-                                  : _text(item['project_naam']);
-                              final companyName = _text(item['bedrijfsnaam']).isEmpty
-                                  ? 'Onbekend'
-                                  : _text(item['bedrijfsnaam']);
-                              final stoplichtKleur = _text(item['stoplicht_kleur']);
-                              final statusColor = _stoplichtColor(stoplichtKleur);
-                              final scoreRaw = item['gemiddelde_score'];
-                              final scoreNumber = _score(scoreRaw);
-                              final scoreText = scoreRaw == null || _text(scoreRaw).isEmpty
-                                  ? '-'
-                                  : '${scoreNumber?.toStringAsFixed(1) ?? _text(scoreRaw)}%';
-                              final totalInspectionsRaw = item['totaal_inspecties'];
-                              final totalInspections = totalInspectionsRaw is num
-                                  ? totalInspectionsRaw.toInt()
-                                  : int.tryParse(_text(totalInspectionsRaw)) ?? 0;
-                              final lastInspection =
-                                  _formatInspectieDatum(item['laatste_inspectie_datum']);
-                              final projectId = _text(item['project_id']);
+                      ),
+                      if (_projects.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Text(
+                              'Geen projecten gevonden',
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.w800,
+                                color: cs.onSurface.withValues(alpha: 0.72),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final item = _projects[index];
+                                final projectName =
+                                    _text(item['project_naam']).isEmpty
+                                        ? 'Onbekend'
+                                        : _text(item['project_naam']);
+                                final companyName =
+                                    _text(item['bedrijfsnaam']).isEmpty
+                                        ? 'Onbekend'
+                                        : _text(item['bedrijfsnaam']);
+                                final stoplichtKleur =
+                                    _text(item['stoplicht_kleur']);
+                                final statusColor = _stoplichtColor(stoplichtKleur);
+                                final scoreRaw = item['gemiddelde_score'];
+                                final scoreNumber = _score(scoreRaw);
+                                final scoreText = scoreRaw == null ||
+                                        _text(scoreRaw).isEmpty
+                                    ? '-'
+                                    : '${scoreNumber?.toStringAsFixed(1) ?? _text(scoreRaw)}%';
+                                final totalInspectionsRaw = item['totaal_inspecties'];
+                                final totalInspections = totalInspectionsRaw is num
+                                    ? totalInspectionsRaw.toInt()
+                                    : int.tryParse(_text(totalInspectionsRaw)) ??
+                                        0;
+                                final lastInspection = _formatInspectieDatum(
+                                  item['laatste_inspectie_datum'],
+                                );
+                                final projectId = _text(item['project_id']);
 
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    borderRadius: const BorderRadius.only(
-                                      topRight: Radius.circular(12),
-                                      bottomRight: Radius.circular(12),
-                                    ),
-                                    onTap: () {
-                                      if (projectId.isEmpty) {
-                                        return;
-                                      }
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => DksProjectDossierScreen(
-                                            projectId: projectId,
-                                            projectNaam: projectName,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: cs.surface,
-                                        borderRadius: const BorderRadius.only(
-                                          topRight: Radius.circular(12),
-                                          bottomRight: Radius.circular(12),
-                                        ),
-                                        border: Border(
-                                          left: BorderSide(width: 6, color: statusColor),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(
-                                                alpha: isDark ? 0.18 : 0.05),
-                                            blurRadius: 12,
-                                            offset: const Offset(0, 5),
-                                          ),
-                                        ],
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: const BorderRadius.only(
+                                        topRight: Radius.circular(12),
+                                        bottomRight: Radius.circular(12),
                                       ),
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                      onTap: () {
+                                        if (projectId.isEmpty) {
+                                          return;
+                                        }
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => DksProjectDossierScreen(
+                                              projectId: projectId,
+                                              projectNaam: projectName,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: cs.surface,
+                                          borderRadius: const BorderRadius.only(
+                                            topRight: Radius.circular(12),
+                                            bottomRight: Radius.circular(12),
+                                          ),
+                                          border: Border(
+                                            left: BorderSide(
+                                              width: 6,
+                                              color: statusColor,
+                                            ),
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: isDark ? 0.18 : 0.05,
+                                              ),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 5),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    projectName,
+                                                    style: GoogleFonts.lato(
+                                                      fontWeight: FontWeight.w900,
+                                                      fontSize: 16,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    companyName,
+                                                    style: GoogleFonts.lato(
+                                                      color: cs.onSurface.withValues(
+                                                        alpha: 0.62,
+                                                      ),
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    'Laatste inspectie: $lastInspection',
+                                                    style: GoogleFonts.lato(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: cs.onSurface.withValues(
+                                                        alpha: 0.58,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
                                               children: [
                                                 Text(
-                                                  projectName,
+                                                  scoreText,
                                                   style: GoogleFonts.lato(
                                                     fontWeight: FontWeight.w900,
-                                                    fontSize: 16,
+                                                    fontSize: 24,
+                                                    color: statusColor,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                  companyName,
+                                                  '$totalInspections metingen',
                                                   style: GoogleFonts.lato(
-                                                    color: cs.onSurface
-                                                        .withValues(alpha: 0.62),
+                                                    fontSize: 10,
                                                     fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'Laatste inspectie: $lastInspection',
-                                                  style: GoogleFonts.lato(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: cs.onSurface
-                                                        .withValues(alpha: 0.58),
+                                                    color: cs.onSurface.withValues(
+                                                      alpha: 0.56,
+                                                    ),
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.end,
-                                            children: [
-                                              Text(
-                                                scoreText,
-                                                style: GoogleFonts.lato(
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 24,
-                                                  color: statusColor,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '$totalInspections metingen',
-                                                style: GoogleFonts.lato(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: cs.onSurface
-                                                      .withValues(alpha: 0.56),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
-                            childCount: _projects.length,
+                                );
+                              },
+                              childCount: _projects.length,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
+                    ],
+                  ),
+      ),
     );
   }
 }

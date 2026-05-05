@@ -298,7 +298,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => PackingListModal(opdrachtId: opdrachtId),
+      builder: (context) => SelectionArea(
+        child: PackingListModal(opdrachtId: opdrachtId),
+      ),
     );
   }
 

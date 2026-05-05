@@ -120,26 +120,28 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (!_isDirty) return true;
     final go = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Niet opgeslagen wijzigingen',
-          style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 18),
-        ),
-        content: Text(
-          'Niet opgeslagen wijzigingen. Weet u zeker dat u wilt vertrekken?',
-          style: GoogleFonts.lato(fontWeight: FontWeight.w600, fontSize: 15),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuleren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+      builder: (ctx) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            'Niet opgeslagen wijzigingen',
+            style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 18),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Verlaten', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+          content: Text(
+            'Niet opgeslagen wijzigingen. Weet u zeker dat u wilt vertrekken?',
+            style: GoogleFonts.lato(fontWeight: FontWeight.w600, fontSize: 15),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Annuleren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Verlaten', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
       ),
     );
     return go == true;
@@ -149,34 +151,36 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final go = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
-        title: Text(
-          'Waarschuwing: Planning Wijziging',
-          style: GoogleFonts.lato(
-            fontWeight: FontWeight.w900,
-            fontSize: 18,
-            color: Colors.red.shade700,
-          ),
-        ),
-        content: Text(
-          'Het aanpassen van start- en eindtijd is een ingrijpende actie. Het heeft directe invloed op het planbord en zal toekomstige gegenereerde opdrachten wijzigen. Weet u zeker dat u dit wilt doorvoeren?',
-          style: GoogleFonts.lato(fontWeight: FontWeight.w600, fontSize: 15, height: 1.35),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuleren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'Ja, pas planning aan',
-              style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+      builder: (ctx) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
+          title: Text(
+            'Waarschuwing: Planning Wijziging',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+              color: Colors.red.shade700,
             ),
           ),
-        ],
+          content: Text(
+            'Het aanpassen van start- en eindtijd is een ingrijpende actie. Het heeft directe invloed op het planbord en zal toekomstige gegenereerde opdrachten wijzigen. Weet u zeker dat u dit wilt doorvoeren?',
+            style: GoogleFonts.lato(fontWeight: FontWeight.w600, fontSize: 15, height: 1.35),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Annuleren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                'Ja, pas planning aan',
+                style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
       ),
     );
     return go == true;
@@ -608,42 +612,47 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 ),
               )
             : null,
-        body: _loading
-            ? const Center(child: CupertinoActivityIndicator(radius: 16))
-            : _error != null && _project == null
-                ? _buildError()
-                : CustomScrollView(
-                    slivers: [
-                      SliverAppBar(
-                        pinned: true,
-                        backgroundColor: Colors.white,
-                        surfaceTintColor: Colors.white,
-                        elevation: 0,
-                        leading: IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                              color: _navy, size: 20),
-                          onPressed: _onBackPressed,
-                        ),
-                        title: Text(
-                          'Project',
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 18,
-                            color: _navy,
+        body: SelectionArea(
+          child: _loading
+              ? const Center(child: CupertinoActivityIndicator(radius: 16))
+              : _error != null && _project == null
+                  ? _buildError()
+                  : CustomScrollView(
+                      slivers: [
+                        SliverAppBar(
+                          pinned: true,
+                          backgroundColor: Colors.white,
+                          surfaceTintColor: Colors.white,
+                          elevation: 0,
+                          leading: IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              color: _navy,
+                              size: 20,
+                            ),
+                            onPressed: _onBackPressed,
+                          ),
+                          title: Text(
+                            'Project',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18,
+                              color: _navy,
+                            ),
                           ),
                         ),
-                      ),
-                      SliverToBoxAdapter(child: _buildHeader()),
-                      SliverToBoxAdapter(child: _buildClientStrip()),
-                      SliverToBoxAdapter(child: _buildKpiRow()),
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                          child: _buildForm(),
+                        SliverToBoxAdapter(child: _buildHeader()),
+                        SliverToBoxAdapter(child: _buildClientStrip()),
+                        SliverToBoxAdapter(child: _buildKpiRow()),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                            child: _buildForm(),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+        ),
       ),
     );
   }

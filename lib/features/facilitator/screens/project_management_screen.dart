@@ -188,11 +188,13 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
             ),
           ),
         ),
-        body: _loading
-            ? const Center(child: CupertinoActivityIndicator(radius: 16))
-            : _error != null
-                ? _buildError()
-                : _buildBody(),
+        body: SelectionArea(
+          child: _loading
+              ? const Center(child: CupertinoActivityIndicator(radius: 16))
+              : _error != null
+                  ? _buildError()
+                  : _buildBody(),
+        ),
       ),
     );
   }

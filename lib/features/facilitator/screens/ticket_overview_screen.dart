@@ -134,25 +134,27 @@ class _TicketOverviewScreenState extends State<TicketOverviewScreen>
       barrierColor: Colors.black.withValues(alpha: 0.35),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return SafeArea(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Material(
-              color: Theme.of(dialogContext).brightness == Brightness.dark
-                  ? const Color(0xFF1C1C1E)
-                  : Colors.white,
-              elevation: 24,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.horizontal(left: Radius.circular(24)),
-              ),
-              child: SizedBox(
-                width: panelW,
-                height: mq.height,
-                child: _TicketDetailPanel(
-                  vm: vm,
-                  staff: _staff,
-                  repo: _repo,
-                  onSaved: _refresh,
+        return SelectionArea(
+          child: SafeArea(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Material(
+                color: Theme.of(dialogContext).brightness == Brightness.dark
+                    ? const Color(0xFF1C1C1E)
+                    : Colors.white,
+                elevation: 24,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.horizontal(left: Radius.circular(24)),
+                ),
+                child: SizedBox(
+                  width: panelW,
+                  height: mq.height,
+                  child: _TicketDetailPanel(
+                    vm: vm,
+                    staff: _staff,
+                    repo: _repo,
+                    onSaved: _refresh,
+                  ),
                 ),
               ),
             ),
@@ -206,28 +208,32 @@ class _TicketOverviewScreenState extends State<TicketOverviewScreen>
           ],
         ),
       ),
-      body: _loading
-          ? const Center(child: CupertinoActivityIndicator(radius: 14))
-          : _loadError != null
-              ? _buildError()
-              : RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                    children: [
-                      _buildKpiRow(context),
-                      const SizedBox(height: 8),
-                      ..._tabItems().map((vm) => Padding(
+      body: SelectionArea(
+        child: _loading
+            ? const Center(child: CupertinoActivityIndicator(radius: 14))
+            : _loadError != null
+                ? _buildError()
+                : RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                      children: [
+                        _buildKpiRow(context),
+                        const SizedBox(height: 8),
+                        ..._tabItems().map(
+                          (vm) => Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: _TicketCard(
                               vm: vm,
                               onTap: () => _openTicketDetail(vm),
                             ),
-                          )),
-                      if (_tabItems().isEmpty) _buildEmpty(),
-                    ],
+                          ),
+                        ),
+                        if (_tabItems().isEmpty) _buildEmpty(),
+                      ],
+                    ),
                   ),
-                ),
+      ),
     );
   }
 

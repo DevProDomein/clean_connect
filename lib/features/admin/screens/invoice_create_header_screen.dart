@@ -75,97 +75,99 @@ class _InvoiceCreateHeaderScreenState extends State<InvoiceCreateHeaderScreen> {
     final picked = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            void applyFilter(String q) {
-              final needle = q.trim().toLowerCase();
-              setLocal(() {
-                if (needle.isEmpty) {
-                  filtered = clients;
-                } else {
-                  filtered = clients
-                      .where((c) => _text(c['bedrijfsnaam']).toLowerCase().contains(needle))
-                      .toList(growable: false);
-                }
-              });
-            }
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setLocal) {
+              void applyFilter(String q) {
+                final needle = q.trim().toLowerCase();
+                setLocal(() {
+                  if (needle.isEmpty) {
+                    filtered = clients;
+                  } else {
+                    filtered = clients
+                        .where((c) => _text(c['bedrijfsnaam']).toLowerCase().contains(needle))
+                        .toList(growable: false);
+                  }
+                });
+              }
 
-            return Dialog(
-              insetPadding: const EdgeInsets.all(16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Klant selecteren',
-                              style: GoogleFonts.inter(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.3,
+              return Dialog(
+                insetPadding: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Klant selecteren',
+                                style: GoogleFonts.inter(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.3,
+                                ),
                               ),
                             ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(null),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: search,
-                        onChanged: applyFilter,
-                        decoration: InputDecoration(
-                          labelText: 'Zoeken',
-                          hintText: 'Typ een bedrijfsnaam…',
-                          filled: true,
-                          fillColor: softBg,
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Flexible(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: softBg,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                          ),
-                          child: ListView.separated(
-                            shrinkWrap: true,
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, i) => Divider(
-                              height: 1,
-                              color: cs.onSurface.withValues(alpha: 0.08),
+                            IconButton(
+                              onPressed: () => Navigator.of(context).pop(null),
+                              icon: const Icon(Icons.close_rounded),
                             ),
-                            itemBuilder: (context, i) {
-                              final c = filtered[i];
-                              final name = _text(c['bedrijfsnaam']);
-                              return ListTile(
-                                title: Text(
-                                  name.isEmpty ? '—' : name,
-                                  style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                                ),
-                                onTap: () => Navigator.of(context).pop(c),
-                              );
-                            },
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: search,
+                          onChanged: applyFilter,
+                          decoration: InputDecoration(
+                            labelText: 'Zoeken',
+                            hintText: 'Typ een bedrijfsnaam…',
+                            filled: true,
+                            fillColor: softBg,
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        Flexible(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: softBg,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, i) => Divider(
+                                height: 1,
+                                color: cs.onSurface.withValues(alpha: 0.08),
+                              ),
+                              itemBuilder: (context, i) {
+                                final c = filtered[i];
+                                final name = _text(c['bedrijfsnaam']);
+                                return ListTile(
+                                  title: Text(
+                                    name.isEmpty ? '—' : name,
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                                  ),
+                                  onTap: () => Navigator.of(context).pop(c),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
@@ -294,44 +296,45 @@ class _InvoiceCreateHeaderScreenState extends State<InvoiceCreateHeaderScreen> {
           style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
         ),
       ),
-      body: !canView
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: softBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                  ),
-                  child: Text(
-                    'U heeft geen rechten om verkoopfacturen aan te maken.',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+      body: SelectionArea(
+        child: !canView
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: softBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                    ),
+                    child: Text(
+                      'U heeft geen rechten om verkoopfacturen aan te maken.',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
-              ),
-            )
-          : FutureBuilder<List<Map<String, dynamic>>>(
-              future: _futureClients,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: softBg,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+              )
+            : FutureBuilder<List<Map<String, dynamic>>>(
+                future: _futureClients,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: softBg,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                        ),
+                        child: Text('Kan klanten niet laden: ${snapshot.error}'),
                       ),
-                      child: Text('Kan klanten niet laden: ${snapshot.error}'),
-                    ),
-                  );
-                }
+                    );
+                  }
 
                 final clients = snapshot.data ?? const <Map<String, dynamic>>[];
                 final clientName = _text(_selectedClient?['bedrijfsnaam']);
@@ -474,8 +477,9 @@ class _InvoiceCreateHeaderScreenState extends State<InvoiceCreateHeaderScreen> {
                     ),
                   ],
                 );
-              },
-            ),
+                },
+              ),
+      ),
     );
   }
 }

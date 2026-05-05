@@ -12,10 +12,12 @@ class AnalysesScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Analyses'),
       ),
-      body: const Center(
-        child: Text(
-          'Analyses (placeholder)',
-          style: TextStyle(fontSize: 13),
+      body: const SelectionArea(
+        child: Center(
+          child: Text(
+            'Analyses (placeholder)',
+            style: TextStyle(fontSize: 13),
+          ),
         ),
       ),
     );

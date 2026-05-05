@@ -195,132 +195,135 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      '$_error',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.lato(color: _muted),
+      body: SelectionArea(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        '$_error',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.lato(color: _muted),
+                      ),
                     ),
-                  ),
-                )
-              : Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
-                      children: [
-                        const SizedBox(height: 12),
-                        Center(
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              _buildAvatar(),
-                              Positioned(
-                                right: -4,
-                                bottom: -4,
-                                child: Material(
-                                  color: _blue,
-                                  shape: const CircleBorder(),
-                                  elevation: 2,
-                                  child: IconButton(
-                                    tooltip: 'Foto wijzigen',
-                                    icon: const Icon(
-                                      Icons.camera_alt_rounded,
-                                      color: Colors.white,
-                                      size: 20,
+                  )
+                : Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
+                        children: [
+                          const SizedBox(height: 12),
+                          Center(
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                _buildAvatar(),
+                                Positioned(
+                                  right: -4,
+                                  bottom: -4,
+                                  child: Material(
+                                    color: _blue,
+                                    shape: const CircleBorder(),
+                                    elevation: 2,
+                                    child: IconButton(
+                                      tooltip: 'Foto wijzigen',
+                                      icon: const Icon(
+                                        Icons.camera_alt_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      onPressed: _pickProfilePhoto,
                                     ),
-                                    onPressed: _pickProfilePhoto,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-                        Text(
-                          'Inloggegevens',
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
-                            color: _muted,
-                            letterSpacing: 0.4,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Tooltip(
-                          message:
-                              'Neem contact op met uw beheerder om deze inloggegevens te wijzigen.',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _readOnlyBlock(
-                                  label: 'Voornaam', value: _voornaam),
-                              const SizedBox(height: 12),
-                              _readOnlyBlock(
-                                  label: 'Achternaam', value: _achternaam),
-                              const SizedBox(height: 12),
-                              _readOnlyBlock(label: 'E-mail', value: _email),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-                        Text(
-                          'Contact',
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
-                            color: _muted,
-                            letterSpacing: 0.4,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _telefoonCtrl,
-                          keyboardType: TextInputType.phone,
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w600,
-                            color: _navy,
-                          ),
-                          decoration: _fieldDecoration('Telefoon'),
-                        ),
-                        const SizedBox(height: 24),
-                        FilledButton(
-                          onPressed: _saving ? null : _saveProfile,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _blue,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24),
+                              ],
                             ),
                           ),
-                          child: _saving
-                              ? const SizedBox(
-                                  height: 22,
-                                  width: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Text(
-                                  'Wijzigingen Opslaan',
-                                  style: GoogleFonts.lato(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                  ),
+                          const SizedBox(height: 28),
+                          Text(
+                            'Inloggegevens',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _muted,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Tooltip(
+                            message:
+                                'Neem contact op met uw beheerder om deze inloggegevens te wijzigen.',
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _readOnlyBlock(label: 'Voornaam', value: _voornaam),
+                                const SizedBox(height: 12),
+                                _readOnlyBlock(
+                                  label: 'Achternaam',
+                                  value: _achternaam,
                                 ),
-                        ),
-                      ],
+                                const SizedBox(height: 12),
+                                _readOnlyBlock(label: 'E-mail', value: _email),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          Text(
+                            'Contact',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _muted,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _telefoonCtrl,
+                            keyboardType: TextInputType.phone,
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w600,
+                              color: _navy,
+                            ),
+                            decoration: _fieldDecoration('Telefoon'),
+                          ),
+                          const SizedBox(height: 24),
+                          FilledButton(
+                            onPressed: _saving ? null : _saveProfile,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _blue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            child: _saving
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    'Wijzigingen Opslaan',
+                                    style: GoogleFonts.lato(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+      ),
     );
   }
 

@@ -120,17 +120,28 @@ class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
             ),
           ),
         ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? _ErrorView(error: _error!, onRetry: _load)
-                : TabBarView(
-                    children: [
-                      _QuoteList(rows: _filter(_conceptStatuses), emptyLabel: 'Geen concept-offertes.'),
-                      _QuoteList(rows: _filter(_verzondenStatuses), emptyLabel: 'Nog geen verzonden offertes.'),
-                      _QuoteList(rows: _filter(_getekendStatuses), emptyLabel: 'Nog geen getekende offertes.'),
-                    ],
-                  ),
+        body: SelectionArea(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? _ErrorView(error: _error!, onRetry: _load)
+                  : TabBarView(
+                      children: [
+                        _QuoteList(
+                          rows: _filter(_conceptStatuses),
+                          emptyLabel: 'Geen concept-offertes.',
+                        ),
+                        _QuoteList(
+                          rows: _filter(_verzondenStatuses),
+                          emptyLabel: 'Nog geen verzonden offertes.',
+                        ),
+                        _QuoteList(
+                          rows: _filter(_getekendStatuses),
+                          emptyLabel: 'Nog geen getekende offertes.',
+                        ),
+                      ],
+                    ),
+        ),
       ),
     );
   }

@@ -63,104 +63,120 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
       context: context,
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            void setSaving(bool v) => setLocal(() => saving = v);
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setLocal) {
+              void setSaving(bool v) => setLocal(() => saving = v);
 
-            Future<void> save() async {
-              if (saving) return;
-              setSaving(true);
-              try {
-                await AppSupabase.client.from('grootboekrekeningen').insert({
-                  'rekening_nummer': nr.text.trim(),
-                  'naam': naam.text.trim(),
-                  'type': type,
-                });
-                if (context.mounted) Navigator.of(context).pop();
-                await _refresh();
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: Colors.deepOrange.withValues(alpha: 0.92),
-                    content: Text('Kon grootboekrekening niet toevoegen: $e'),
-                  ),
-                );
-              } finally {
-                if (context.mounted) setSaving(false);
+              Future<void> save() async {
+                if (saving) return;
+                setSaving(true);
+                try {
+                  await AppSupabase.client.from('grootboekrekeningen').insert({
+                    'rekening_nummer': nr.text.trim(),
+                    'naam': naam.text.trim(),
+                    'type': type,
+                  });
+                  if (context.mounted) Navigator.of(context).pop();
+                  await _refresh();
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.deepOrange.withValues(alpha: 0.92),
+                      content: Text('Kon grootboekrekening niet toevoegen: $e'),
+                    ),
+                  );
+                } finally {
+                  if (context.mounted) setSaving(false);
+                }
               }
-            }
 
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              title: Text(
-                'Grootboekrekening toevoegen',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
-              ),
-              content: SizedBox(
-                width: 520,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nr,
-                      decoration: const InputDecoration(labelText: 'Rekeningnummer'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: naam,
-                      decoration: const InputDecoration(labelText: 'Naam'),
-                    ),
-                    const SizedBox(height: 12),
-                    InputDecorator(
-                      decoration: const InputDecoration(labelText: 'Type'),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: type,
-                          isExpanded: true,
-                          items: const [
-                            DropdownMenuItem(value: 'balans', child: Text('Balans')),
-                            DropdownMenuItem(
-                              value: 'winst_en_verlies',
-                              child: Text('Winst & Verlies'),
-                            ),
-                          ],
-                          onChanged: saving ? null : (v) => setLocal(() => type = v ?? 'balans'),
+              return AlertDialog(
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                title: Text(
+                  'Grootboekrekening toevoegen',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                content: SizedBox(
+                  width: 520,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nr,
+                        decoration:
+                            const InputDecoration(labelText: 'Rekeningnummer'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: naam,
+                        decoration: const InputDecoration(labelText: 'Naam'),
+                      ),
+                      const SizedBox(height: 12),
+                      InputDecorator(
+                        decoration: const InputDecoration(labelText: 'Type'),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: type,
+                            isExpanded: true,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'balans',
+                                child: Text('Balans'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'winst_en_verlies',
+                                child: Text('Winst & Verlies'),
+                              ),
+                            ],
+                            onChanged: saving
+                                ? null
+                                : (v) => setLocal(() => type = v ?? 'balans'),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: saving ? null : () => Navigator.of(context).pop(),
-                  child: const Text('Annuleren'),
-                ),
-                FilledButton.icon(
-                  onPressed: saving ? null : save,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: cs.primary,
-                    foregroundColor: Colors.white,
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                    textStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                    ],
                   ),
-                  icon: saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Icon(Icons.add),
-                  label: Text(saving ? 'Bezig…' : 'Toevoegen'),
                 ),
-              ],
-            );
-          },
+                actions: [
+                  TextButton(
+                    onPressed: saving ? null : () => Navigator.of(context).pop(),
+                    child: const Text('Annuleren'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: saving ? null : save,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: cs.primary,
+                      foregroundColor: Colors.white,
+                      shape: const StadiumBorder(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      textStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                    ),
+                    icon: saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Icon(Icons.add),
+                    label: Text(saving ? 'Bezig…' : 'Toevoegen'),
+                  ),
+                ],
+              );
+            },
+          ),
         );
       },
     );
@@ -180,9 +196,10 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
       context: context,
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            void setSaving(bool v) => setLocal(() => saving = v);
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setLocal) {
+              void setSaving(bool v) => setLocal(() => saving = v);
 
             Future<void> save() async {
               if (saving) return;
@@ -215,11 +232,15 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
               }
             }
 
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              return AlertDialog(
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               title: Text(
                 'Artikel toevoegen',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.3,
+                ),
               ),
               content: SizedBox(
                 width: 560,
@@ -334,8 +355,9 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
                   label: Text(saving ? 'Bezig…' : 'Toevoegen'),
                 ),
               ],
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
@@ -359,20 +381,24 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
           ),
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: isDark ? cs.surface.withValues(alpha: 0.70) : const Color(0xFFF5F5F7),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-            ),
-            child: Text(
-              'U heeft geen rechten om financiële stamgegevens te beheren.',
-              style: GoogleFonts.inter(
-                fontWeight: FontWeight.w600,
-                color: cs.onSurface.withValues(alpha: 0.80),
+        body: SelectionArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? cs.surface.withValues(alpha: 0.70)
+                    : const Color(0xFFF5F5F7),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+              ),
+              child: Text(
+                'U heeft geen rechten om financiële stamgegevens te beheren.',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface.withValues(alpha: 0.80),
+                ),
               ),
             ),
           ),
@@ -417,56 +443,68 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
             );
           },
         ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                child: TabBar(
-                  splashBorderRadius: BorderRadius.circular(50),
-                  indicator: BoxDecoration(
+        body: SelectionArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(24),
-                    color: cs.primary,
+                    border:
+                        Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
                   ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.grey.shade600,
-                  dividerColor: Colors.transparent,
-                  labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
-                  tabs: const [
-                    Tab(text: 'Grootboekrekeningen'),
-                    Tab(text: 'Artikelen'),
-                  ],
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: TabBar(
+                    splashBorderRadius: BorderRadius.circular(50),
+                    indicator: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      color: cs.primary,
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.grey.shade600,
+                    dividerColor: Colors.transparent,
+                    labelStyle: GoogleFonts.inter(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.2,
+                    ),
+                    tabs: const [
+                      Tab(text: 'Grootboekrekeningen'),
+                      Tab(text: 'Artikelen'),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: FutureBuilder<_MasterData>(
-                future: _future,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: isDark ? cs.surface.withValues(alpha: 0.70) : const Color(0xFFF5F5F7),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+              Expanded(
+                child: FutureBuilder<_MasterData>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? cs.surface.withValues(alpha: 0.70)
+                                : const Color(0xFFF5F5F7),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                            ),
+                          ),
+                          child: Text(
+                            'Kan stamgegevens niet laden: ${snapshot.error}',
+                          ),
                         ),
-                        child: Text('Kan stamgegevens niet laden: ${snapshot.error}'),
-                      ),
-                    );
-                  }
+                      );
+                    }
 
                   final data = snapshot.data!;
                   final grootboek = data.grootboek;
@@ -639,16 +677,17 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
                     );
                   }
 
-                  return TabBarView(
-                    children: [
-                      ledgerList(),
-                      articleList(),
-                    ],
-                  );
-                },
+                    return TabBarView(
+                      children: [
+                        ledgerList(),
+                        articleList(),
+                      ],
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

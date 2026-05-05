@@ -65,11 +65,13 @@ class _InvoiceManagementScreenState extends State<InvoiceManagementScreen> {
     if (!canManage) {
       return const Scaffold(
         drawer: AppDrawer(),
-        body: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: _NoAccessEmptyState(
-              message: 'U heeft geen rechten om verkoopfacturen te beheren.',
+        body: SelectionArea(
+          child: SafeArea(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: _NoAccessEmptyState(
+                message: 'U heeft geen rechten om verkoopfacturen te beheren.',
+              ),
             ),
           ),
         ),
@@ -112,60 +114,62 @@ class _InvoiceManagementScreenState extends State<InvoiceManagementScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<_InvoiceData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text('Fout: ${snapshot.error}'),
-            );
-          }
+      body: SelectionArea(
+        child: FutureBuilder<_InvoiceData>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text('Fout: ${snapshot.error}'),
+              );
+            }
 
-          final data = snapshot.data!;
-          final items = switch (_view) {
-            _InvoiceView.concept => data.concepts,
-            _InvoiceView.open => data.open,
-            _InvoiceView.history => data.history,
-          };
+            final data = snapshot.data!;
+            final items = switch (_view) {
+              _InvoiceView.concept => data.concepts,
+              _InvoiceView.open => data.open,
+              _InvoiceView.history => data.history,
+            };
 
-          return Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-                ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SegmentedButton<_InvoiceView>(
-                    segments: const [
-                      ButtonSegment(value: _InvoiceView.concept, label: Text('Concept')),
-                      ButtonSegment(value: _InvoiceView.open, label: Text('Openstaand')),
-                      ButtonSegment(value: _InvoiceView.history, label: Text('Historie')),
-                    ],
-                    selected: {_view},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (s) => setState(() => _view = s.first),
+            return Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SegmentedButton<_InvoiceView>(
+                      segments: const [
+                        ButtonSegment(value: _InvoiceView.concept, label: Text('Concept')),
+                        ButtonSegment(value: _InvoiceView.open, label: Text('Openstaand')),
+                        ButtonSegment(value: _InvoiceView.history, label: Text('Historie')),
+                      ],
+                      selected: {_view},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (s) => setState(() => _view = s.first),
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: _InvoiceTable(
-                  items: items,
-                  emptyMessage: switch (_view) {
-                    _InvoiceView.concept => 'Geen conceptfacturen.',
-                    _InvoiceView.open => 'Geen openstaande facturen.',
-                    _InvoiceView.history => 'Geen historische facturen.',
-                  },
+                Expanded(
+                  child: _InvoiceTable(
+                    items: items,
+                    emptyMessage: switch (_view) {
+                      _InvoiceView.concept => 'Geen conceptfacturen.',
+                      _InvoiceView.open => 'Geen openstaande facturen.',
+                      _InvoiceView.history => 'Geen historische facturen.',
+                    },
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -635,8 +639,9 @@ class _InvoiceManagementScreenState extends State<InvoiceManagementScreen> {
         bool running = false;
 
         final cs = Theme.of(context).colorScheme;
-        return StatefulBuilder(
-          builder: (context, setState) {
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setState) {
             // Keep local "running" state in sync with rebuilds.
             void setRunning(bool v) {
               setState(() {
@@ -726,7 +731,8 @@ class _InvoiceManagementScreenState extends State<InvoiceManagementScreen> {
                 ),
               ],
             );
-          },
+            },
+          ),
         );
       },
     );

@@ -20,18 +20,20 @@ class CreditorsScreen extends StatelessWidget {
           style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: softBg,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-          ),
-          child: Text(
-            'Crediteurenbeheer komt hier (enterprise module in opbouw).',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+      body: SelectionArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: softBg,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+            ),
+            child: Text(
+              'Crediteurenbeheer komt hier (enterprise module in opbouw).',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+            ),
           ),
         ),
       ),

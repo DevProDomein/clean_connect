@@ -11,7 +11,9 @@ class ClientDashboard extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(AppTexts.get('client_dashboard_title'))),
       drawer: const AppDrawer(),
-      body: Center(child: Text(AppTexts.get('coming_soon'))),
+      body: SelectionArea(
+        child: Center(child: Text(AppTexts.get('coming_soon'))),
+      ),
     );
   }
 }

@@ -85,9 +85,10 @@ class _FinancialMasterDataScreenState extends State<FinancialMasterDataScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            Future<void> save() async {
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setLocal) {
+              Future<void> save() async {
               if (saving) return;
               final rootContext = this.context;
               final nrRaw = nrCtrl.text.trim();
@@ -154,139 +155,171 @@ class _FinancialMasterDataScreenState extends State<FinancialMasterDataScreen> {
               }
             }
 
-            return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    topRight: Radius.circular(24),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.10),
-                      blurRadius: 40,
-                      offset: const Offset(0, -12),
-                    ),
-                  ],
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
                 ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Grootboekrekening toevoegen',
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 40,
+                        offset: const Offset(0, -12),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Grootboekrekening toevoegen',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: saving
+                                    ? null
+                                    : () => Navigator.of(context).pop(),
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: nrCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Rekeningnummer',
+                              filled: true,
+                              fillColor: softBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: naamCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Naam',
+                              filled: true,
+                              fillColor: softBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 12),
+                          InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: 'Type',
+                              filled: true,
+                              fillColor: softBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: type,
+                                isExpanded: true,
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'balans',
+                                    child: Text('Balans'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'winst_en_verlies',
+                                    child: Text('Winst & Verlies'),
+                                  ),
+                                ],
+                                onChanged: saving
+                                    ? null
+                                    : (v) =>
+                                        setLocal(() => type = v ?? 'balans'),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: categorieCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Categorie',
+                              hintText: 'Omzet, Kosten, Activa…',
+                              filled: true,
+                              fillColor: softBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: saving ? null : save,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: cs.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 16,
+                                ),
+                              ),
+                              icon: saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                          Colors.white,
+                                        ),
+                                      ),
+                                    )
+                                  : const Icon(Icons.add_rounded),
+                              label: Text(
+                                saving ? 'Bezig…' : 'Opslaan',
                                 style: GoogleFonts.inter(
-                                  fontSize: 18,
                                   fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.3,
                                 ),
                               ),
                             ),
-                            IconButton(
-                              onPressed: saving ? null : () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.close_rounded),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: nrCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Rekeningnummer',
-                            filled: true,
-                            fillColor: softBg,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
                           ),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: naamCtrl,
-                          decoration: InputDecoration(
-                            labelText: 'Naam',
-                            filled: true,
-                            fillColor: softBg,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                          ),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 12),
-                        InputDecorator(
-                          decoration: InputDecoration(
-                            labelText: 'Type',
-                            filled: true,
-                            fillColor: softBg,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                          ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: type,
-                              isExpanded: true,
-                              items: const [
-                                DropdownMenuItem(value: 'balans', child: Text('Balans')),
-                                DropdownMenuItem(value: 'winst_en_verlies', child: Text('Winst & Verlies')),
-                              ],
-                              onChanged: saving ? null : (v) => setLocal(() => type = v ?? 'balans'),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: categorieCtrl,
-                          decoration: InputDecoration(
-                            labelText: 'Categorie',
-                            hintText: 'Omzet, Kosten, Activa…',
-                            filled: true,
-                            fillColor: softBg,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                          ),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: saving ? null : save,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: cs.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                            ),
-                            icon: saving
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                    ),
-                                  )
-                                : const Icon(Icons.add_rounded),
-                            label: Text(
-                              saving ? 'Bezig…' : 'Opslaan',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                      ],
+                          const SizedBox(height: 6),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
@@ -308,9 +341,10 @@ class _FinancialMasterDataScreenState extends State<FinancialMasterDataScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setLocal) {
-            Future<void> save() async {
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setLocal) {
+              Future<void> save() async {
               if (saving) return;
               final rootContext = this.context;
               setLocal(() => saving = true);
@@ -362,143 +396,177 @@ class _FinancialMasterDataScreenState extends State<FinancialMasterDataScreen> {
               }
             }
 
-            return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    topRight: Radius.circular(24),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.10),
-                      blurRadius: 40,
-                      offset: const Offset(0, -12),
-                    ),
-                  ],
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
                 ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'BTW-code toevoegen',
-                                style: GoogleFonts.inter(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: saving ? null : () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.close_rounded),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: codeCtrl,
-                          decoration: InputDecoration(
-                            labelText: 'Code',
-                            hintText: 'DE_HOOG',
-                            filled: true,
-                            fillColor: softBg,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                          ),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: omsCtrl,
-                          decoration: InputDecoration(
-                            labelText: 'Omschrijving',
-                            filled: true,
-                            fillColor: softBg,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                          ),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: pctCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: InputDecoration(
-                            labelText: 'Percentage',
-                            hintText: '21.00',
-                            filled: true,
-                            fillColor: softBg,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                          ),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: softBg,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-                          ),
-                          child: Row(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 40,
+                        offset: const Offset(0, -12),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  'Btw verlegd',
-                                  style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                                  'BTW-code toevoegen',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.3,
+                                  ),
                                 ),
                               ),
-                              CupertinoSwitch(
-                                value: isVerlegd,
-                                onChanged: saving ? null : (v) => setLocal(() => isVerlegd = v),
+                              IconButton(
+                                onPressed: saving
+                                    ? null
+                                    : () => Navigator.of(context).pop(),
+                                icon: const Icon(Icons.close_rounded),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: saving ? null : save,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: cs.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: codeCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Code',
+                              hintText: 'DE_HOOG',
+                              filled: true,
+                              fillColor: softBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
                             ),
-                            icon: saving
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: omsCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Omschrijving',
+                              filled: true,
+                              fillColor: softBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: pctCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: 'Percentage',
+                              hintText: '21.00',
+                              filled: true,
+                              fillColor: softBg,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: softBg,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: cs.onSurface.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Btw verlegd',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
                                     ),
-                                  )
-                                : const Icon(Icons.add_rounded),
-                            label: Text(
-                              saving ? 'Bezig…' : 'Opslaan',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                                  ),
+                                ),
+                                CupertinoSwitch(
+                                  value: isVerlegd,
+                                  onChanged: saving
+                                      ? null
+                                      : (v) => setLocal(
+                                            () => isVerlegd = v,
+                                          ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                      ],
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: saving ? null : save,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: cs.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 16,
+                                ),
+                              ),
+                              icon: saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                          Colors.white,
+                                        ),
+                                      ),
+                                    )
+                                  : const Icon(Icons.add_rounded),
+                              label: Text(
+                                saving ? 'Bezig…' : 'Opslaan',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
@@ -532,44 +600,51 @@ class _FinancialMasterDataScreenState extends State<FinancialMasterDataScreen> {
             IconButton(tooltip: 'Vernieuwen', onPressed: _refresh, icon: const Icon(Icons.refresh)),
           ],
         ),
-        body: !canView
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: softBg,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                    ),
-                    child: Text(
-                      'U heeft geen rechten om financiële stamgegevens te beheren.',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        body: SelectionArea(
+          child: !canView
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: softBg,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: cs.onSurface.withValues(alpha: 0.06),
+                        ),
+                      ),
+                      child: Text(
+                        'U heeft geen rechten om financiële stamgegevens te beheren.',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
-                ),
-              )
-            : FutureBuilder<_FinancialMasterData>(
-                future: _future,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: softBg,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                )
+              : FutureBuilder<_FinancialMasterData>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: softBg,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                            ),
+                          ),
+                          child: Text(
+                            'Kan stamgegevens niet laden: ${snapshot.error}',
+                          ),
                         ),
-                        child: Text('Kan stamgegevens niet laden: ${snapshot.error}'),
-                      ),
-                    );
-                  }
+                      );
+                    }
 
                   final data = snapshot.data ??
                       const _FinancialMasterData(grootboek: <Map<String, dynamic>>[], btwCodes: <Map<String, dynamic>>[]);
@@ -662,8 +737,9 @@ class _FinancialMasterDataScreenState extends State<FinancialMasterDataScreen> {
                       ),
                     ],
                   );
-                },
-              ),
+                  },
+                ),
+        ),
       ),
     );
   }

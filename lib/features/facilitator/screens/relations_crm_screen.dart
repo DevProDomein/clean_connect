@@ -256,15 +256,17 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
           ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildKpiHeader(isDark),
-            _buildSearchBar(isDark),
-            Expanded(child: _buildListSection(isDark)),
-          ],
+      body: SelectionArea(
+        child: SafeArea(
+          top: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildKpiHeader(isDark),
+              _buildSearchBar(isDark),
+              Expanded(child: _buildListSection(isDark)),
+            ],
+          ),
         ),
       ),
     );

@@ -411,10 +411,12 @@ class _AgendaScreenState extends State<AgendaScreen> {
           title: Text('Mijn Agenda',
               style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
         ),
-        body: Center(
-          child: Text(
-            'Geen toegang tot deze agenda.',
-            style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+        body: SelectionArea(
+          child: Center(
+            child: Text(
+              'Geen toegang tot deze agenda.',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+            ),
           ),
         ),
       );
@@ -445,26 +447,27 @@ class _AgendaScreenState extends State<AgendaScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CupertinoActivityIndicator(radius: 16))
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Laden mislukt: $_error',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.lato(
-                        color: _muted,
-                        fontWeight: FontWeight.w600,
+      body: SelectionArea(
+        child: _loading
+            ? const Center(child: CupertinoActivityIndicator(radius: 16))
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Laden mislukt: $_error',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.lato(
+                          color: _muted,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                )
-              : Column(
-                  children: [
-                    Expanded(
-                      child: TableCalendar<Map<String, dynamic>>(
+                  )
+                : Column(
+                    children: [
+                      Expanded(
+                        child: TableCalendar<Map<String, dynamic>>(
                         firstDay: DateTime(2022, 1, 1),
                         lastDay: DateTime(2035, 12, 31),
                         focusedDay: _focusedDay,
@@ -542,28 +545,29 @@ class _AgendaScreenState extends State<AgendaScreen> {
                             );
                           },
                         ),
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                            child: Text(
-                              'Alle opdrachten voor deze ${_calendarViewMode.toLowerCase()}',
-                              style: GoogleFonts.lato(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                              child: Text(
+                                'Alle opdrachten voor deze ${_calendarViewMode.toLowerCase()}',
+                                style: GoogleFonts.lato(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
-                          ),
-                          Expanded(child: _buildDayList()),
-                        ],
+                            Expanded(child: _buildDayList()),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openOpnameSheet,
         tooltip: 'Nieuwe opname afspraak',

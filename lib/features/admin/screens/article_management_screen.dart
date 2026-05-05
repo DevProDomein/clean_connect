@@ -82,12 +82,14 @@ class _ArticleManagementScreenState extends State<ArticleManagementScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _ArticleEditorSheet(
-        article: article,
-        btwCodes: data.btwCodes,
-        omzetRekeningen: data.omzetRekeningen,
-        knownColumns: data.knownColumns,
-        onSaved: _refresh,
+      builder: (context) => SelectionArea(
+        child: _ArticleEditorSheet(
+          article: article,
+          btwCodes: data.btwCodes,
+          omzetRekeningen: data.omzetRekeningen,
+          knownColumns: data.knownColumns,
+          onSaved: _refresh,
+        ),
       ),
     );
   }
@@ -124,44 +126,45 @@ class _ArticleManagementScreenState extends State<ArticleManagementScreen> {
           );
         },
       ),
-      body: !canView
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: softBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                  ),
-                  child: Text(
-                    'U heeft geen rechten om artikelen te beheren.',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+      body: SelectionArea(
+        child: !canView
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: softBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                    ),
+                    child: Text(
+                      'U heeft geen rechten om artikelen te beheren.',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
-              ),
-            )
-          : FutureBuilder<_ArticleManagementData>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: softBg,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+              )
+            : FutureBuilder<_ArticleManagementData>(
+                future: _future,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: softBg,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                        ),
+                        child: Text('Kan artikelen niet laden: ${snapshot.error}'),
                       ),
-                      child: Text('Kan artikelen niet laden: ${snapshot.error}'),
-                    ),
-                  );
-                }
+                    );
+                  }
 
                 final data = snapshot.data ??
                     const _ArticleManagementData(
@@ -316,8 +319,9 @@ class _ArticleManagementScreenState extends State<ArticleManagementScreen> {
                     ),
                   ],
                 );
-              },
-            ),
+                },
+              ),
+      ),
     );
   }
 }

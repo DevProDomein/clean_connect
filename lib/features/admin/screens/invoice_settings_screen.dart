@@ -230,10 +230,12 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
       return Scaffold(
         drawer: const AppDrawer(),
         appBar: AppBar(title: const Text('Factuur Instellingen')),
-        body: const Padding(
-          padding: EdgeInsets.all(24),
-          child: _NoAccessEmpty(
-            message: 'U heeft geen rechten om app-instellingen te beheren.',
+        body: const SelectionArea(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: _NoAccessEmpty(
+              message: 'U heeft geen rechten om app-instellingen te beheren.',
+            ),
           ),
         ),
       );
@@ -249,72 +251,88 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
           ),
         ),
-        body: FutureBuilder<void>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Padding(
-                padding: const EdgeInsets.all(24),
-                child: _NoAccessEmpty(message: 'Fout: ${snapshot.error}'),
-              );
-            }
+        body: SelectionArea(
+          child: FutureBuilder<void>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: _NoAccessEmpty(message: 'Fout: ${snapshot.error}'),
+                );
+              }
 
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: cs.onSurface.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    child: TabBar(
-                      splashBorderRadius: BorderRadius.circular(50),
-                      indicator: BoxDecoration(
-                        color: cs.primary,
-                        borderRadius: BorderRadius.circular(50),
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: cs.onSurface.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: cs.onSurface.withValues(alpha: 0.06),
+                        ),
                       ),
-                      dividerColor: Colors.transparent,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
-                      labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
-                      tabs: const [
-                        Tab(child: _PillTabLabel(text: 'Bedrijfsgegevens & Logo')),
-                        Tab(child: _PillTabLabel(text: 'HTML Sjablonen')),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      child: TabBar(
+                        splashBorderRadius: BorderRadius.circular(50),
+                        indicator: BoxDecoration(
+                          color: cs.primary,
+                          borderRadius: BorderRadius.circular(50),
+                        ),
+                        dividerColor: Colors.transparent,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
+                        labelStyle: GoogleFonts.inter(
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.2,
+                        ),
+                        tabs: const [
+                          Tab(
+                            child: _PillTabLabel(
+                              text: 'Bedrijfsgegevens & Logo',
+                            ),
+                          ),
+                          Tab(
+                            child: _PillTabLabel(text: 'HTML Sjablonen'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _CompanyAndLogoTab(
+                          logoUrl: _logoUrl,
+                          uploadingLogo: _uploadingLogo,
+                          saving: _savingCompany,
+                          onUploadLogo: _uploadLogo,
+                          onSave: _saveCompany,
+                          bedrijfsnaam: _bedrijfsnaam,
+                          kvk: _kvk,
+                          btw: _btw,
+                          iban: _iban,
+                        ),
+                        _HtmlTemplateTab(
+                          bodyHtml: _bodyHtml,
+                          saving: _savingTemplate,
+                          onSave: _saveTemplate,
+                        ),
                       ],
                     ),
                   ),
-                ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _CompanyAndLogoTab(
-                        logoUrl: _logoUrl,
-                        uploadingLogo: _uploadingLogo,
-                        saving: _savingCompany,
-                        onUploadLogo: _uploadLogo,
-                        onSave: _saveCompany,
-                        bedrijfsnaam: _bedrijfsnaam,
-                        kvk: _kvk,
-                        btw: _btw,
-                        iban: _iban,
-                      ),
-                      _HtmlTemplateTab(
-                        bodyHtml: _bodyHtml,
-                        saving: _savingTemplate,
-                        onSave: _saveTemplate,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

@@ -495,10 +495,12 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _EenmaligeKlusSheet(
-        bedrijfId: _id!,
-        regioOpties: _werkRegioOpties,
-        initialRegio: _clientWerkRegio,
+      builder: (ctx) => SelectionArea(
+        child: _EenmaligeKlusSheet(
+          bedrijfId: _id!,
+          regioOpties: _werkRegioOpties,
+          initialRegio: _clientWerkRegio,
+        ),
       ),
     );
     if (!mounted) return;
@@ -529,13 +531,15 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
       drawer: const AppDrawer(),
       appBar: _buildAppBar(),
       floatingActionButton: _buildFab(canView),
-      body: !canView
-          ? _buildNoPermission()
-          : _isLoading
-              ? const Center(child: CupertinoActivityIndicator(radius: 16))
-              : _loadError != null
-                  ? _buildErrorState()
-                  : _buildContent(isFacilitator: isFacilitator),
+      body: SelectionArea(
+        child: !canView
+            ? _buildNoPermission()
+            : _isLoading
+                ? const Center(child: CupertinoActivityIndicator(radius: 16))
+                : _loadError != null
+                    ? _buildErrorState()
+                    : _buildContent(isFacilitator: isFacilitator),
+      ),
     );
   }
 
@@ -1384,53 +1388,53 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     if (contactId.isEmpty || !mounted) return;
     final go = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(_radius),
-        ),
-        title: Text(
-          'Contactpersoon verwijderen?',
-          style: GoogleFonts.lato(
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.2,
+      builder: (ctx) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(_radius),
           ),
-        ),
-        content: Text(
-          'Deze actie kan niet ongedaan worden gemaakt.',
-          style: GoogleFonts.lato(
-            fontWeight: FontWeight.w600,
-            color: _muted,
-            height: 1.4,
+          title: Text(
+            'Contactpersoon verwijderen?',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.2,
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                Navigator.of(ctx, rootNavigator: true).pop(false),
-            child: Text(
-              'Annuleren',
-              style: GoogleFonts.lato(
-                fontWeight: FontWeight.w800,
-                color: _muted,
+          content: Text(
+            'Deze actie kan niet ongedaan worden gemaakt.',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w600,
+              color: _muted,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx, rootNavigator: true).pop(false),
+              child: Text(
+                'Annuleren',
+                style: GoogleFonts.lato(
+                  fontWeight: FontWeight.w800,
+                  color: _muted,
+                ),
               ),
             ),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx, rootNavigator: true).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: _red,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(_radius),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx, rootNavigator: true).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: _red,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(_radius),
+                ),
+              ),
+              child: Text(
+                'Verwijderen',
+                style: GoogleFonts.lato(fontWeight: FontWeight.w900),
               ),
             ),
-            child: Text(
-              'Verwijderen',
-              style: GoogleFonts.lato(fontWeight: FontWeight.w900),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
     if (go != true || !mounted) return;
@@ -1459,9 +1463,11 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: AddContactModal(bedrijfId: bedrijfId),
+      builder: (ctx) => SelectionArea(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: AddContactModal(bedrijfId: bedrijfId),
+        ),
       ),
     );
 
@@ -1487,11 +1493,13 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: AddContactModal(
-          bedrijfId: bedrijfId,
-          existingContact: contactData,
+      builder: (ctx) => SelectionArea(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: AddContactModal(
+            bedrijfId: bedrijfId,
+            existingContact: contactData,
+          ),
         ),
       ),
     );

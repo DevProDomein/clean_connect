@@ -67,213 +67,214 @@ class OpnameAfspraakFormSheet {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.88,
-          minChildSize: 0.5,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(radius),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0x0A000000),
-                    blurRadius: 20,
-                    offset: Offset(0, -4),
+        return SelectionArea(
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.88,
+            minChildSize: 0.5,
+            maxChildSize: 0.95,
+            expand: false,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(radius),
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  top: 16,
-                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x0A000000),
+                      blurRadius: 20,
+                      offset: Offset(0, -4),
+                    ),
+                  ],
                 ),
-                child: StatefulBuilder(
-                  builder: (context, setLocal) {
-                    Future<void> pickDate() async {
-                      final d = await showDatePicker(
-                        context: context,
-                        initialDate: dag ?? DateTime.now(),
-                        firstDate: DateTime(2024),
-                        lastDate: DateTime(2040),
-                      );
-                      if (d != null) {
-                        setLocal(() => dag = d);
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    top: 16,
+                    bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                  ),
+                  child: StatefulBuilder(
+                    builder: (context, setLocal) {
+                      Future<void> pickDate() async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: dag ?? DateTime.now(),
+                          firstDate: DateTime(2024),
+                          lastDate: DateTime(2040),
+                        );
+                        if (d != null) {
+                          setLocal(() => dag = d);
+                        }
                       }
-                    }
-
-                    Future<void> pickStart() async {
-                      final t = await showTimePicker(
-                        context: context,
-                        initialTime: start,
-                      );
-                      if (t != null) {
-                        setLocal(() => start = t);
+ 
+                      Future<void> pickStart() async {
+                        final t = await showTimePicker(
+                          context: context,
+                          initialTime: start,
+                        );
+                        if (t != null) {
+                          setLocal(() => start = t);
+                        }
                       }
-                    }
-
-                    Future<void> pickEnd() async {
-                      final t = await showTimePicker(
-                        context: context,
-                        initialTime: end,
-                      );
-                      if (t != null) {
-                        setLocal(() => end = t);
+ 
+                      Future<void> pickEnd() async {
+                        final t = await showTimePicker(
+                          context: context,
+                          initialTime: end,
+                        );
+                        if (t != null) {
+                          setLocal(() => end = t);
+                        }
                       }
-                    }
-
-                    return ListView(
-                      controller: scrollController,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            margin: const EdgeInsets.only(bottom: 16),
-                            decoration: BoxDecoration(
-                              color: Colors.black12,
-                              borderRadius: BorderRadius.circular(99),
+ 
+                      return ListView(
+                        controller: scrollController,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.black12,
+                                borderRadius: BorderRadius.circular(99),
+                              ),
                             ),
                           ),
-                        ),
-                        Text(
-                          'Nieuwe opname afspraak',
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 22,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: bed,
-                          decoration: _fieldDec(null, label: 'Bedrijfsnaam'),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: contact,
-                          decoration: _fieldDec(null, label: 'Contactpersoon'),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: email,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _fieldDec(null, label: 'E-mail'),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: tel,
-                          keyboardType: TextInputType.phone,
-                          decoration: _fieldDec(null, label: 'Telefoon'),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: adres,
-                          decoration: _fieldDec(null, label: 'Adres'),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          // ignore: deprecated_member_use
-                          value: regio,
-                          decoration: _fieldDec(null, label: 'Regio'),
-                          items: regioOptions
-                              .map(
-                                (r) => DropdownMenuItem(
-                                  value: r,
-                                  child: Text(r, style: GoogleFonts.lato()),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) {
-                            if (v != null) {
-                              setLocal(() => regio = v);
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text('Datum', style: GoogleFonts.lato()),
-                          subtitle: Text(
-                            dag == null
-                                ? '—'
-                                : DateFormat('dd MMM yyyy').format(dag!),
+                          Text(
+                            'Nieuwe opname afspraak',
                             style: GoogleFonts.lato(
-                              fontWeight: FontWeight.w800,
-                              color: navy,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 22,
                             ),
                           ),
-                          trailing: const Icon(Icons.calendar_today_outlined),
-                          onTap: pickDate,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(
-                              color: Colors.black.withValues(alpha: 0.08),
-                            ),
+                          const SizedBox(height: 20),
+                          TextField(
+                            controller: bed,
+                            decoration: _fieldDec(null, label: 'Bedrijfsnaam'),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 0,
-                                ),
-                                title: Text('Start', style: GoogleFonts.lato()),
-                                subtitle: Text(
-                                  start.format(context),
-                                  style: GoogleFonts.lato(
-                                    fontWeight: FontWeight.w800,
-                                    color: navy,
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: contact,
+                            decoration: _fieldDec(null, label: 'Contactpersoon'),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: email,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _fieldDec(null, label: 'E-mail'),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: tel,
+                            keyboardType: TextInputType.phone,
+                            decoration: _fieldDec(null, label: 'Telefoon'),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: adres,
+                            decoration: _fieldDec(null, label: 'Adres'),
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            // ignore: deprecated_member_use
+                            value: regio,
+                            decoration: _fieldDec(null, label: 'Regio'),
+                            items: regioOptions
+                                .map(
+                                  (r) => DropdownMenuItem(
+                                    value: r,
+                                    child: Text(r, style: GoogleFonts.lato()),
                                   ),
-                                ),
-                                onTap: pickStart,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  side: BorderSide(
-                                    color: Colors.black.withValues(alpha: 0.08),
+                                )
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) {
+                                setLocal(() => regio = v);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text('Datum', style: GoogleFonts.lato()),
+                            subtitle: Text(
+                              dag == null
+                                  ? '—'
+                                  : DateFormat('dd MMM yyyy').format(dag!),
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.w800,
+                                color: navy,
+                              ),
+                            ),
+                            trailing: const Icon(Icons.calendar_today_outlined),
+                            onTap: pickDate,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: Colors.black.withValues(alpha: 0.08),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 0,
+                                  ),
+                                  title: Text('Start', style: GoogleFonts.lato()),
+                                  subtitle: Text(
+                                    start.format(context),
+                                    style: GoogleFonts.lato(
+                                      fontWeight: FontWeight.w800,
+                                      color: navy,
+                                    ),
+                                  ),
+                                  onTap: pickStart,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    side: BorderSide(
+                                      color: Colors.black.withValues(alpha: 0.08),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 0,
-                                ),
-                                title: Text('Eind', style: GoogleFonts.lato()),
-                                subtitle: Text(
-                                  end.format(context),
-                                  style: GoogleFonts.lato(
-                                    fontWeight: FontWeight.w800,
-                                    color: navy,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 0,
                                   ),
-                                ),
-                                onTap: pickEnd,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  side: BorderSide(
-                                    color: Colors.black.withValues(alpha: 0.08),
+                                  title: Text('Eind', style: GoogleFonts.lato()),
+                                  subtitle: Text(
+                                    end.format(context),
+                                    style: GoogleFonts.lato(
+                                      fontWeight: FontWeight.w800,
+                                      color: navy,
+                                    ),
+                                  ),
+                                  onTap: pickEnd,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    side: BorderSide(
+                                      color: Colors.black.withValues(alpha: 0.08),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: () async {
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: () async {
                               if (bed.text.trim().isEmpty) {
                                 messenger.showSnackBar(
                                   SnackBar(
@@ -343,22 +344,23 @@ class OpnameAfspraakFormSheet {
                                 ),
                               );
                             },
-                            child: Text(
-                              'Afspraak plannen',
-                              style: GoogleFonts.lato(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
+                              child: Text(
+                                'Afspraak plannen',
+                                style: GoogleFonts.lato(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    );
-                  },
+                        ],
+                      );
+                    },
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );

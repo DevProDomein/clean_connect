@@ -222,71 +222,89 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          child: Material(
-            color: Colors.white,
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 24,
-                  right: 24,
-                  top: 16,
-                  bottom: 24 + MediaQuery.paddingOf(ctx).bottom,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Afspraak',
-                      style: GoogleFonts.lato(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 20,
-                        color: _navy,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _detailRegel(Icons.schedule_rounded, 'Tijd', '$start – $eind'),
-                    const SizedBox(height: 12),
-                    _detailRegel(Icons.work_outline_rounded, 'Project', project.isEmpty ? '—' : project),
-                    const SizedBox(height: 12),
-                    _detailRegel(Icons.business_outlined, 'Klant', bedrijf.isEmpty ? '—' : bedrijf),
-                    const SizedBox(height: 12),
-                    _detailRegel(Icons.place_outlined, 'Locatie', adres.isEmpty ? '—' : adres),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: () => Navigator.pop(ctx),
-                        child: Text(
-                          'Sluiten',
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
+        return SelectionArea(
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Material(
+              color: Colors.white,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 24,
+                    right: 24,
+                    top: 16,
+                    bottom: 24 + MediaQuery.paddingOf(ctx).bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      Text(
+                        'Afspraak',
+                        style: GoogleFonts.lato(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                          color: _navy,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _detailRegel(
+                        Icons.schedule_rounded,
+                        'Tijd',
+                        '$start – $eind',
+                      ),
+                      const SizedBox(height: 12),
+                      _detailRegel(
+                        Icons.work_outline_rounded,
+                        'Project',
+                        project.isEmpty ? '—' : project,
+                      ),
+                      const SizedBox(height: 12),
+                      _detailRegel(
+                        Icons.business_outlined,
+                        'Klant',
+                        bedrijf.isEmpty ? '—' : bedrijf,
+                      ),
+                      const SizedBox(height: 12),
+                      _detailRegel(
+                        Icons.place_outlined,
+                        'Locatie',
+                        adres.isEmpty ? '—' : adres,
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(
+                            'Sluiten',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

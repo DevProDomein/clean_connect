@@ -361,10 +361,12 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
           title: Text('Projecten',
               style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
         ),
-        body: Center(
-          child: Text(
-            'Geen toegang tot projectoverzicht.',
-            style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+        body: SelectionArea(
+          child: Center(
+            child: Text(
+              'Geen toegang tot projectoverzicht.',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+            ),
           ),
         ),
       );
@@ -412,39 +414,41 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
           style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 15),
         ),
       ),
-      body: _loading
-          ? const Center(child: CupertinoActivityIndicator(radius: 16))
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Laden mislukt: $_error',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.lato(color: _muted),
+      body: SelectionArea(
+        child: _loading
+            ? const Center(child: CupertinoActivityIndicator(radius: 16))
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Laden mislukt: $_error',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.lato(color: _muted),
+                      ),
                     ),
-                  ),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildKpiRow(),
-                    if (_fetchFallbackNote != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Text(
-                          _fetchFallbackNote!,
-                          style: GoogleFonts.lato(
-                            fontSize: 12,
-                            color: _amber,
-                            fontWeight: FontWeight.w700,
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildKpiRow(),
+                      if (_fetchFallbackNote != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            _fetchFallbackNote!,
+                            style: GoogleFonts.lato(
+                              fontSize: 12,
+                              color: _amber,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                      ),
-                    _buildFilterBar(),
-                    Expanded(child: _buildProjectList()),
-                  ],
-                ),
+                      _buildFilterBar(),
+                      Expanded(child: _buildProjectList()),
+                    ],
+                  ),
+      ),
     );
   }
 

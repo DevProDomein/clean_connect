@@ -138,7 +138,9 @@ class _DebtorDashboardScreenState extends State<DebtorDashboardScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
           ),
         ),
-        body: const Center(child: Text('Geen toegang.')),
+        body: const SelectionArea(
+          child: Center(child: Text('Geen toegang.')),
+        ),
       );
     }
 
@@ -158,195 +160,227 @@ class _DebtorDashboardScreenState extends State<DebtorDashboardScreen> {
           IconButton(tooltip: 'Vernieuwen', onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: softBg,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                ),
-                child: Text('Kan lijst niet laden: ${snapshot.error}'),
-              ),
-            );
-          }
-
-          final rows = snapshot.data ?? const <Map<String, dynamic>>[];
-          if (rows.isEmpty) {
-            return Center(
-              child: Padding(
+      body: SelectionArea(
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
                 padding: const EdgeInsets.all(24),
                 child: Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     color: softBg,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                  ),
-                  child: Text(
-                    'Geen achterstallige facturen gevonden.',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            itemCount: rows.length,
-            separatorBuilder: (_, i) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final r = rows[i];
-              final klant = _text(r['bedrijfsnaam'] ?? r['debiteur_naam'] ?? r['klant_naam'] ?? r['bedrijf']);
-              final nr = _text(r['factuur_nummer']);
-              final dagen = _asInt(r['dagen_te_laat'] ?? r['days_overdue']);
-              final open = _asDouble(r['openstaand_saldo']);
-              final advies = _text(r['escalatie_advies']);
-              final pauzeTot = _asDate(r['dunning_pauze_tot']);
-              final isPaused = pauzeTot != null && pauzeTot.isAfter(DateTime.now());
-
-              final badge = _AdviceTone.forAdvice(advies, isDark: isDark);
-              final effectiveOpacity = isPaused ? 0.60 : 1.0;
-
-              return Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: tileBg.withValues(alpha: effectiveOpacity),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 20,
-                      offset: const Offset(0, 5),
+                    border: Border.all(
+                      color: cs.onSurface.withValues(alpha: 0.06),
                     ),
-                  ],
+                  ),
+                  child: Text('Kan lijst niet laden: ${snapshot.error}'),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            klant.isEmpty ? 'Onbekende Klant' : klant,
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.2,
+              );
+            }
+
+            final rows = snapshot.data ?? const <Map<String, dynamic>>[];
+            if (rows.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: softBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: cs.onSurface.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Text(
+                      'Geen achterstallige facturen gevonden.',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+              itemCount: rows.length,
+              separatorBuilder: (_, i) => const SizedBox(height: 12),
+              itemBuilder: (context, i) {
+                final r = rows[i];
+                final klant = _text(
+                  r['bedrijfsnaam'] ??
+                      r['debiteur_naam'] ??
+                      r['klant_naam'] ??
+                      r['bedrijf'],
+                );
+                final nr = _text(r['factuur_nummer']);
+                final dagen = _asInt(r['dagen_te_laat'] ?? r['days_overdue']);
+                final open = _asDouble(r['openstaand_saldo']);
+                final advies = _text(r['escalatie_advies']);
+                final pauzeTot = _asDate(r['dunning_pauze_tot']);
+                final isPaused =
+                    pauzeTot != null && pauzeTot.isAfter(DateTime.now());
+
+                final badge = _AdviceTone.forAdvice(advies, isDark: isDark);
+                final effectiveOpacity = isPaused ? 0.60 : 1.0;
+
+                return Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: tileBg.withValues(alpha: effectiveOpacity),
+                    borderRadius: BorderRadius.circular(24),
+                    border:
+                        Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 20,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              klant.isEmpty ? 'Onbekende Klant' : klant,
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                              ),
                             ),
                           ),
-                        ),
-                        if (isPaused) ...[
+                          if (isPaused) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cs.onSurface.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: cs.onSurface.withValues(alpha: 0.12),
+                                ),
+                              ),
+                              child: Text(
+                                'Gepauzeerd',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.1,
+                                  color: cs.onSurface.withValues(alpha: 0.75),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
-                              color: cs.onSurface.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: cs.onSurface.withValues(alpha: 0.12)),
+                              color: badge.bg,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: badge.border),
                             ),
                             child: Text(
-                              'Gepauzeerd',
+                              badge.label,
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.1,
-                                color: cs.onSurface.withValues(alpha: 0.75),
+                                color: badge.fg,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 10),
                         ],
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: badge.bg,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: badge.border),
-                          ),
-                          child: Text(
-                            badge.label,
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.1,
-                              color: badge.fg,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      [if (nr.isNotEmpty) nr].join(' • '),
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSurface.withValues(alpha: 0.65),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _MiniStat(
-                            label: 'Dagen te laat',
-                            value: '$dagen',
-                            valueColor: dagen > 0 ? Colors.redAccent : cs.onSurface,
-                          ),
+                      const SizedBox(height: 6),
+                      Text(
+                        [if (nr.isNotEmpty) nr].join(' • '),
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface.withValues(alpha: 0.65),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _MiniStat(
-                            label: 'Open bedrag',
-                            value: _eur().format(open),
-                            valueColor: cs.onSurface,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _snooze(r),
-                            icon: const Icon(Icons.snooze_rounded),
-                            label: const Text('Pauzeer (Regeling)'),
-                            style: OutlinedButton.styleFrom(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Dagen te laat',
+                              value: '$dagen',
+                              valueColor:
+                                  dagen > 0 ? Colors.redAccent : cs.onSurface,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () => _sendReminder(r),
-                            icon: const Icon(Icons.send_rounded),
-                            label: const Text('Verstuur Herinnering'),
-                            style: FilledButton.styleFrom(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _MiniStat(
+                              label: 'Open bedrag',
+                              value: _eur().format(open),
+                              valueColor: cs.onSurface,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _snooze(r),
+                              icon: const Icon(Icons.snooze_rounded),
+                              label: const Text('Pauzeer (Regeling)'),
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => _sendReminder(r),
+                              icon: const Icon(Icons.send_rounded),
+                              label: const Text('Verstuur Herinnering'),
+                              style: FilledButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

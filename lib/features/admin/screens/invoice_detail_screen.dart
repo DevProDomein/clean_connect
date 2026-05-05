@@ -97,26 +97,31 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
 
     final bool? shouldLeave = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Niet-opgeslagen wijzigingen', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text(
-          'U heeft wijzigingen aangebracht aan deze factuur. Als u deze pagina verlaat, gaan uw invoergegevens verloren. Wilt u echt weggaan?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Blijven', style: TextStyle(color: Colors.grey)),
+      builder: (context) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            'Niet-opgeslagen wijzigingen',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: const Text(
+            'U heeft wijzigingen aangebracht aan deze factuur. Als u deze pagina verlaat, gaan uw invoergegevens verloren. Wilt u echt weggaan?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Blijven', style: TextStyle(color: Colors.grey)),
             ),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Verlaten', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Verlaten', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
       ),
     );
     if (shouldLeave == true && mounted) {
@@ -168,45 +173,47 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       context: context,
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text(
-            'Korting op totaal',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
-          ),
-          content: TextField(
-            controller: controller,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'^[0-9]+([\\.,][0-9]{0,2})?\$')),
+        return SelectionArea(
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              'Korting op totaal',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
+            ),
+            content: TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^[0-9]+([\\.,][0-9]{0,2})?\$')),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Factuurkorting (%)',
+                suffixIcon: const EnterpriseTooltip(
+                  message:
+                      'Wordt toegepast op het totaal. Supabase herberekent automatisch de regels, BTW en totalen.',
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuleren'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: cs.primary,
+                  foregroundColor: Colors.white,
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                ),
+                child: Text(
+                  'Opslaan',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                ),
+              ),
             ],
-            decoration: InputDecoration(
-              labelText: 'Factuurkorting (%)',
-              suffixIcon: const EnterpriseTooltip(
-                message:
-                    'Wordt toegepast op het totaal. Supabase herberekent automatisch de regels, BTW en totalen.',
-              ),
-            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annuleren'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: FilledButton.styleFrom(
-                backgroundColor: cs.primary,
-                foregroundColor: Colors.white,
-                shape: const StadiumBorder(),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              ),
-              child: Text(
-                'Opslaan',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ],
         );
       },
     );
@@ -259,7 +266,9 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+        builder: (context) => const SelectionArea(
+          child: Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
@@ -302,33 +311,35 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text(
-            'Factuur definitief maken?',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
-          ),
-          content: Text(
-            'Weet u zeker dat u deze factuur definitief wilt maken? Er wordt een officieel factuurnummer gegenereerd. U kunt hierna niets meer wijzigen.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annuleren'),
+        return SelectionArea(
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              'Factuur definitief maken?',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: FilledButton.styleFrom(
-                shape: const StadiumBorder(),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              ),
-              child: Text(
-                'Maak Definitief',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-              ),
+            content: Text(
+              'Weet u zeker dat u deze factuur definitief wilt maken? Er wordt een officieel factuurnummer gegenereerd. U kunt hierna niets meer wijzigen.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuleren'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: FilledButton.styleFrom(
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                ),
+                child: Text(
+                  'Maak Definitief',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -580,81 +591,83 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         bool localBusy = false;
         String? localError;
 
-        return StatefulBuilder(
-          builder: (context, setState) {
-            Future<void> submit() async {
-              final reason = reasonController.text.trim();
-              if (reason.isEmpty) {
-                setState(() => localError = 'Reden is verplicht.');
-                return;
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              Future<void> submit() async {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  setState(() => localError = 'Reden is verplicht.');
+                  return;
+                }
+                setState(() {
+                  localBusy = true;
+                  localError = null;
+                });
+                Navigator.of(context).pop(reason);
               }
-              setState(() {
-                localBusy = true;
-                localError = null;
-              });
-              Navigator.of(context).pop(reason);
-            }
 
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              title: Text(
-                'Factuur Crediteren',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.3,
-                  color: Colors.redAccent,
-                ),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'U staat op het punt een officiële creditfactuur te genereren. De originele factuur wordt gemarkeerd als vervallen/gecrediteerd.',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                title: Text(
+                  'Factuur Crediteren',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.3,
+                    color: Colors.redAccent,
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: reasonController,
-                    enabled: !localBusy,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: 'Reden van creditering (Verplicht voor de fiscus)',
-                      errorText: localError,
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'U staat op het punt een officiële creditfactuur te genereren. De originele factuur wordt gemarkeerd als vervallen/gecrediteerd.',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                     ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: reasonController,
+                      enabled: !localBusy,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Reden van creditering (Verplicht voor de fiscus)',
+                        errorText: localError,
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: localBusy ? null : () => Navigator.of(context).pop(null),
+                    child: const Text('Annuleren'),
+                  ),
+                  FilledButton(
+                    onPressed: localBusy ? null : submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      shape: const StadiumBorder(),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    ),
+                    child: localBusy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Text(
+                            'Crediteren',
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                          ),
                   ),
                 ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: localBusy ? null : () => Navigator.of(context).pop(null),
-                  child: const Text('Annuleren'),
-                ),
-                FilledButton(
-                  onPressed: localBusy ? null : submit,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  ),
-                  child: localBusy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : Text(
-                          'Crediteren',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                        ),
-                ),
-              ],
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
@@ -777,30 +790,32 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _AddInvoiceLineSheet(
-        artikelen: artikelen,
-        onAddArticle: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute(
-              settings: const RouteSettings(name: '/admin/finance/articles'),
-              builder: (_) => const ArticleManagementScreen(),
-            ),
-          );
-          _refresh();
-        },
-        onSubmit: (payload) async {
-          final volgorde = _lines.length + 1;
-          await AppSupabase.client.from('factuur_regels').insert({
-            'factuur_id': widget.invoiceId,
-            'artikel_id': payload.artikelId,
-            'omschrijving': payload.omschrijving,
-            'aantal': payload.aantal,
-            'stukprijs_ex_btw': payload.stukprijsExBtw,
-            'korting_percentage': payload.kortingPercentage,
-            'volgorde': volgorde,
-          });
-          _refresh();
-        },
+      builder: (context) => SelectionArea(
+        child: _AddInvoiceLineSheet(
+          artikelen: artikelen,
+          onAddArticle: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                settings: const RouteSettings(name: '/admin/finance/articles'),
+                builder: (_) => const ArticleManagementScreen(),
+              ),
+            );
+            _refresh();
+          },
+          onSubmit: (payload) async {
+            final volgorde = _lines.length + 1;
+            await AppSupabase.client.from('factuur_regels').insert({
+              'factuur_id': widget.invoiceId,
+              'artikel_id': payload.artikelId,
+              'omschrijving': payload.omschrijving,
+              'aantal': payload.aantal,
+              'stukprijs_ex_btw': payload.stukprijsExBtw,
+              'korting_percentage': payload.kortingPercentage,
+              'volgorde': volgorde,
+            });
+            _refresh();
+          },
+        ),
       ),
     );
   }
@@ -819,7 +834,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           return const MainLayout(
             child: Scaffold(
               drawer: AppDrawer(),
-              body: Center(child: CircularProgressIndicator()),
+              body: SelectionArea(child: Center(child: CircularProgressIndicator())),
             ),
           );
         }
@@ -844,10 +859,12 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                     style: TextStyle(color: Colors.black, fontSize: 14),
                   ),
                 ),
-                body: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Text('Kan factuur niet laden: ${snapshot.error}'),
+                body: SelectionArea(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text('Kan factuur niet laden: ${snapshot.error}'),
+                    ),
                   ),
                 ),
               ),
@@ -1027,10 +1044,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
               ),
             ),
           ),
-          body: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Column(
-              children: [
+          body: SelectionArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Column(
+                children: [
                 if (!isConcept) ...[
                   Container(
                     width: double.infinity,
@@ -1388,7 +1406,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                           },
                         ),
                 ),
-              ],
+                ],
+              ),
             ),
           ),
             ),

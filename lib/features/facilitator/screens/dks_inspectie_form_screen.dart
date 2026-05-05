@@ -209,46 +209,57 @@ class _DksInspectieFormScreenState extends State<DksInspectieFormScreen> {
       context: context,
       barrierDismissible: true,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text('Handtekening', style: GoogleFonts.lato(fontWeight: FontWeight.w800, fontSize: 18)),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 250,
-            child: LayoutBuilder(
-              builder: (ctx, constraints) {
-                var w = constraints.maxWidth;
-                if (!w.isFinite || w <= 0) {
-                  w = MediaQuery.sizeOf(dialogContext).width - 80;
-                }
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Signature(
-                    controller: _signatureController,
-                    width: w,
-                    height: 250,
-                    backgroundColor: Colors.grey.shade100,
-                  ),
-                );
-              },
+        return SelectionArea(
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              'Handtekening',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w800, fontSize: 18),
             ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 250,
+              child: LayoutBuilder(
+                builder: (ctx, constraints) {
+                  var w = constraints.maxWidth;
+                  if (!w.isFinite || w <= 0) {
+                    w = MediaQuery.sizeOf(dialogContext).width - 80;
+                  }
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Signature(
+                      controller: _signatureController,
+                      width: w,
+                      height: 250,
+                      backgroundColor: Colors.grey.shade100,
+                    ),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => _signatureController.clear(),
+                child: Text(
+                  'Wissen',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final bytes = await _signatureController.toPngBytes();
+                  if (bytes != null && mounted) {
+                    setState(() => _signatureBytes = bytes);
+                  }
+                  if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                },
+                child: Text(
+                  'Opslaan',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => _signatureController.clear(),
-              child: Text('Wissen', style: GoogleFonts.lato(fontWeight: FontWeight.w700)),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final bytes = await _signatureController.toPngBytes();
-                if (bytes != null && mounted) {
-                  setState(() => _signatureBytes = bytes);
-                }
-                if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-              },
-              child: Text('Opslaan', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
-            ),
-          ],
         );
       },
     );
@@ -256,7 +267,13 @@ class _DksInspectieFormScreenState extends State<DksInspectieFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(body: Center(child: CupertinoActivityIndicator(radius: 15)));
+    if (_isLoading) {
+      return const Scaffold(
+        body: SelectionArea(
+          child: Center(child: CupertinoActivityIndicator(radius: 15)),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
@@ -269,24 +286,37 @@ class _DksInspectieFormScreenState extends State<DksInspectieFormScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadInitialData),
         ],
       ),
-      body: _groupedRegels.isEmpty
-          ? Center(child: Text('Geen regels gevonden. Check de X-RAY logs in de console.', style: GoogleFonts.lato(fontSize: 16)))
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (_rapport != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      'Rapport status: ${_rapport?['status'] ?? ''} • Operators: ${_operators.length}',
-                      style: GoogleFonts.lato(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black54),
+      body: SelectionArea(
+        child: _groupedRegels.isEmpty
+            ? Center(
+                child: Text(
+                  'Geen regels gevonden. Check de X-RAY logs in de console.',
+                  style: GoogleFonts.lato(fontSize: 16),
+                ),
+              )
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (_rapport != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'Rapport status: ${_rapport?['status'] ?? ''} • Operators: ${_operators.length}',
+                        style: GoogleFonts.lato(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black54,
+                        ),
+                      ),
                     ),
+                  ..._groupedRegels.entries.map(
+                    (entry) => _buildRoomSection(entry.key, entry.value),
                   ),
-                ..._groupedRegels.entries.map((entry) => _buildRoomSection(entry.key, entry.value)),
-                const SizedBox(height: 24),
-                _buildFooter(),
-              ],
-            ),
+                  const SizedBox(height: 24),
+                  _buildFooter(),
+                ],
+              ),
+      ),
     );
   }
 

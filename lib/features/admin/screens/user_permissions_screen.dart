@@ -290,22 +290,24 @@ class _UserPermissionsScreenState extends State<UserPermissionsScreen> {
     if (!_canEdit(context)) {
       return Scaffold(
         appBar: AppBar(title: const Text('Gebruikersrechten')),
-        body: const Center(child: Text('Geen toegang.')),
+        body: const SelectionArea(child: Center(child: Text('Geen toegang.'))),
       );
     }
 
     if (_loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: SelectionArea(child: Center(child: CircularProgressIndicator())),
       );
     }
 
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Gebruikersrechten')),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(_error!),
+        body: SelectionArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(_error!),
+          ),
         ),
       );
     }
@@ -336,71 +338,50 @@ class _UserPermissionsScreenState extends State<UserPermissionsScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (_candidateUsers.isNotEmpty) ...[
-            InputDecorator(
-              decoration: const InputDecoration(
-                labelText: 'Gebruiker',
-                border: OutlineInputBorder(),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: _selectedUserId != null &&
-                          _candidateUsers.any((u) => _userIdFromRow(u) == _selectedUserId)
-                      ? _selectedUserId
-                      : null,
-                  items: _candidateUsers
-                      .map((u) {
-                        final id = _userIdFromRow(u);
-                        if (id == null || id.isEmpty) return null;
-                        return DropdownMenuItem(
-                          value: id,
-                          child: Text(_userLabel(u)),
-                        );
-                      })
-                      .whereType<DropdownMenuItem<String>>()
-                      .toList(),
-                  onChanged: (v) async {
-                    if (v == null) return;
-                    setState(() => _selectedUserId = v);
-                    await _loadSelectionsForUser(v);
-                    setState(() {});
-                  },
+      body: SelectionArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (_candidateUsers.isNotEmpty) ...[
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Gebruiker',
+                  border: OutlineInputBorder(),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: _selectedUserId != null &&
+                            _candidateUsers.any(
+                              (u) => _userIdFromRow(u) == _selectedUserId,
+                            )
+                        ? _selectedUserId
+                        : null,
+                    items: _candidateUsers
+                        .map((u) {
+                          final id = _userIdFromRow(u);
+                          if (id == null || id.isEmpty) return null;
+                          return DropdownMenuItem(
+                            value: id,
+                            child: Text(_userLabel(u)),
+                          );
+                        })
+                        .whereType<DropdownMenuItem<String>>()
+                        .toList(),
+                    onChanged: (v) async {
+                      if (v == null) return;
+                      setState(() => _selectedUserId = v);
+                      await _loadSelectionsForUser(v);
+                      setState(() {});
+                    },
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          _PermissionSection(
-            title: 'Portaal Toegang',
-            permissions: portals,
-            selectedById: _selectedByPermissionId,
-            permId: _permId,
-            permLabel: _permLabel,
-            onChanged: (id, value) {
-              setState(() => _selectedByPermissionId[id] = value);
-            },
-          ),
-          const SizedBox(height: 12),
-          _PermissionSection(
-            title: 'Financiële Acties',
-            subtitle: 'Codes/namen met manage_invoices',
-            permissions: financeActions,
-            selectedById: _selectedByPermissionId,
-            permId: _permId,
-            permLabel: _permLabel,
-            onChanged: (id, value) {
-              setState(() => _selectedByPermissionId[id] = value);
-            },
-          ),
-          if (other.isNotEmpty) ...[
-            const SizedBox(height: 12),
+              const SizedBox(height: 16),
+            ],
             _PermissionSection(
-              title: 'Overige permissies',
-              permissions: other,
+              title: 'Portaal Toegang',
+              permissions: portals,
               selectedById: _selectedByPermissionId,
               permId: _permId,
               permLabel: _permLabel,
@@ -408,13 +389,38 @@ class _UserPermissionsScreenState extends State<UserPermissionsScreen> {
                 setState(() => _selectedByPermissionId[id] = value);
               },
             ),
+            const SizedBox(height: 12),
+            _PermissionSection(
+              title: 'Financiële Acties',
+              subtitle: 'Codes/namen met manage_invoices',
+              permissions: financeActions,
+              selectedById: _selectedByPermissionId,
+              permId: _permId,
+              permLabel: _permLabel,
+              onChanged: (id, value) {
+                setState(() => _selectedByPermissionId[id] = value);
+              },
+            ),
+            if (other.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _PermissionSection(
+                title: 'Overige permissies',
+                permissions: other,
+                selectedById: _selectedByPermissionId,
+                permId: _permId,
+                permLabel: _permLabel,
+                onChanged: (id, value) {
+                  setState(() => _selectedByPermissionId[id] = value);
+                },
+              ),
+            ],
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: _save,
+              child: const Text('Opslaan'),
+            ),
           ],
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _save,
-            child: const Text('Opslaan'),
-          ),
-        ],
+        ),
       ),
     );
   }

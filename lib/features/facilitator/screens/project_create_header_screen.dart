@@ -258,210 +258,257 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
           ),
         ),
       ),
-      body: _loadingKlanten
-          ? const Center(child: CupertinoActivityIndicator(radius: 14))
-          : Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-                children: [
-                  _card(
-                    title: 'Klant',
-                    child: Autocomplete<Map<String, dynamic>>(
-                      displayStringForOption: (m) => _text(m['bedrijfsnaam']),
-                      optionsBuilder: (v) => _options(v.text).toList(),
-                      onSelected: (m) => setState(() => _selected = m),
-                      fieldViewBuilder: (ctx, c, f, s) {
-                        return TextFormField(
-                          controller: c,
-                          focusNode: f,
-                          onFieldSubmitted: (_) => s(),
+      body: SelectionArea(
+        child: _loadingKlanten
+            ? const Center(child: CupertinoActivityIndicator(radius: 14))
+            : Form(
+                key: _formKey,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                  children: [
+                    _card(
+                      title: 'Klant',
+                      child: Autocomplete<Map<String, dynamic>>(
+                        displayStringForOption: (m) => _text(m['bedrijfsnaam']),
+                        optionsBuilder: (v) => _options(v.text).toList(),
+                        onSelected: (m) => setState(() => _selected = m),
+                        fieldViewBuilder: (ctx, c, f, s) {
+                          return TextFormField(
+                            controller: c,
+                            focusNode: f,
+                            onFieldSubmitted: (_) => s(),
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w700,
+                              color: _navy,
+                            ),
+                            decoration: _dec('Zoek en selecteer klant'),
+                            validator: (_) =>
+                                _selected == null ? 'Selecteer een klant.' : null,
+                            onChanged: (_) => setState(() => _selected = null),
+                          );
+                        },
+                        optionsViewBuilder: (c, onSel, it) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              elevation: 6,
+                              borderRadius: BorderRadius.circular(12),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxHeight: 240,
+                                  maxWidth: 400,
+                                ),
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: it.length,
+                                  itemBuilder: (_, i) {
+                                    final m = it.elementAt(i);
+                                    return ListTile(
+                                      title: Text(
+                                        _text(m['bedrijfsnaam']),
+                                        style: GoogleFonts.lato(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      onTap: () => onSel(m),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    if (_selected != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Geselecteerd: ${_text(_selected!['bedrijfsnaam'])}',
                           style: GoogleFonts.lato(
-                              fontWeight: FontWeight.w700, color: _navy),
-                          decoration: _dec('Zoek en selecteer klant'),
-                          validator: (_) =>
-                              _selected == null ? 'Selecteer een klant.' : null,
-                          onChanged: (_) => setState(() => _selected = null),
-                        );
-                      },
-                      optionsViewBuilder: (c, onSel, it) {
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Material(
-                            elevation: 6,
-                            borderRadius: BorderRadius.circular(12),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                  maxHeight: 240, maxWidth: 400),
-                              child: ListView.builder(
-                                padding: EdgeInsets.zero,
-                                shrinkWrap: true,
-                                itemCount: it.length,
-                                itemBuilder: (_, i) {
-                                  final m = it.elementAt(i);
-                                  return ListTile(
-                                    title: Text(
-                                      _text(m['bedrijfsnaam']),
+                            fontSize: 12,
+                            color: _muted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    _card(
+                      title: 'Contract & planning',
+                      child: Column(
+                        children: [
+                          _dropdown(
+                            label: 'Contracttype',
+                            value: _contractType,
+                            items: _contractOpts
+                                .map(
+                                  (e) => DropdownMenuItem(
+                                    value: e.id,
+                                    child: Text(
+                                      e.label,
                                       style: GoogleFonts.lato(
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                    onTap: () => onSel(m),
-                                  );
-                                },
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(
+                              () => _contractType = v ?? 'flexibel',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _dropdown(
+                            label: 'Periodieke frequentie',
+                            value: _periodiek,
+                            items: _freqOpts
+                                .map(
+                                  (e) => DropdownMenuItem(
+                                    value: e.id,
+                                    child: Text(
+                                      e.label,
+                                      style: GoogleFonts.lato(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(
+                              () => _periodiek = v ?? '1_keer_per_jaar',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            // ignore: deprecated_member_use
+                            value: _werkRegio,
+                            decoration: _dec('Werk regio *'),
+                            items: _regioOpts
+                                .map(
+                                  (e) => DropdownMenuItem(
+                                    value: e,
+                                    child: Text(
+                                      e,
+                                      style: GoogleFonts.lato(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(() => _werkRegio = v),
+                            validator: (v) =>
+                                v == null || v.isEmpty ? 'Verplicht' : null,
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _dateTile(
+                                  'Start contract',
+                                  _start,
+                                  (d) => setState(() => _start = d),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _dateTile(
+                                  'Einde contract',
+                                  _eind,
+                                  (d) => setState(() => _eind = d),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _timeTile(
+                                  'Starttijd',
+                                  _tStart,
+                                  (t) => setState(() => _tStart = t),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _timeTile(
+                                  'Eindtijd',
+                                  _tEnd,
+                                  (t) => setState(() => _tEnd = t),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Vaste weekdagen',
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.w800,
+                                color: _navy,
                               ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  if (_selected != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Geselecteerd: ${_text(_selected!['bedrijfsnaam'])}',
-                        style: GoogleFonts.lato(
-                            fontSize: 12, color: _muted, fontWeight: FontWeight.w600),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _weekdagen.map((d) {
+                              final sel = _days.contains(d);
+                              return FilterChip(
+                                label: Text(d, style: GoogleFonts.lato()),
+                                selected: sel,
+                                onSelected: (v) {
+                                  setState(() {
+                                    if (v) {
+                                      _days.add(d);
+                                    } else {
+                                      _days.remove(d);
+                                    }
+                                  });
+                                },
+                                selectedColor: _blue.withValues(alpha: 0.2),
+                                checkmarkColor: _blue,
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ),
                     ),
-                  const SizedBox(height: 16),
-                  _card(
-                    title: 'Contract & planning',
-                    child: Column(
-                      children: [
-                        _dropdown(
-                          label: 'Contracttype',
-                          value: _contractType,
-                          items: _contractOpts
-                              .map((e) => DropdownMenuItem(
-                                    value: e.id,
-                                    child: Text(e.label,
-                                        style: GoogleFonts.lato(
-                                            fontWeight: FontWeight.w600)),
-                                  ))
-                              .toList(),
-                          onChanged: (v) =>
-                              setState(() => _contractType = v ?? 'flexibel'),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: _saving ? null : _save,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _blue,
+                        minimumSize: const Size.fromHeight(56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(_radius),
                         ),
-                        const SizedBox(height: 12),
-                        _dropdown(
-                          label: 'Periodieke frequentie',
-                          value: _periodiek,
-                          items: _freqOpts
-                              .map((e) => DropdownMenuItem(
-                                    value: e.id,
-                                    child: Text(e.label,
-                                        style: GoogleFonts.lato(
-                                            fontWeight: FontWeight.w600)),
-                                  ))
-                              .toList(),
-                          onChanged: (v) => setState(
-                              () => _periodiek = v ?? '1_keer_per_jaar'),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          // ignore: deprecated_member_use
-                          value: _werkRegio,
-                          decoration: _dec('Werk regio *'),
-                          items: _regioOpts
-                              .map((e) => DropdownMenuItem(
-                                    value: e,
-                                    child: Text(e,
-                                        style: GoogleFonts.lato(
-                                            fontWeight: FontWeight.w600)),
-                                  ))
-                              .toList(),
-                          onChanged: (v) => setState(() => _werkRegio = v),
-                          validator: (v) => v == null || v.isEmpty
-                              ? 'Verplicht'
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                                child: _dateTile('Start contract', _start,
-                                    (d) => setState(() => _start = d))),
-                            const SizedBox(width: 10),
-                            Expanded(
-                                child: _dateTile('Einde contract', _eind,
-                                    (d) => setState(() => _eind = d))),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                                child: _timeTile('Starttijd', _tStart,
-                                    (t) => setState(() => _tStart = t))),
-                            const SizedBox(width: 10),
-                            Expanded(
-                                child: _timeTile('Eindtijd', _tEnd,
-                                    (t) => setState(() => _tEnd = t))),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Vaste weekdagen',
-                            style: GoogleFonts.lato(
-                                fontWeight: FontWeight.w800, color: _navy),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _weekdagen.map((d) {
-                            final sel = _days.contains(d);
-                            return FilterChip(
-                              label: Text(d, style: GoogleFonts.lato()),
-                              selected: sel,
-                              onSelected: (v) {
-                                setState(() {
-                                  if (v) {
-                                    _days.add(d);
-                                  } else {
-                                    _days.remove(d);
-                                  }
-                                });
-                              },
-                              selectedColor: _blue.withValues(alpha: 0.2),
-                              checkmarkColor: _blue,
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _blue,
-                      minimumSize: const Size.fromHeight(56),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(_radius),
                       ),
+                      child: _saving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(
+                              'Volgende: ruimtes & diensten',
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
+                            ),
                     ),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : Text(
-                            'Volgende: ruimtes & diensten',
-                            style: GoogleFonts.lato(
-                                fontWeight: FontWeight.w900, fontSize: 16),
-                          ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 

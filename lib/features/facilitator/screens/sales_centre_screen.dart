@@ -301,70 +301,72 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
     showDialog<void>(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(_radius),
-          ),
-          title: Text(
-            'Campagne kiezen',
-            style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 20),
-          ),
-          content: StatefulBuilder(
-            builder: (context, setLocal) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Kies welke mailflow via Zapier wordt getriggerd.',
-                    style: GoogleFonts.lato(
-                      color: _muted,
-                      fontSize: 14,
+        return SelectionArea(
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(_radius),
+            ),
+            title: Text(
+              'Campagne kiezen',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 20),
+            ),
+            content: StatefulBuilder(
+              builder: (context, setLocal) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Kies welke mailflow via Zapier wordt getriggerd.',
+                      style: GoogleFonts.lato(
+                        color: _muted,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  ..._campagneTypeChoices.map(
-                    (c) {
-                      final isOn = c == selected;
-                      return ListTile(
-                        onTap: () => setLocal(() => selected = c),
-                        selected: isOn,
-                        selectedTileColor: _orange.withValues(alpha: 0.08),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        leading: Icon(
-                          isOn
-                              ? Icons.check_circle
-                              : Icons.radio_button_unchecked,
-                          color: isOn ? _orange : _muted,
-                        ),
-                        title: Text(c, style: GoogleFonts.lato()),
-                      );
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text('Annuleer', style: GoogleFonts.lato()),
-            ),
-            FilledButton(
-              onPressed: () {
-                final id = lead['id']?.toString() ?? '';
-                if (id.isEmpty) {
-                  Navigator.of(ctx).pop();
-                  return;
-                }
-                Navigator.of(ctx).pop();
-                _startCampagne(id, selected);
+                    const SizedBox(height: 16),
+                    ..._campagneTypeChoices.map(
+                      (c) {
+                        final isOn = c == selected;
+                        return ListTile(
+                          onTap: () => setLocal(() => selected = c),
+                          selected: isOn,
+                          selectedTileColor: _orange.withValues(alpha: 0.08),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          leading: Icon(
+                            isOn
+                                ? Icons.check_circle
+                                : Icons.radio_button_unchecked,
+                            color: isOn ? _orange : _muted,
+                          ),
+                          title: Text(c, style: GoogleFonts.lato()),
+                        );
+                      },
+                    ),
+                  ],
+                );
               },
-              child: Text('Bevestig', style: GoogleFonts.lato()),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('Annuleer', style: GoogleFonts.lato()),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final id = lead['id']?.toString() ?? '';
+                  if (id.isEmpty) {
+                    Navigator.of(ctx).pop();
+                    return;
+                  }
+                  Navigator.of(ctx).pop();
+                  _startCampagne(id, selected);
+                },
+                child: Text('Bevestig', style: GoogleFonts.lato()),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -382,134 +384,135 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
     showDialog<void>(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(_radius),
-          ),
-          title: Text(
-            'Nieuwe lead',
-            style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 20),
-          ),
-          content: SizedBox(
-            width: 420,
-            child: SingleChildScrollView(
-              child: StatefulBuilder(
-                builder: (context, setLocal) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: bed,
-                        decoration: _fieldDec(null, label: 'Bedrijf'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: adres,
-                        decoration: _fieldDec(null, label: 'Adres'),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        // ignore: deprecated_member_use
-                        value: regio,
-                        decoration: _fieldDec(null, label: 'Regio'),
-                        items: _regioOptions
-                            .map(
-                              (r) => DropdownMenuItem(
-                                value: r,
-                                child: Text(r, style: GoogleFonts.lato()),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) {
-                            setLocal(() => regio = v);
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: email,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: _fieldDec(null, label: 'E-mail'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: tel,
-                        keyboardType: TextInputType.phone,
-                        decoration: _fieldDec(null, label: 'Telefoon'),
-                      ),
-                    ],
-                  );
-                },
+        return SelectionArea(
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(_radius),
+            ),
+            title: Text(
+              'Nieuwe lead',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 20),
+            ),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: StatefulBuilder(
+                  builder: (context, setLocal) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: bed,
+                          decoration: _fieldDec(null, label: 'Bedrijf'),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: adres,
+                          decoration: _fieldDec(null, label: 'Adres'),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          // ignore: deprecated_member_use
+                          value: regio,
+                          decoration: _fieldDec(null, label: 'Regio'),
+                          items: _regioOptions
+                              .map(
+                                (r) => DropdownMenuItem(
+                                  value: r,
+                                  child: Text(r, style: GoogleFonts.lato()),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) {
+                              setLocal(() => regio = v);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: email,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: _fieldDec(null, label: 'E-mail'),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: tel,
+                          keyboardType: TextInputType.phone,
+                          decoration: _fieldDec(null, label: 'Telefoon'),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                bed.dispose();
-                adres.dispose();
-                email.dispose();
-                tel.dispose();
-              },
-              child: Text('Annuleer', style: GoogleFonts.lato()),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (bed.text.trim().isEmpty || email.text.trim().isEmpty) {
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Bedrijf en e-mail zijn verplicht.',
-                          style: GoogleFonts.lato()),
-                    ),
-                  );
-                  return;
-                }
-                final payload = {
-                  'bedrijfsnaam': bed.text.trim(),
-                  'email': email.text.trim(),
-                  'adres_stad': adres.text.trim(),
-                  'werk_regio': regio ?? _regioOptions.first,
-                  'telefoon': tel.text.trim(),
-                  'campagne_status': 'concept',
-                };
-                Navigator.of(ctx).pop();
-                bed.dispose();
-                adres.dispose();
-                email.dispose();
-                tel.dispose();
-                try {
-                  await AppSupabase.client.from('leads').insert(payload);
-                } catch (e) {
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  bed.dispose();
+                  adres.dispose();
+                  email.dispose();
+                  tel.dispose();
+                },
+                child: Text('Annuleer', style: GoogleFonts.lato()),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  if (bed.text.trim().isEmpty || email.text.trim().isEmpty) {
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Bedrijf en e-mail zijn verplicht.', style: GoogleFonts.lato()),
+                      ),
+                    );
+                    return;
+                  }
+                  final payload = {
+                    'bedrijfsnaam': bed.text.trim(),
+                    'email': email.text.trim(),
+                    'adres_stad': adres.text.trim(),
+                    'werk_regio': regio ?? _regioOptions.first,
+                    'telefoon': tel.text.trim(),
+                    'campagne_status': 'concept',
+                  };
+                  Navigator.of(ctx).pop();
+                  bed.dispose();
+                  adres.dispose();
+                  email.dispose();
+                  tel.dispose();
+                  try {
+                    await AppSupabase.client.from('leads').insert(payload);
+                  } catch (e) {
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Fout: $e', style: GoogleFonts.lato()),
+                          backgroundColor: Colors.red.shade800,
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  if (mounted) {
+                    await _loadLeads();
+                  }
                   if (mounted) {
                     messenger.showSnackBar(
                       SnackBar(
-                        content:
-                            Text('Fout: $e', style: GoogleFonts.lato()),
-                        backgroundColor: Colors.red.shade800,
+                        content: Text(
+                          'Lead aangemaakt.',
+                          style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+                        ),
+                        behavior: SnackBarBehavior.floating,
                       ),
                     );
                   }
-                  return;
-                }
-                if (mounted) {
-                  await _loadLeads();
-                }
-                if (mounted) {
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Lead aangemaakt.',
-                          style: GoogleFonts.lato(
-                              fontWeight: FontWeight.w600)),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              },
-              child: Text('Opslaan', style: GoogleFonts.lato()),
-            ),
-          ],
+                },
+                child: Text('Opslaan', style: GoogleFonts.lato()),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -535,10 +538,12 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
           title: Text('Sales Centre',
               style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
         ),
-        body: Center(
-          child: Text(
-            'Geen toegang tot het Sales Centre.',
-            style: GoogleFonts.lato(fontWeight: FontWeight.w600),
+        body: const SelectionArea(
+          child: Center(
+            child: Text(
+              'Geen toegang tot het Sales Centre.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ),
       );
@@ -579,12 +584,14 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildLeadsBody(),
-          _buildAfsprakenBody(),
-        ],
+      body: SelectionArea(
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildLeadsBody(),
+            _buildAfsprakenBody(),
+          ],
+        ),
       ),
       floatingActionButton: _tabIndex == 0
           ? _fab(
@@ -837,13 +844,15 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
                   context: context,
                   isScrollControlled: true,
                   backgroundColor: Colors.transparent,
-                  builder: (_) => OpnameEditModal(
-                    afspraakId: id,
-                    onSaved: () {
-                      if (mounted) {
-                        _loadAfspraken();
-                      }
-                    },
+                  builder: (_) => SelectionArea(
+                    child: OpnameEditModal(
+                      afspraakId: id,
+                      onSaved: () {
+                        if (mounted) {
+                          _loadAfspraken();
+                        }
+                      },
+                    ),
                   ),
                 );
               },

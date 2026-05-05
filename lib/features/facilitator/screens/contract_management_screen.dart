@@ -192,50 +192,52 @@ class _ContractManagementScreenState extends State<ContractManagementScreen> {
     final ctl = TextEditingController(text: '3,5');
     final pct = await showDialog<double?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Indexatie toepassen', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Met welk percentage wilt u de maandtarieven verhogen? (bv. CAO)',
-              style: GoogleFonts.lato(height: 1.35),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctl,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Percentage (+)',
-                suffixText: '%',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      builder: (ctx) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Indexatie toepassen', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Met welk percentage wilt u de maandtarieven verhogen? (bv. CAO)',
+                style: GoogleFonts.lato(height: 1.35),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Percentage (+)',
+                  suffixText: '%',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuleer'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final raw = ctl.text.trim().replaceAll(',', '.').replaceAll('%', '');
+                final p = double.tryParse(raw);
+                if (p == null || p <= 0) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Percentage ongeldig.')),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, p);
+              },
+              child: Text('Pas indexatie toe', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuleer'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final raw = ctl.text.trim().replaceAll(',', '.').replaceAll('%', '');
-              final p = double.tryParse(raw);
-              if (p == null || p <= 0) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Percentage ongeldig.')),
-                );
-                return;
-              }
-              Navigator.pop(ctx, p);
-            },
-            child: Text('Pas indexatie toe', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
-          ),
-        ],
       ),
     );
     ctl.dispose();
@@ -259,21 +261,23 @@ class _ContractManagementScreenState extends State<ContractManagementScreen> {
   Future<void> _confirmTerminate(Map<String, dynamic> vm) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Contract opzeggen', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
-        content: Text(
-          'We markeren dit project als beëindigd. Automatische planning stopt na de einddatum. Doorgaan?',
-          style: GoogleFonts.lato(height: 1.35),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuleer')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB71C1C)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Beëindigen'),
+      builder: (ctx) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Contract opzeggen', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
+          content: Text(
+            'We markeren dit project als beëindigd. Automatische planning stopt na de einddatum. Doorgaan?',
+            style: GoogleFonts.lato(height: 1.35),
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuleer')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB71C1C)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Beëindigen'),
+            ),
+          ],
+        ),
       ),
     );
     if (ok != true) return;
@@ -303,58 +307,60 @@ class _ContractManagementScreenState extends State<ContractManagementScreen> {
       ),
       builder: (ctx) {
         final padBottom = MediaQuery.paddingOf(ctx).bottom;
-        return Padding(
-          padding: EdgeInsets.only(left: 20, right: 20, top: 16, bottom: 16 + padBottom),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(99),
+        return SelectionArea(
+          child: Padding(
+            padding: EdgeInsets.only(left: 20, right: 20, top: 16, bottom: 16 + padBottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text('Snelle acties', style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 18)),
-              const SizedBox(height: 8),
-              Text(name, style: GoogleFonts.lato(fontSize: 13, color: Colors.black54)),
-              const SizedBox(height: 20),
-              ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                leading: Icon(Icons.calendar_month_rounded, color: Colors.blue.shade700),
-                title: Text('Verlengen', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
-                subtitle: const Text('Einddatum verschuiven met extra jaren'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickYearsAndExtend(vm);
-                },
-              ),
-              ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                leading: Icon(Icons.trending_up_rounded, color: Colors.orange.shade800),
-                title: Text('Indexeren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
-                subtitle: const Text('Prijsverhoging op maandtarief'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _indexDialog(vm);
-                },
-              ),
-              ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                leading: Icon(Icons.block_rounded, color: Colors.red.shade700),
-                title: Text('Opzeggen', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
-                subtitle: const Text('Project als beeindigd markeren'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _confirmTerminate(vm);
-                },
-              ),
-            ],
+                const SizedBox(height: 12),
+                Text('Snelle acties', style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 18)),
+                const SizedBox(height: 8),
+                Text(name, style: GoogleFonts.lato(fontSize: 13, color: Colors.black54)),
+                const SizedBox(height: 20),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  leading: Icon(Icons.calendar_month_rounded, color: Colors.blue.shade700),
+                  title: Text('Verlengen', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+                  subtitle: const Text('Einddatum verschuiven met extra jaren'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickYearsAndExtend(vm);
+                  },
+                ),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  leading: Icon(Icons.trending_up_rounded, color: Colors.orange.shade800),
+                  title: Text('Indexeren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+                  subtitle: const Text('Prijsverhoging op maandtarief'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _indexDialog(vm);
+                  },
+                ),
+                ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  leading: Icon(Icons.block_rounded, color: Colors.red.shade700),
+                  title: Text('Opzeggen', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+                  subtitle: const Text('Project als beeindigd markeren'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _confirmTerminate(vm);
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -380,50 +386,52 @@ class _ContractManagementScreenState extends State<ContractManagementScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CupertinoActivityIndicator(radius: 14))
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+      body: SelectionArea(
+        child: _loading
+            ? const Center(child: CupertinoActivityIndicator(radius: 14))
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Kon contracten niet laden', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 8),
+                          SelectableText('$_error'),
+                          const SizedBox(height: 16),
+                          FilledButton(onPressed: _load, child: const Text('Opnieuw')),
+                        ],
+                      ),
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
                       children: [
-                        Text('Kon contracten niet laden', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 8),
-                        SelectableText('$_error'),
-                        const SizedBox(height: 16),
-                        FilledButton(onPressed: _load, child: const Text('Opnieuw')),
+                        _kpiRadar(),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Portfolio (meest urgent eerst)',
+                          style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                        ),
+                        const SizedBox(height: 10),
+                        if (_vms.isEmpty) ...[
+                          const SizedBox(height: 40),
+                          _emptyHint(),
+                        ] else ...[
+                          for (final vm in _vms)
+                            _ContractCard(
+                              vm: vm,
+                              traffic: _traffic(vm['days_left'] as int?),
+                              onTap: () => _sheetActions(vm),
+                            ),
+                        ],
                       ],
                     ),
                   ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      _kpiRadar(),
-                      const SizedBox(height: 14),
-                      Text(
-                        'Portfolio (meest urgent eerst)',
-                        style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
-                      ),
-                      const SizedBox(height: 10),
-                      if (_vms.isEmpty) ...[
-                        const SizedBox(height: 40),
-                        _emptyHint(),
-                      ] else ...[
-                        for (final vm in _vms)
-                          _ContractCard(
-                            vm: vm,
-                            traffic: _traffic(vm['days_left'] as int?),
-                            onTap: () => _sheetActions(vm),
-                          ),
-                      ],
-                    ],
-                  ),
-                ),
+      ),
     );
   }
 

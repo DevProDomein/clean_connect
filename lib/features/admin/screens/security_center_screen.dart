@@ -91,9 +91,11 @@ class _SecurityCenterScreenState extends State<SecurityCenterScreen> {
     if (!isAllowed) {
       return Scaffold(
         appBar: AppBar(title: const Text('Beveiligingscentrum')),
-        body: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('Geen toegang.'),
+        body: const SelectionArea(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Geen toegang.'),
+          ),
         ),
       );
     }
@@ -104,210 +106,221 @@ class _SecurityCenterScreenState extends State<SecurityCenterScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Beveiligingscentrum')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Beveiligingscentrum',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Autorisatie & Wijzigingsverzoeken',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: cs.onSurface.withValues(alpha: 0.70),
-                  ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: FutureBuilder<List<_PendingChange>>(
-                future: _fetchPendingRequests(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return _ErrorBox(
-                      title: 'Kan wijzigingsverzoeken niet laden',
-                      message: snapshot.error.toString(),
-                      onRetry: () => setState(() {}),
-                    );
-                  }
+      body: SelectionArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Beveiligingscentrum',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Autorisatie & Wijzigingsverzoeken',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.70),
+                    ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: FutureBuilder<List<_PendingChange>>(
+                  future: _fetchPendingRequests(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return _ErrorBox(
+                        title: 'Kan wijzigingsverzoeken niet laden',
+                        message: snapshot.error.toString(),
+                        onRetry: () => setState(() {}),
+                      );
+                    }
 
-                  final rows = snapshot.data ?? const [];
-                  if (rows.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: surface,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: cs.onSurface.withValues(alpha: 0.06),
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.verified_user_outlined,
-                            color: cs.onSurface.withValues(alpha: 0.65),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Geen openstaande wijzigingsverzoeken.',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  final currentUserId = AppSupabase.client.auth.currentUser?.id;
-
-                  return ListView.separated(
-                    itemCount: rows.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, i) {
-                      final item = rows[i];
-                      final req = item.request;
-                      final isOwnRequest = currentUserId != null &&
-                          req.ingediendDoorId == currentUserId;
-
-                      final tabel = (req.tabelNaam ?? '').trim();
-                      final veld = (req.veldNaam ?? '').trim();
-                      final oud = (req.oudeWaarde ?? '').trim();
-                      final nieuw = (req.nieuweWaarde ?? '').trim();
-
+                    final rows = snapshot.data ?? const [];
+                    if (rows.isEmpty) {
                       return Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           color: surface,
                           borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
-                              blurRadius: 20,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
                           border: Border.all(
                             color: cs.onSurface.withValues(alpha: 0.06),
                           ),
                         ),
-                        child: Column(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Wijziging in tabel: ${tabel.isEmpty ? '—' : tabel}',
-                              style: Theme.of(context).textTheme.titleLarge,
+                            Icon(
+                              Icons.verified_user_outlined,
+                              color: cs.onSurface.withValues(alpha: 0.65),
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Veld: ${veld.isEmpty ? '—' : veld}',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: cs.onSurface.withValues(alpha: 0.78),
-                                  ),
-                            ),
-                            const SizedBox(height: 12),
-                            _ValueCompareRow(
-                              oldValue: oud,
-                              newValue: nieuw,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Ingediend door: ${item.submittedByName}',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: cs.onSurface.withValues(alpha: 0.75),
-                                  ),
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    style: OutlinedButton.styleFrom(
-                                      side: BorderSide(
-                                        color: Colors.red.withValues(alpha: 0.55),
-                                      ),
-                                      foregroundColor: Colors.red,
-                                    ),
-                                    onPressed: () async {
-                                      try {
-                                        await _reject(req);
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Verzoek afgewezen.'),
-                                          ),
-                                        );
-                                        setState(() {});
-                                      } catch (e) {
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Fout: $e')),
-                                        );
-                                      }
-                                    },
-                                    child: const Text('Afwijzen'),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Stack(
-                                    alignment: Alignment.centerRight,
-                                    children: [
-                                      FilledButton(
-                                        onPressed: isOwnRequest
-                                            ? null
-                                            : () async {
-                                                try {
-                                                  await _approve(req);
-                                                  if (!context.mounted) return;
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text(
-                                                        'Verzoek goedgekeurd en uitgevoerd.',
-                                                      ),
-                                                    ),
-                                                  );
-                                                  setState(() {});
-                                                } catch (e) {
-                                                  if (!context.mounted) return;
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
-                                                    SnackBar(content: Text('Fout: $e')),
-                                                  );
-                                                }
-                                              },
-                                        child: const Text('Goedkeuren'),
-                                      ),
-                                      if (isOwnRequest)
-                                        Padding(
-                                          padding: const EdgeInsets.only(right: 12),
-                                          child: EnterpriseTooltip(
-                                            message:
-                                                'U kunt uw eigen verzoek niet goedkeuren (Vier-ogen principe).',
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Geen openstaande wijzigingsverzoeken.',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
                             ),
                           ],
                         ),
                       );
-                    },
-                  );
-                },
+                    }
+
+                    final currentUserId =
+                        AppSupabase.client.auth.currentUser?.id;
+
+                    return ListView.separated(
+                      itemCount: rows.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, i) {
+                        final item = rows[i];
+                        final req = item.request;
+                        final isOwnRequest = currentUserId != null &&
+                            req.ingediendDoorId == currentUserId;
+
+                        final tabel = (req.tabelNaam ?? '').trim();
+                        final veld = (req.veldNaam ?? '').trim();
+                        final oud = (req.oudeWaarde ?? '').trim();
+                        final nieuw = (req.nieuweWaarde ?? '').trim();
+
+                        return Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: surface,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.03),
+                                blurRadius: 20,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Wijziging in tabel: ${tabel.isEmpty ? '—' : tabel}',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Veld: ${veld.isEmpty ? '—' : veld}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: cs.onSurface.withValues(alpha: 0.78),
+                                    ),
+                              ),
+                              const SizedBox(height: 12),
+                              _ValueCompareRow(
+                                oldValue: oud,
+                                newValue: nieuw,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Ingediend door: ${item.submittedByName}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: cs.onSurface.withValues(alpha: 0.75),
+                                    ),
+                              ),
+                              const SizedBox(height: 14),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      style: OutlinedButton.styleFrom(
+                                        side: BorderSide(
+                                          color: Colors.red.withValues(alpha: 0.55),
+                                        ),
+                                        foregroundColor: Colors.red,
+                                      ),
+                                      onPressed: () async {
+                                        try {
+                                          await _reject(req);
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Verzoek afgewezen.'),
+                                            ),
+                                          );
+                                          setState(() {});
+                                        } catch (e) {
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Fout: $e')),
+                                          );
+                                        }
+                                      },
+                                      child: const Text('Afwijzen'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Stack(
+                                      alignment: Alignment.centerRight,
+                                      children: [
+                                        FilledButton(
+                                          onPressed: isOwnRequest
+                                              ? null
+                                              : () async {
+                                                  try {
+                                                    await _approve(req);
+                                                    if (!context.mounted) return;
+                                                    ScaffoldMessenger.of(context)
+                                                        .showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                          'Verzoek goedgekeurd en uitgevoerd.',
+                                                        ),
+                                                      ),
+                                                    );
+                                                    setState(() {});
+                                                  } catch (e) {
+                                                    if (!context.mounted) return;
+                                                    ScaffoldMessenger.of(context)
+                                                        .showSnackBar(
+                                                      SnackBar(
+                                                        content: Text('Fout: $e'),
+                                                      ),
+                                                    );
+                                                  }
+                                                },
+                                          child: const Text('Goedkeuren'),
+                                        ),
+                                        if (isOwnRequest)
+                                          Padding(
+                                            padding: const EdgeInsets.only(right: 12),
+                                            child: EnterpriseTooltip(
+                                              message:
+                                                  'U kunt uw eigen verzoek niet goedkeuren (Vier-ogen principe).',
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

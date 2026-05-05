@@ -182,98 +182,106 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
           ),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(4),
-                child: TabBar(
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  indicator: BoxDecoration(
-                    color: cs.primary,
-                    borderRadius: BorderRadius.circular(20),
+        body: SelectionArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: surface,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
-                  labelColor: Colors.white,
-                  unselectedLabelColor:
-                      isDark ? Colors.white70 : const Color(0xFF0F172A),
-                  labelStyle: GoogleFonts.lato(
-                      fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: -0.2),
-                  unselectedLabelStyle: GoogleFonts.lato(
-                      fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: -0.2),
-                  dividerColor: Colors.transparent,
-                  splashBorderRadius: BorderRadius.circular(20),
-                  tabs: const [
-                    Tab(text: 'Klanten'),
-                    Tab(text: 'Leveranciers'),
-                  ],
+                  padding: const EdgeInsets.all(4),
+                  child: TabBar(
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicator: BoxDecoration(
+                      color: cs.primary,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    labelColor: Colors.white,
+                    unselectedLabelColor:
+                        isDark ? Colors.white70 : const Color(0xFF0F172A),
+                    labelStyle: GoogleFonts.lato(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                      letterSpacing: -0.2,
+                    ),
+                    unselectedLabelStyle: GoogleFonts.lato(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      letterSpacing: -0.2,
+                    ),
+                    dividerColor: Colors.transparent,
+                    splashBorderRadius: BorderRadius.circular(20),
+                    tabs: const [
+                      Tab(text: 'Klanten'),
+                      Tab(text: 'Leveranciers'),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: CupertinoSearchTextField(
-                controller: _searchController,
-                placeholder: 'Zoek op bedrijfsnaam',
-                placeholderStyle: GoogleFonts.lato(
-                  fontWeight: FontWeight.w600,
-                  color: onSurfaceMuted,
-                ),
-                style: GoogleFonts.lato(
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : const Color(0xFF0F172A),
-                ),
-                backgroundColor: surface,
-                borderRadius: BorderRadius.circular(20),
-                prefixIcon: Icon(
-                  CupertinoIcons.search,
-                  color: onSurfaceMuted,
-                  size: 20,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: CupertinoSearchTextField(
+                  controller: _searchController,
+                  placeholder: 'Zoek op bedrijfsnaam',
+                  placeholderStyle: GoogleFonts.lato(
+                    fontWeight: FontWeight.w600,
+                    color: onSurfaceMuted,
+                  ),
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                  backgroundColor: surface,
+                  borderRadius: BorderRadius.circular(20),
+                  prefixIcon: Icon(
+                    CupertinoIcons.search,
+                    color: onSurfaceMuted,
+                    size: 20,
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _loadError != null
-                      ? _ErrorState(error: _loadError!)
-                      : TabBarView(
-                          physics: const BouncingScrollPhysics(),
-                          children: [
-                            _RelationList(
-                              relations: _filterFor(isKlantTab: true),
-                              isKlantTab: true,
-                              isDark: isDark,
-                              surface: surface,
-                              firstLetter: _firstLetter,
-                              text: _text,
-                              onOpen: _openDetail,
-                            ),
-                            _RelationList(
-                              relations: _filterFor(isKlantTab: false),
-                              isKlantTab: false,
-                              isDark: isDark,
-                              surface: surface,
-                              firstLetter: _firstLetter,
-                              text: _text,
-                              onOpen: _openDetail,
-                            ),
-                          ],
-                        ),
-            ),
-          ],
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _loadError != null
+                        ? _ErrorState(error: _loadError!)
+                        : TabBarView(
+                            physics: const BouncingScrollPhysics(),
+                            children: [
+                              _RelationList(
+                                relations: _filterFor(isKlantTab: true),
+                                isKlantTab: true,
+                                isDark: isDark,
+                                surface: surface,
+                                firstLetter: _firstLetter,
+                                text: _text,
+                                onOpen: _openDetail,
+                              ),
+                              _RelationList(
+                                relations: _filterFor(isKlantTab: false),
+                                isKlantTab: false,
+                                isDark: isDark,
+                                surface: surface,
+                                firstLetter: _firstLetter,
+                                text: _text,
+                                onOpen: _openDetail,
+                              ),
+                            ],
+                          ),
+              ),
+            ],
+          ),
         ),
       ),
     );

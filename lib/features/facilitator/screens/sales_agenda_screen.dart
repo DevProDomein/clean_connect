@@ -24,12 +24,14 @@ class SalesAgendaScreen extends StatelessWidget {
           style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
         ),
       ),
-      body: const Center(
-        child: PlaceholderPanel(
-          icon: Icons.event_note_outlined,
-          title: 'Sales Agenda',
-          subtitle: 'Afspraken en opvolging',
-          description: 'Deze module wordt binnenkort beschikbaar.',
+      body: const SelectionArea(
+        child: Center(
+          child: PlaceholderPanel(
+            icon: Icons.event_note_outlined,
+            title: 'Sales Agenda',
+            subtitle: 'Afspraken en opvolging',
+            description: 'Deze module wordt binnenkort beschikbaar.',
+          ),
         ),
       ),
     );

@@ -285,28 +285,31 @@ class MyApp extends StatelessWidget {
           darkTheme: ThemeData(
             brightness: Brightness.dark,
             scaffoldBackgroundColor:
-                const Color(0xFF131314), // Gemini deep background
-            cardColor: const Color(0xFF1E1F22), // Gemini surface/cards
-            primaryColor: const Color(0xFF8AB4F8), // Gemini light blue accent
+                const Color(0xFF131314), // Gemini Background
+            cardColor: const Color(0xFF1E1F22), // Gemini Elevated Surface
+            dialogBackgroundColor: const Color(0xFF1E1F22),
+            primaryColor: const Color(0xFF8AB4F8), // Gemini Accent Blue
             colorScheme: const ColorScheme.dark(
               primary: Color(0xFF8AB4F8),
               secondary: Color(0xFF8AB4F8),
               surface: Color(0xFF1E1F22),
               background: Color(0xFF131314),
-              onSurface: Color(0xFFE3E3E3), // Light grey text
+              onSurface: Color(0xFFE3E3E3), // Primary Text
               onBackground: Color(0xFFE3E3E3),
             ),
-            textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme)
+            dividerColor: const Color(0xFF444746), // Subtle border
+            textTheme: GoogleFonts.latoTextTheme(ThemeData.dark().textTheme)
                 .copyWith(
               bodyLarge: const TextStyle(color: Color(0xFFE3E3E3)),
               bodyMedium: const TextStyle(color: Color(0xFFC4C7C5)),
               titleLarge: const TextStyle(
                 color: Color(0xFFE3E3E3),
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
               ),
               titleMedium: const TextStyle(
                 color: Color(0xFFE3E3E3),
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.bold,
               ),
             ),
             appBarTheme: const AppBarTheme(
@@ -315,8 +318,6 @@ class MyApp extends StatelessWidget {
               elevation: 0,
               iconTheme: IconThemeData(color: Color(0xFFE3E3E3)),
             ),
-            dividerColor: const Color(0xFF444746), // Gemini subtle border color
-            dialogBackgroundColor: const Color(0xFF1E1F22),
             bottomSheetTheme: const BottomSheetThemeData(
               backgroundColor: Color(0xFF1E1F22),
             ),

@@ -160,76 +160,37 @@ class _PayrollMonthOverviewScreenState extends State<PayrollMonthOverviewScreen>
           ),
         ],
       ),
-      body: !canView
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: softBg,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: cs.onSurface.withValues(alpha: 0.06),
+      body: SelectionArea(
+        child: !canView
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: softBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: cs.onSurface.withValues(alpha: 0.06),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    'U heeft geen rechten om loongegevens te bekijken.',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    child: Text(
+                      'U heeft geen rechten om loongegevens te bekijken.',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
-              ),
-            )
-          : FutureBuilder<List<Map<String, dynamic>>>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: softBg,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: cs.onSurface.withValues(alpha: 0.06),
-                        ),
-                      ),
-                      child: Text(
-                        'Kan loonadministratie niet laden: ${snapshot.error}',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  );
-                }
-
-                final rows = snapshot.data ?? const <Map<String, dynamic>>[];
-
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-                  children: [
-                    Text(
-                      'Maandoverzicht brutoloon',
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Per medewerker en kalendermaand. Bedragen worden in het Nederlands (€ …) weergegeven.',
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSurface.withValues(alpha: 0.70),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (rows.isEmpty)
-                      Container(
+              )
+            : FutureBuilder<List<Map<String, dynamic>>>(
+                future: _future,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
                           color: softBg,
@@ -239,81 +200,122 @@ class _PayrollMonthOverviewScreenState extends State<PayrollMonthOverviewScreen>
                           ),
                         ),
                         child: Text(
-                          'Geen loonadministratieregels gevonden.',
+                          'Kan loonadministratie niet laden: ${snapshot.error}',
                           style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                         ),
-                      )
-                    else
-                      ListView.separated(
-                        itemCount: rows.length,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        separatorBuilder: (_, i) => const SizedBox(height: 12),
-                        itemBuilder: (context, i) {
-                          final r = rows[i];
-                          final title = _displayOperatorName(r);
-                          final subtitle =
-                              _formatKalenderMaand(r['kalender_maand']);
-                          final bruto =
-                              _formatBruto(r['totaal_bruto_verdiend']);
-
-                          return Container(
-                            padding: const EdgeInsets.all(18),
-                            decoration: BoxDecoration(
-                              color: tileBg,
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: cs.onSurface.withValues(alpha: 0.06),
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        title,
-                                        style: GoogleFonts.inter(
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: -0.2,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        subtitle,
-                                        style: GoogleFonts.inter(
-                                          fontWeight: FontWeight.w600,
-                                          color: cs.onSurface
-                                              .withValues(alpha: 0.65),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  bruto,
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 15,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
                       ),
-                  ],
-                );
-              },
-            ),
+                    );
+                  }
+
+                  final rows = snapshot.data ?? const <Map<String, dynamic>>[];
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                    children: [
+                      Text(
+                        'Maandoverzicht brutoloon',
+                        style: GoogleFonts.inter(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Per medewerker en kalendermaand. Bedragen worden in het Nederlands (€ …) weergegeven.',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface.withValues(alpha: 0.70),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (rows.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: softBg,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                            ),
+                          ),
+                          child: Text(
+                            'Geen loonadministratieregels gevonden.',
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                          ),
+                        )
+                      else
+                        ListView.separated(
+                          itemCount: rows.length,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          separatorBuilder: (_, i) => const SizedBox(height: 12),
+                          itemBuilder: (context, i) {
+                            final r = rows[i];
+                            final title = _displayOperatorName(r);
+                            final subtitle =
+                                _formatKalenderMaand(r['kalender_maand']);
+                            final bruto =
+                                _formatBruto(r['totaal_bruto_verdiend']);
+
+                            return Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: tileBg,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: cs.onSurface.withValues(alpha: 0.06),
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          title,
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -0.2,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          subtitle,
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w600,
+                                            color: cs.onSurface
+                                                .withValues(alpha: 0.65),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    bruto,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 15,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  );
+                },
+              ),
+      ),
     );
   }
 }

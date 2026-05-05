@@ -152,7 +152,9 @@ class _LedgerMappingScreenState extends State<LedgerMappingScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
           ),
         ),
-        body: const Center(child: Text('Geen toegang.')),
+        body: const SelectionArea(
+          child: Center(child: Text('Geen toegang.')),
+        ),
       );
     }
 
@@ -167,182 +169,231 @@ class _LedgerMappingScreenState extends State<LedgerMappingScreen> {
           IconButton(tooltip: 'Vernieuwen', onPressed: _refresh, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: FutureBuilder<List<_LedgerRow>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: softBg,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                ),
-                child: Text('Kan mapping niet laden: ${snapshot.error}'),
-              ),
-            );
-          }
-
-          final rows = snapshot.data ?? const <_LedgerRow>[];
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            children: [
-              Text(
-                'Grootboek Mapping (RGS)',
-                style: GoogleFonts.inter(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.6,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Koppel interne artikelen aan de grootboekrekeningen van uw accountant.',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w600,
-                  color: cs.onSurface.withValues(alpha: 0.70),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (rows.isEmpty)
-                Container(
+      body: SelectionArea(
+        child: FutureBuilder<List<_LedgerRow>>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     color: softBg,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                    border: Border.all(
+                      color: cs.onSurface.withValues(alpha: 0.06),
+                    ),
                   ),
-                  child: Text(
-                    'Geen grootboek artikelen gevonden.',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                  ),
-                )
-              else
-                ...rows.map((r) {
-                  final controller = _controllers[r.interneCode]!;
-                  final busy = _busyCodes.contains(r.interneCode);
+                  child: Text('Kan mapping niet laden: ${snapshot.error}'),
+                ),
+              );
+            }
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(16),
+            final rows = snapshot.data ?? const <_LedgerRow>[];
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+              children: [
+                Text(
+                  'Grootboek Mapping (RGS)',
+                  style: GoogleFonts.inter(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Koppel interne artikelen aan de grootboekrekeningen van uw accountant.',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface.withValues(alpha: 0.70),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (rows.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
-                      color: tileBg,
+                      color: softBg,
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 20,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
+                      border: Border.all(
+                        color: cs.onSurface.withValues(alpha: 0.06),
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                                    decoration: BoxDecoration(
-                                      color: cs.onSurface.withValues(alpha: 0.06),
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                                    ),
-                                    child: Text(
-                                      r.interneCode,
-                                      style: GoogleFonts.inter(
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: -0.2,
-                                        color: cs.onSurface.withValues(alpha: 0.82),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      r.interneOmschrijving.isEmpty ? '—' : r.interneOmschrijving,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: -0.2,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: controller,
-                                      enabled: !busy,
-                                      onSubmitted: (_) => _saveMapping(r.interneCode),
-                                      decoration: InputDecoration(
-                                        labelText: 'Accountant Code',
-                                        floatingLabelStyle: GoogleFonts.inter(
-                                          fontWeight: FontWeight.w800,
-                                          color: cs.onSurface.withValues(alpha: 0.70),
-                                        ),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(24),
-                                          borderSide: BorderSide(color: cs.onSurface.withValues(alpha: 0.10)),
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(24),
-                                          borderSide: BorderSide(color: cs.onSurface.withValues(alpha: 0.10)),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(24),
-                                          borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.8), width: 1.4),
-                                        ),
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                      ),
-                                      style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: cs.primary.withValues(alpha: 0.10),
-                                      borderRadius: BorderRadius.circular(18),
-                                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                                    ),
-                                    child: busy
-                                        ? const Padding(
-                                            padding: EdgeInsets.all(14),
-                                            child: CircularProgressIndicator(strokeWidth: 2),
-                                          )
-                                        : IconButton(
-                                            tooltip: 'Opslaan',
-                                            onPressed: () => _saveMapping(r.interneCode),
-                                            icon: Icon(Icons.save_rounded, color: cs.primary),
-                                          ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                    child: Text(
+                      'Geen grootboek artikelen gevonden.',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
+                  )
+                else
+                  ...rows.map((r) {
+                    final controller = _controllers[r.interneCode]!;
+                    final busy = _busyCodes.contains(r.interneCode);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: tileBg,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: cs.onSurface.withValues(alpha: 0.06),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 20,
+                            offset: const Offset(0, 5),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-            ],
-          );
-        },
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 7,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            cs.onSurface.withValues(alpha: 0.06),
+                                        borderRadius: BorderRadius.circular(999),
+                                        border: Border.all(
+                                          color: cs.onSurface
+                                              .withValues(alpha: 0.06),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        r.interneCode,
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -0.2,
+                                          color: cs.onSurface
+                                              .withValues(alpha: 0.82),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        r.interneOmschrijving.isEmpty
+                                            ? '—'
+                                            : r.interneOmschrijving,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -0.2,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: controller,
+                                        enabled: !busy,
+                                        onSubmitted: (_) =>
+                                            _saveMapping(r.interneCode),
+                                        decoration: InputDecoration(
+                                          labelText: 'Accountant Code',
+                                          floatingLabelStyle: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w800,
+                                            color: cs.onSurface
+                                                .withValues(alpha: 0.70),
+                                          ),
+                                          border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(24),
+                                            borderSide: BorderSide(
+                                              color: cs.onSurface
+                                                  .withValues(alpha: 0.10),
+                                            ),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(24),
+                                            borderSide: BorderSide(
+                                              color: cs.onSurface
+                                                  .withValues(alpha: 0.10),
+                                            ),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(24),
+                                            borderSide: BorderSide(
+                                              color: cs.primary
+                                                  .withValues(alpha: 0.8),
+                                              width: 1.4,
+                                            ),
+                                          ),
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 12,
+                                          ),
+                                        ),
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color:
+                                            cs.primary.withValues(alpha: 0.10),
+                                        borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: cs.onSurface
+                                              .withValues(alpha: 0.06),
+                                        ),
+                                      ),
+                                      child: busy
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(14),
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : IconButton(
+                                              tooltip: 'Opslaan',
+                                              onPressed: () =>
+                                                  _saveMapping(r.interneCode),
+                                              icon: Icon(
+                                                Icons.save_rounded,
+                                                color: cs.primary,
+                                              ),
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

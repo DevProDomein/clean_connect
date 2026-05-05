@@ -525,104 +525,105 @@ class AppDrawerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final onBody = theme.textTheme.bodyLarge?.color;
 
     final panelChild = child ?? const SizedBox.shrink();
 
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+        color: theme.scaffoldBackgroundColor,
         border: Border(
-          right: BorderSide(color: Colors.grey.shade300, width: 1),
+          right: BorderSide(
+            color: theme.dividerColor.withValues(alpha: 0.25),
+            width: 1,
+          ),
         ),
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          iconTheme: IconThemeData(
-            color: isDark ? Colors.white : const Color(0xFF1C1C1E),
-          ),
-          dividerColor: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.10),
-          textTheme: Theme.of(context).textTheme.apply(
-                bodyColor: isDark ? Colors.white : const Color(0xFF1C1C1E),
-                displayColor: isDark ? Colors.white : const Color(0xFF1C1C1E),
-              ),
-        ),
-        child: Column(
-          children: [
-            Expanded(child: panelChild),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: Icon(
-                      Icons.account_circle_outlined,
-                      color: isDark ? Colors.white70 : const Color(0xFF1C1C1E),
+      child: Column(
+        children: [
+          Expanded(child: panelChild),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(
+                    Icons.account_circle_outlined,
+                    color: theme.iconTheme.color,
+                  ),
+                  title: Text(
+                    'Mijn Profiel',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: onBody,
                     ),
-                    title: Text(
-                      'Mijn Profiel',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : const Color(0xFF1C1C1E),
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).maybePop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: '/profile'),
+                        builder: (_) => const ProfileScreen(),
                       ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 4),
+                SwitchListTile(
+                  value: context.watch<ThemeModeProvider>().isDark,
+                  onChanged: (_) => context.read<ThemeModeProvider>().toggle(),
+                  dense: true,
+                  title: const Text('Donkere modus'),
+                  secondary: Icon(
+                    context.watch<ThemeModeProvider>().isDark
+                        ? Icons.dark_mode
+                        : Icons.light_mode,
+                    size: 18,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(
+                        color: theme.dividerColor.withValues(alpha: 0.45),
+                      ),
+                      foregroundColor: onBody,
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    onTap: () {
+                    onPressed: () async {
                       Navigator.of(context).maybePop();
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          settings: const RouteSettings(name: '/profile'),
-                          builder: (_) => const ProfileScreen(),
-                        ),
+                      await Supabase.instance.client.auth.signOut();
+                      if (!context.mounted) return;
+                      context.read<UserProvider>().clear();
+                      Navigator.of(context).pushAndRemoveUntil(
+                        CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                        (route) => false,
                       );
                     },
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text('Uitloggen'),
                   ),
-                  const SizedBox(height: 4),
-                  SwitchListTile(
-                    value: context.watch<ThemeModeProvider>().isDark,
-                    onChanged: (_) => context.read<ThemeModeProvider>().toggle(),
-                    dense: true,
-                    title: const Text('Donkere modus'),
-                    secondary: Icon(
-                      context.watch<ThemeModeProvider>().isDark ? Icons.dark_mode : Icons.light_mode,
-                      size: 18,
-                    ),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: BorderSide(color: Colors.grey.shade300),
-                        foregroundColor: isDark ? Colors.white : Colors.black,
-                      ),
-                      onPressed: () async {
-                        Navigator.of(context).maybePop();
-                        await Supabase.instance.client.auth.signOut();
-                        if (!context.mounted) return;
-                        context.read<UserProvider>().clear();
-                        Navigator.of(context).pushAndRemoveUntil(
-                          CupertinoPageRoute(builder: (_) => const LoginScreen()),
-                          (route) => false,
-                        );
-                      },
-                      icon: const Icon(Icons.logout, size: 18),
-                      label: const Text('Uitloggen'),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

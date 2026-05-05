@@ -351,29 +351,31 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final shouldConfirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text(
-            'Definitief inplannen?',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-          ),
-          content: Text(
-            'Wilt u $name definitief inplannen op alle $available mogelijke opdrachten?',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text('Annuleren', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        return SelectionArea(
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(
+              'Definitief inplannen?',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            content: Text(
+              'Wilt u $name definitief inplannen op alle $available mogelijke opdrachten?',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text('Annuleren', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
               ),
-              child: Text('Bevestigen', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
-            ),
-          ],
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                ),
+                child: Text('Bevestigen', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1771,8 +1773,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             ),
           ],
         ),
-        body: Column(
-          children: [
+        body: SelectionArea(
+          child: Column(
+            children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Container(
@@ -1806,7 +1809,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 ],
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

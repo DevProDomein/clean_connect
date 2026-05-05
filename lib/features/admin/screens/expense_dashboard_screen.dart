@@ -67,49 +67,51 @@ class _ExpenseDashboardScreenState extends State<ExpenseDashboardScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Upload Bon / Factuur',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.3,
+        return SelectionArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Upload Bon / Factuur',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.3,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              _SheetAction(
-                icon: Icons.photo_camera_rounded,
-                title: 'Camera',
-                subtitle: 'Maak een foto van de bon',
-                onTap: () => Navigator.of(context).pop(_UploadAction.camera),
-                cs: cs,
-              ),
-              const SizedBox(height: 10),
-              _SheetAction(
-                icon: Icons.photo_library_rounded,
-                title: 'Galerij',
-                subtitle: 'Kies een bestaande foto',
-                onTap: () => Navigator.of(context).pop(_UploadAction.gallery),
-                cs: cs,
-              ),
-              const SizedBox(height: 10),
-              _SheetAction(
-                icon: Icons.upload_file_rounded,
-                title: 'Bestand (PDF/XML)',
-                subtitle: 'Upload UBL XML of een document',
-                onTap: () => Navigator.of(context).pop(_UploadAction.file),
-                cs: cs,
-              ),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Annuleren'),
-              ),
-            ],
+                const SizedBox(height: 14),
+                _SheetAction(
+                  icon: Icons.photo_camera_rounded,
+                  title: 'Camera',
+                  subtitle: 'Maak een foto van de bon',
+                  onTap: () => Navigator.of(context).pop(_UploadAction.camera),
+                  cs: cs,
+                ),
+                const SizedBox(height: 10),
+                _SheetAction(
+                  icon: Icons.photo_library_rounded,
+                  title: 'Galerij',
+                  subtitle: 'Kies een bestaande foto',
+                  onTap: () => Navigator.of(context).pop(_UploadAction.gallery),
+                  cs: cs,
+                ),
+                const SizedBox(height: 10),
+                _SheetAction(
+                  icon: Icons.upload_file_rounded,
+                  title: 'Bestand (PDF/XML)',
+                  subtitle: 'Upload UBL XML of een document',
+                  onTap: () => Navigator.of(context).pop(_UploadAction.file),
+                  cs: cs,
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Annuleren'),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -191,8 +193,10 @@ class _ExpenseDashboardScreenState extends State<ExpenseDashboardScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
           ),
         ),
-        body: const _NoAccessEmptyState(
-          message: 'U heeft geen rechten om het inkoopboek te beheren.',
+        body: const SelectionArea(
+          child: _NoAccessEmptyState(
+            message: 'U heeft geen rechten om het inkoopboek te beheren.',
+          ),
         ),
       );
     }
@@ -230,192 +234,216 @@ class _ExpenseDashboardScreenState extends State<ExpenseDashboardScreen> {
           style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
         ),
       ),
-      body: FutureBuilder<_ExpenseDashboardData>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Padding(
-              padding: const EdgeInsets.all(24),
-              child: _ErrorState(
-                title: 'Kan inkoopfacturen niet laden',
-                message: snapshot.error.toString(),
-                onRetry: _refresh,
-              ),
-            );
-          }
-
-          final data = snapshot.data!;
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            children: [
-              _KpiRow(
-                teBetalen: data.teBetalen,
-                wachtOpAutorisatie: data.wachtOpAutorisatie,
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Inkoopfacturen',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.4,
+      body: SelectionArea(
+        child: FutureBuilder<_ExpenseDashboardData>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: _ErrorState(
+                  title: 'Kan inkoopfacturen niet laden',
+                  message: snapshot.error.toString(),
+                  onRetry: _refresh,
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (data.invoices.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: isDark ? tileBg : const Color(0xFFF5F5F7),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+              );
+            }
+
+            final data = snapshot.data!;
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+              children: [
+                _KpiRow(
+                  teBetalen: data.teBetalen,
+                  wachtOpAutorisatie: data.wachtOpAutorisatie,
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Inkoopfacturen',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
                   ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.inbox_outlined, color: cs.onSurface.withValues(alpha: 0.65)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Nog geen inkoopfacturen gevonden.',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w600,
-                            color: cs.onSurface.withValues(alpha: 0.80),
+                ),
+                const SizedBox(height: 12),
+                if (data.invoices.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: isDark ? tileBg : const Color(0xFFF5F5F7),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: cs.onSurface.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.inbox_outlined,
+                          color: cs.onSurface.withValues(alpha: 0.65),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Nog geen inkoopfacturen gevonden.',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                              color: cs.onSurface.withValues(alpha: 0.80),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                ListView.separated(
-                  itemCount: data.invoices.length,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  separatorBuilder: (_, i) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) {
-                    final r = data.invoices[i];
-                    final bedrijf = (r['bedrijven'] as Map?) ?? const <String, dynamic>{};
-                    final vendor = _text(bedrijf['bedrijfsnaam']);
-                    final nr = _text(r['factuur_nummer_leverancier'] ?? r['factuur_nummer']);
-                    final dt = _text(r['factuur_datum'] ?? r['datum']);
-                    final total = _asDouble(r['totaal_inc_btw']);
-                    final status = _text(r['status']);
+                      ],
+                    ),
+                  )
+                else
+                  ListView.separated(
+                    itemCount: data.invoices.length,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    separatorBuilder: (_, i) => const SizedBox(height: 12),
+                    itemBuilder: (context, i) {
+                      final r = data.invoices[i];
+                      final bedrijf =
+                          (r['bedrijven'] as Map?) ?? const <String, dynamic>{};
+                      final vendor = _text(bedrijf['bedrijfsnaam']);
+                      final nr = _text(
+                        r['factuur_nummer_leverancier'] ?? r['factuur_nummer'],
+                      );
+                      final dt = _text(r['factuur_datum'] ?? r['datum']);
+                      final total = _asDouble(r['totaal_inc_btw']);
+                      final status = _text(r['status']);
 
-                    final badge = _StatusTone.forStatus(status, isDark: isDark);
+                      final badge =
+                          _StatusTone.forStatus(status, isDark: isDark);
 
-                    return Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: () {
-                          final id = _text(r['id']);
-                          if (id.isEmpty) return;
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ExpenseValidationScreen(invoiceId: id),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            color: tileBg,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 20,
-                                offset: const Offset(0, 5),
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(24),
+                          onTap: () {
+                            final id = _text(r['id']);
+                            if (id.isEmpty) return;
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ExpenseValidationScreen(invoiceId: id),
                               ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  color: cs.onSurface.withValues(alpha: 0.06),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: tileBg,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: cs.onSurface.withValues(alpha: 0.06),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 5),
                                 ),
-                                child: Icon(Icons.receipt_long_rounded, color: cs.primary),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    color: cs.onSurface.withValues(alpha: 0.06),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: cs.onSurface.withValues(alpha: 0.08),
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.receipt_long_rounded,
+                                    color: cs.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        vendor.isEmpty
+                                            ? 'Onbekende Leverancier'
+                                            : vendor,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        [
+                                          if (nr.isNotEmpty) nr,
+                                          if (dt.isNotEmpty) dt,
+                                        ].join(' • '),
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w600,
+                                          color: cs.onSurface
+                                              .withValues(alpha: 0.65),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      vendor.isEmpty ? 'Onbekende Leverancier' : vendor,
+                                      _eur().format(total),
                                       style: GoogleFonts.inter(
-                                        fontSize: 16,
+                                        fontSize: 14,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: -0.2,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      [
-                                        if (nr.isNotEmpty) nr,
-                                        if (dt.isNotEmpty) dt,
-                                      ].join(' • '),
-                                      style: GoogleFonts.inter(
-                                        fontWeight: FontWeight.w600,
-                                        color: cs.onSurface.withValues(alpha: 0.65),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: badge.bg,
+                                        borderRadius: BorderRadius.circular(24),
+                                        border: Border.all(color: badge.border),
+                                      ),
+                                      child: Text(
+                                        badge.label,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: -0.1,
+                                          color: badge.fg,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    _eur().format(total),
-                                    style: GoogleFonts.inter(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -0.2,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding:
-                                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: badge.bg,
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: Border.all(color: badge.border),
-                                    ),
-                                    child: Text(
-                                      badge.label,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: -0.1,
-                                        color: badge.fg,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-            ],
-          );
-        },
+                      );
+                    },
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
