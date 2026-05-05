@@ -20,6 +20,20 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  Future<void> _logoutToLogin() async {
+    try {
+      _passwordController.clear();
+      _confirmController.clear();
+      context.read<UserProvider>().clear();
+      await _supabase.auth.signOut();
+    } catch (_) {
+      // Best-effort: we mainly want to clear the local broken session.
+    }
+
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
+
   @override
   void dispose() {
     _passwordController.dispose();
@@ -49,6 +63,17 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final authClient = Supabase.instance.client.auth;
+      final session = authClient.currentSession;
+
+      if (session == null) {
+        _showError('Geen actieve sessie gevonden. Klik opnieuw op de link in uw e-mail.');
+        return;
+      }
+
+      debugPrint('X-RAY JWT Check: User ID in session is ${session.user.id}');
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
       await _supabase.auth.updateUser(
         UserAttributes(password: password),
       );
@@ -68,6 +93,17 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
       if (!mounted) return;
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (e is AuthApiException &&
+          ((e.code ?? '').toLowerCase() == 'user_not_found' ||
+              msg.contains('user_not_found') ||
+              msg.contains('user from sub claim'))) {
+        _showError(
+          'Uw inlogbewijs is verouderd. Log alstublieft uit en gebruik de nieuwste link uit uw e-mail.',
+        );
+        return;
+      }
+
       _showError('Er is iets misgegaan: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -197,6 +233,13 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                               fontSize: 16,
                             ),
                           ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: TextButton(
+                    onPressed: _isLoading ? null : _logoutToLogin,
+                    child: const Text('Terug naar inloggen'),
                   ),
                 ),
               ],
