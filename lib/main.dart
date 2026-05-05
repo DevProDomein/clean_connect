@@ -12,6 +12,7 @@ import 'core/translations.dart';
 import 'features/admin/admin_dashboard.dart';
 import 'features/admin/screens/user_management_screen.dart';
 import 'features/auth/login_screen.dart';
+import 'features/auth/screens/set_password_screen.dart';
 import 'features/facilitator/facilitator_dashboard.dart';
 import 'features/klant/client_dashboard.dart';
 import 'features/operator/operator_dashboard.dart';
@@ -325,6 +326,18 @@ class MyApp extends StatelessWidget {
           ),
           themeMode: themeMode,
           onGenerateRoute: (settings) {
+            if (settings.name == '/set-password') {
+              return MaterialPageRoute(
+                settings: settings,
+                builder: (_) => const SetPasswordScreen(),
+              );
+            }
+            if (settings.name == '/login') {
+              return MaterialPageRoute(
+                settings: settings,
+                builder: (_) => const LoginScreen(),
+              );
+            }
             if (settings.name == '/factuur_aanmaken') {
               return MaterialPageRoute(
                 builder: (_) => const FactuurEditorScreen(),
@@ -351,6 +364,25 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   String? _identityFutureUserId;
   Future<void>? _identityFuture;
+
+  bool _isPasswordLink() {
+    // Flutter web: deep links can appear in path, query, or fragment.
+    final uri = Uri.base;
+    final path = uri.path.toLowerCase();
+    final frag = uri.fragment.toLowerCase();
+    final qpType = (uri.queryParameters['type'] ?? '').toLowerCase();
+
+    final fragQuery = Uri.tryParse('https://local/?$frag');
+    final fragType = (fragQuery?.queryParameters['type'] ?? '').toLowerCase();
+
+    final type = qpType.isNotEmpty ? qpType : fragType;
+
+    final isSetPasswordPath =
+        path == '/set-password' || frag.startsWith('/set-password');
+    final isRecoveryOrInvite = type == 'recovery' || type == 'invite';
+
+    return isSetPasswordPath || isRecoveryOrInvite;
+  }
 
   @override
   void initState() {
@@ -435,11 +467,18 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     return StreamBuilder(
       stream: AppSupabase.client.auth.onAuthStateChange,
       builder: (context, _) {
+        final wantsSetPassword = _isPasswordLink();
         final user = AppSupabase.client.auth.currentUser;
         if (user == null) {
           _identityFutureUserId = null;
           _identityFuture = null;
           context.read<UserProvider>().clear();
+          if (wantsSetPassword) {
+            // Let Supabase finish processing the recovery/invite deep link.
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
           return const LoginScreen();
         }
 
@@ -491,6 +530,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
             }
 
             final userProvider = context.watch<UserProvider>();
+
+            // CRITICAL: If opened via recovery/invite or /set-password, do not auto-route to dashboard.
+            if (wantsSetPassword) {
+              return const SetPasswordScreen();
+            }
 
             if (userProvider.lastError != null) {
               return Scaffold(

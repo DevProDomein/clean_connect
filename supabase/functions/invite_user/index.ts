@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email } = await req.json()
+    const { email, role, fullName } = await req.json()
     
     // De Service Role Key geeft deze functie 'God-mode' om mensen uit te nodigen
     // (Deze keys worden automatisch door de Supabase omgeving ingevuld)
@@ -23,7 +23,13 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email)
+    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      data: { 
+        role: role, 
+        full_name: fullName 
+      },
+      redirectTo: 'https://cleanconnect-erp.web.app/set-password', 
+    });
 
     if (error) {
       return new Response(JSON.stringify({ error: error.message }), { 
