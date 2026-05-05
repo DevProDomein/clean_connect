@@ -46,6 +46,7 @@ import '../../features/operator/screens/operator_voorraad_screen.dart';
 import '../../features/operator/screens/operator_rooster_screen.dart';
 import '../../features/operator/screens/operator_uren_screen.dart';
 import '../../features/shared/screens/profile_screen.dart';
+import '../../shared/layouts/mobile_bottom_nav_layout.dart';
 import '../models/user_role.dart';
 
 /// Central app navigation.
@@ -356,13 +357,17 @@ class AppDrawerContent extends StatelessWidget {
                         name: '/facilitator/dashboard',
                         icon: Icons.dashboard_outlined,
                         title: 'Dashboard',
-                        screen: const FacilitatorDashboard(),
+                        screen: isDesktop
+                            ? const FacilitatorDashboard()
+                            : const MobileBottomNavLayout(initialKey: 'dashboard'),
                       ),
                       navTile(
                         name: '/facilitator/mijn-agenda',
                         icon: Icons.event_note_outlined,
                         title: 'Mijn Agenda',
-                        screen: const AgendaScreen(),
+                        screen: isDesktop
+                            ? const AgendaScreen()
+                            : const MobileBottomNavLayout(initialKey: 'agenda'),
                       ),
                       ExpansionTile(
                         leading: isDesktop
@@ -425,7 +430,9 @@ class AppDrawerContent extends StatelessWidget {
                         name: '/facilitator/planning',
                         icon: Icons.calendar_month_outlined,
                         title: 'Planbord (Toewijzen)',
-                        screen: const PlanbordScreen(),
+                        screen: isDesktop
+                            ? const PlanbordScreen()
+                            : const MobileBottomNavLayout(initialKey: 'planbord'),
                       ),
                       navTile(
                         name: '/facilitator/planning-agenda',
@@ -443,7 +450,9 @@ class AppDrawerContent extends StatelessWidget {
                         name: '/facilitator/tickets',
                         icon: Icons.confirmation_number_outlined,
                         title: 'Tickets & Meldingen',
-                        screen: const TicketOverviewScreen(),
+                        screen: isDesktop
+                            ? const TicketOverviewScreen()
+                            : const MobileBottomNavLayout(initialKey: 'tickets'),
                       ),
 
                     ],

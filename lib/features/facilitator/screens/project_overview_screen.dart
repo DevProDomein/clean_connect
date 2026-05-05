@@ -48,6 +48,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
   String? _filterRegio;
   String? _filterFrequentie; // regulier | frequent | periodiek
   String? _filterContractType; // vast | flexibel | eenmalig
+  bool _showFilters = true;
 
   final _searchCtrl = TextEditingController();
   Timer? _searchDebounce;
@@ -64,6 +65,11 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
     super.initState();
     _searchCtrl.addListener(_onSearchDebounce);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _showFilters = MediaQuery.of(context).size.width > 800;
+        });
+      }
       _fetchProjects();
       _loadFilterKlanten();
     });
@@ -573,12 +579,26 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
   }
 
   Widget _buildFilterBar() {
+    final isMobile = MediaQuery.of(context).size.width < 800;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
       child: _Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (isMobile)
+              OutlinedButton(
+                onPressed: () => setState(() => _showFilters = !_showFilters),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: Text(
+                  _showFilters ? 'Filters & Zoeken verbergen' : 'Filters & Zoeken tonen',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w900),
+                ),
+              ),
+            if (isMobile) const SizedBox(height: 12),
             TextField(
               controller: _searchCtrl,
               onSubmitted: (_) => _fetchProjects(),
@@ -598,115 +618,152 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
                     vertical: 14, horizontal: 8),
               ),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 200,
-                  child: _smallDropdown<String?>(
-                    label: 'Klant',
-                    // ignore: deprecated_member_use
-                    value: _filterKlantId,
-                    items: [
-                      const DropdownMenuItem<String?>(
-                          value: null, child: Text('Alle klanten')),
-                      ..._filterKlanten.map(
-                        (b) => DropdownMenuItem<String?>(
-                          value: _text(b['id']),
-                          child: Text(
-                            _text(b['bedrijfsnaam']),
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.lato(
-                                fontWeight: FontWeight.w600, fontSize: 13),
-                          ),
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 180),
+              crossFadeState: _showFilters ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+              secondChild: const SizedBox.shrink(),
+              firstChild: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: isMobile ? 8 : 10,
+                    runSpacing: isMobile ? 8 : 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 200,
+                        child: _smallDropdown<String?>(
+                          label: 'Klant',
+                          // ignore: deprecated_member_use
+                          value: _filterKlantId,
+                          items: [
+                            const DropdownMenuItem<String?>(
+                                value: null, child: Text('Alle klanten')),
+                            ..._filterKlanten.map(
+                              (b) => DropdownMenuItem<String?>(
+                                value: _text(b['id']),
+                                child: Text(
+                                  _text(b['bedrijfsnaam']),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.lato(
+                                      fontWeight: FontWeight.w600, fontSize: 13),
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: _loadingKlanten
+                              ? null
+                              : (v) {
+                                  setState(() => _filterKlantId = v);
+                                  _fetchProjects();
+                                },
                         ),
                       ),
-                    ],
-                    onChanged: _loadingKlanten
-                        ? null
-                        : (v) {
-                            setState(() => _filterKlantId = v);
+                      SizedBox(
+                        width: 160,
+                        child: _smallDropdown<String?>(
+                          label: 'Regio',
+                          // ignore: deprecated_member_use
+                          value: _filterRegio,
+                          items: [
+                            const DropdownMenuItem<String?>(
+                                value: null, child: Text('Alle regio’s')),
+                            ..._regioOptions.map(
+                              (r) => DropdownMenuItem<String?>(
+                                  value: r, child: Text(r)),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            setState(() => _filterRegio = v);
                             _fetchProjects();
                           },
-                  ),
-                ),
-                SizedBox(
-                  width: 160,
-                  child: _smallDropdown<String?>(
-                    label: 'Regio',
-                    // ignore: deprecated_member_use
-                    value: _filterRegio,
-                    items: [
-                      const DropdownMenuItem<String?>(
-                          value: null, child: Text('Alle regio’s')),
-                      ..._regioOptions.map(
-                        (r) => DropdownMenuItem<String?>(
-                            value: r, child: Text(r)),
+                        ),
                       ),
+                      SizedBox(
+                        width: 150,
+                        child: _smallDropdown<String?>(
+                          label: isMobile ? 'Freq.' : 'Frequentie',
+                          // ignore: deprecated_member_use
+                          value: _filterFrequentie,
+                          items: const [
+                            DropdownMenuItem(
+                                value: null, child: Text('Alle')),
+                            DropdownMenuItem(
+                                value: 'regulier', child: Text('regulier')),
+                            DropdownMenuItem(
+                                value: 'frequent', child: Text('frequent')),
+                            DropdownMenuItem(
+                                value: 'periodiek', child: Text('periodiek')),
+                          ],
+                          onChanged: (v) {
+                            setState(() => _filterFrequentie = v);
+                            _fetchProjects();
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: 150,
+                        child: _smallDropdown<String?>(
+                          label: isMobile ? 'Type' : 'Contract',
+                          // ignore: deprecated_member_use
+                          value: _filterContractType,
+                          items: const [
+                            DropdownMenuItem(value: null, child: Text('Alle')),
+                            DropdownMenuItem(value: 'vast', child: Text('vast')),
+                            DropdownMenuItem(
+                                value: 'flexibel', child: Text('flexibel')),
+                            DropdownMenuItem(
+                                value: 'eenmalig', child: Text('eenmalig')),
+                          ],
+                          onChanged: (v) {
+                            setState(() => _filterContractType = v);
+                            _fetchProjects();
+                          },
+                        ),
+                      ),
+                      if (isMobile)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: _loading ? null : _fetchProjects,
+                            child: Text(
+                              'Zoek',
+                              style: GoogleFonts.lato(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        )
+                      else
+                        TextButton(
+                          onPressed: _clearFilters,
+                          child: Text(
+                            'Filters wissen',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              color: _blue,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      if (isMobile)
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton(
+                            onPressed: _clearFilters,
+                            child: Text(
+                              'Filters wissen',
+                              style: GoogleFonts.lato(
+                                fontWeight: FontWeight.w900,
+                                color: _blue,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
-                    onChanged: (v) {
-                      setState(() => _filterRegio = v);
-                      _fetchProjects();
-                    },
                   ),
-                ),
-                SizedBox(
-                  width: 150,
-                  child: _smallDropdown<String?>(
-                    label: 'Frequentie',
-                    // ignore: deprecated_member_use
-                    value: _filterFrequentie,
-                    items: const [
-                      DropdownMenuItem(
-                          value: null, child: Text('Alle')),
-                      DropdownMenuItem(
-                          value: 'regulier', child: Text('regulier')),
-                      DropdownMenuItem(
-                          value: 'frequent', child: Text('frequent')),
-                      DropdownMenuItem(
-                          value: 'periodiek', child: Text('periodiek')),
-                    ],
-                    onChanged: (v) {
-                      setState(() => _filterFrequentie = v);
-                      _fetchProjects();
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 150,
-                  child: _smallDropdown<String?>(
-                    label: 'Contract',
-                    // ignore: deprecated_member_use
-                    value: _filterContractType,
-                    items: const [
-                      DropdownMenuItem(value: null, child: Text('Alle')),
-                      DropdownMenuItem(value: 'vast', child: Text('vast')),
-                      DropdownMenuItem(
-                          value: 'flexibel', child: Text('flexibel')),
-                      DropdownMenuItem(
-                          value: 'eenmalig', child: Text('eenmalig')),
-                    ],
-                    onChanged: (v) {
-                      setState(() => _filterContractType = v);
-                      _fetchProjects();
-                    },
-                  ),
-                ),
-                TextButton(
-                  onPressed: _clearFilters,
-                  child: Text(
-                    'Filters wissen',
-                    style: GoogleFonts.lato(
-                      fontWeight: FontWeight.w900,
-                      color: _blue,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),

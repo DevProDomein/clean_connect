@@ -13,6 +13,8 @@ abstract final class GebruikersTable {
   static const String gebruikersrol = 'gebruikersrol';
   static const String voornaam = 'voornaam';
   static const String achternaam = 'achternaam';
+  /// Array of menu keys for mobile bottom navigation (enterprise).
+  static const String mobielMenuVoorkeuren = 'mobiel_menu_voorkeuren';
 }
 
 // --- Identity: read-mirror `gebruikers_metadata` ---

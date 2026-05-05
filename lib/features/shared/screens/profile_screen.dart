@@ -35,6 +35,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _achternaam = '';
   String _email = '';
 
+  static const List<String> _menuKeyOrder = [
+    'dashboard',
+    'agenda',
+    'tickets',
+    'planbord',
+    'crm',
+    'offertes',
+  ];
+
+  static const Map<String, String> _menuLabels = {
+    'dashboard': 'Dashboard',
+    'agenda': 'Agenda',
+    'tickets': 'Tickets',
+    'planbord': 'Planbord',
+    'crm': 'CRM',
+    'offertes': 'Offertes',
+  };
+
+  static const int _maxMobileMenuItems = 4;
+  List<String> _mobileMenuPrefs = const ['dashboard', 'agenda', 'tickets', 'crm'];
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +105,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _telefoonCtrl.text = _t(m[_colTelefoon]);
         final pu = _t(m[_colProfielfoto]);
         _profielfotoUrl = pu.isEmpty ? null : pu;
+        final rawPrefs = m[GebruikersTable.mobielMenuVoorkeuren];
+        _mobileMenuPrefs = _normalizeMobileMenuPrefs(rawPrefs);
         _loading = false;
       });
     } catch (e) {
@@ -141,6 +164,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'telefoon': trimmedPhone,
         if (trimmedFoto != null && trimmedFoto.isNotEmpty)
           _colProfielfoto: trimmedFoto,
+        GebruikersTable.mobielMenuVoorkeuren: _mobileMenuPrefs,
       };
 
       await Supabase.instance.client
@@ -150,6 +174,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (!mounted) return;
       context.read<UserProvider>().setProfilePhotoUrl(_profielfotoUrl);
+      context.read<UserProvider>().setMobileMenuPreferences(_mobileMenuPrefs);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -273,6 +298,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 28),
                           Text(
+                            'Mijn Mobiele Menu',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _muted,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _mobileMenuCard(),
+                          const SizedBox(height: 28),
+                          Text(
                             'Contact',
                             style: GoogleFonts.lato(
                               fontWeight: FontWeight.w900,
@@ -323,6 +360,152 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
+      ),
+    );
+  }
+
+  List<String> _normalizeMobileMenuPrefs(dynamic raw) {
+    final out = <String>[];
+    if (raw is List) {
+      for (final v in raw) {
+        final s = _t(v).toLowerCase();
+        if (s.isEmpty) continue;
+        if (!_menuKeyOrder.contains(s)) continue;
+        if (!out.contains(s)) out.add(s);
+      }
+    }
+    final trimmed = out.take(_maxMobileMenuItems).toList(growable: false);
+    if (trimmed.length == _maxMobileMenuItems) return trimmed;
+    return const ['dashboard', 'agenda', 'tickets', 'crm'];
+  }
+
+  Widget _mobileMenuCard() {
+    final selected = _mobileMenuPrefs.toSet();
+    final remaining = _maxMobileMenuItems - selected.length;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Kies maximaal $_maxMobileMenuItems items voor je snelle menu.',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w700,
+              color: _navy,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            remaining > 0 ? 'Je kunt nog $remaining toevoegen.' : 'Maximum bereikt.',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w600,
+              color: _muted,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Volgorde (sleep om te rangschikken)',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+              color: _muted,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: true,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final next = [..._mobileMenuPrefs];
+                final item = next.removeAt(oldIndex);
+                next.insert(newIndex, item);
+                _mobileMenuPrefs = next;
+              });
+            },
+            children: [
+              for (final key in _mobileMenuPrefs)
+                ListTile(
+                  key: ValueKey('sel_$key'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    _menuLabels[key] ?? key,
+                    style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Verwijderen',
+                    onPressed: () {
+                      setState(() {
+                        _mobileMenuPrefs =
+                            _mobileMenuPrefs.where((e) => e != key).toList(growable: false);
+                      });
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1),
+          const SizedBox(height: 14),
+          Text(
+            'Beschikbare items',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+              color: _muted,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._menuKeyOrder.map((key) {
+            final isChecked = selected.contains(key);
+            final isDisabled = !isChecked && selected.length >= _maxMobileMenuItems;
+            return CheckboxListTile(
+              value: isChecked,
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                _menuLabels[key] ?? key,
+                style: GoogleFonts.lato(
+                  fontWeight: FontWeight.w800,
+                  color: isDisabled ? _muted : _navy,
+                ),
+              ),
+              onChanged: isDisabled
+                  ? null
+                  : (v) {
+                      setState(() {
+                        final next = [..._mobileMenuPrefs];
+                        if (v == true) {
+                          if (!next.contains(key)) next.add(key);
+                        } else {
+                          next.removeWhere((e) => e == key);
+                        }
+                        _mobileMenuPrefs = next.take(_maxMobileMenuItems).toList(growable: false);
+                      });
+                    },
+            );
+          }),
+        ],
       ),
     );
   }

@@ -35,6 +35,8 @@ class _InvoiceOverviewScreenState extends State<InvoiceOverviewScreen> {
   final _orderCtrl = TextEditingController();
   final _artikelCtrl = TextEditingController();
 
+  bool _showFilters = true;
+
   // Live suggestions (kept in state for async-backed Autocomplete)
   List<Map<String, dynamic>> _klantOptions = const [];
   List<Map<String, dynamic>> _artikelOptions = const [];
@@ -45,6 +47,12 @@ class _InvoiceOverviewScreenState extends State<InvoiceOverviewScreen> {
   void initState() {
     super.initState();
     _fetchData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _showFilters = MediaQuery.of(context).size.width > 800;
+      });
+    });
   }
 
   @override
@@ -241,6 +249,7 @@ class _InvoiceOverviewScreenState extends State<InvoiceOverviewScreen> {
   Widget build(BuildContext context) {
     final eur = NumberFormat.currency(locale: 'nl_NL', symbol: '€');
     final df = DateFormat('dd-MM-yyyy');
+    final isMobile = MediaQuery.of(context).size.width < 800;
 
     return MainLayout(
       child: Scaffold(
@@ -281,35 +290,54 @@ class _InvoiceOverviewScreenState extends State<InvoiceOverviewScreen> {
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                // Filters (Sleek Card)
-                Card(
-                  elevation: 0,
-                  color: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
+                if (isMobile)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _showFilters = !_showFilters),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: Text(
+                        _showFilters ? 'Filters & Zoeken verbergen' : 'Filters & Zoeken tonen',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ),
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 16,
-                          runSpacing: 16,
-                          children: [
-                            SizedBox(
-                              width: 280,
-                              child: Autocomplete<Map<String, dynamic>>(
+                  ),
+                if (isMobile) const SizedBox(height: 12),
+                AnimatedCrossFade(
+                  duration: const Duration(milliseconds: 180),
+                  crossFadeState: _showFilters ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+                  secondChild: const SizedBox.shrink(),
+                  firstChild: Card(
+                    elevation: 0,
+                    color: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: isMobile ? 8 : 16,
+                            runSpacing: isMobile ? 8 : 16,
+                            children: [
+                              SizedBox(
+                                width: 280,
+                                child: Autocomplete<Map<String, dynamic>>(
                                 displayStringForOption: (o) =>
                                     (o['bedrijfsnaam'] ?? '').toString(),
                                 optionsBuilder: (TextEditingValue t) {
@@ -498,82 +526,83 @@ class _InvoiceOverviewScreenState extends State<InvoiceOverviewScreen> {
                               onTap: _pickEndDate,
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 14),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            const Text(
-                              'Status:',
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            ...[
-                              'concept',
-                              'definitief',
-                              'verzonden',
-                              'betaald',
-                              'vervallen',
-                            ].map((s) {
-                              final selected = _selectedStatuses.contains(s);
-                              return FilterChip(
-                                label: Text(s),
-                                selected: selected,
-                                onSelected: (v) {
-                                  setState(() {
-                                    final next = [..._selectedStatuses];
-                                    if (v) {
-                                      if (!next.contains(s)) next.add(s);
-                                    } else {
-                                      next.remove(s);
-                                    }
-                                    _selectedStatuses = next;
-                                  });
-                                },
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                selectedColor: Theme.of(context)
-                                    .colorScheme
-                                    .primary
-                                    .withValues(alpha: 0.14),
-                                checkmarkColor:
-                                    Theme.of(context).colorScheme.primary,
-                                backgroundColor: const Color(0xFFF5F5F7),
-                                side: BorderSide(color: Colors.grey.shade200),
-                                labelStyle: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: selected
-                                      ? Theme.of(context).colorScheme.primary
-                                      : const Color(0xFF0F172A),
-                                ),
-                              );
-                            }),
-                            const SizedBox(width: 10),
-                            ElevatedButton.icon(
-                              onPressed: _isLoading ? null : _fetchData,
-                              icon: const Icon(Icons.search),
-                              label: const Text('Zoeken / Toepassen'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    Theme.of(context).colorScheme.primary,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 18,
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                textStyle:
-                                    const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 14),
+                          Wrap(
+                            spacing: isMobile ? 8 : 10,
+                            runSpacing: isMobile ? 8 : 10,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              const Text(
+                                'Status:',
+                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              ...[
+                                'concept',
+                                'definitief',
+                                'verzonden',
+                                'betaald',
+                                'vervallen',
+                              ].map((s) {
+                                final selected = _selectedStatuses.contains(s);
+                                return FilterChip(
+                                  label: Text(s),
+                                  selected: selected,
+                                  onSelected: (v) {
+                                    setState(() {
+                                      final next = [..._selectedStatuses];
+                                      if (v) {
+                                        if (!next.contains(s)) next.add(s);
+                                      } else {
+                                        next.remove(s);
+                                      }
+                                      _selectedStatuses = next;
+                                    });
+                                  },
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  selectedColor: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withValues(alpha: 0.14),
+                                  checkmarkColor:
+                                      Theme.of(context).colorScheme.primary,
+                                  backgroundColor: const Color(0xFFF5F5F7),
+                                  side: BorderSide(color: Colors.grey.shade200),
+                                  labelStyle: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: selected
+                                        ? Theme.of(context).colorScheme.primary
+                                        : const Color(0xFF0F172A),
+                                  ),
+                                );
+                              }),
+                              const SizedBox(width: 10),
+                              ElevatedButton.icon(
+                                onPressed: _isLoading ? null : _fetchData,
+                                icon: const Icon(Icons.search),
+                                label: Text(isMobile ? 'Zoek' : 'Zoeken / Toepassen'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  textStyle:
+                                      const TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

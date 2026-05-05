@@ -41,6 +41,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   DateTime? _selectedDay = DateTime.now();
   String? _selectedManualProjectId;
   String _calendarViewMode = 'Maand';
+  bool _showFilters = true;
   List<Map<String, dynamic>> _manualTasks = [];
   Map<DateTime, List<dynamic>> _groupedTasks = {};
   bool _isLoading = true;
@@ -52,6 +53,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     _fetchSmartProjects();
     _fetchProjects();
     _loadTasks();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _showFilters = MediaQuery.of(context).size.width > 800;
+      });
+    });
   }
 
   @override
@@ -753,6 +760,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
   Widget _buildSmartPlannerTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
+    final isMobile = MediaQuery.of(context).size.width < 800;
     final filteredResults = _operatorResults
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
@@ -780,423 +788,256 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         .where((project) => _asInt(project['open_taken']) > 0)
         .toList(growable: false);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            flex: 1,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF111019) : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-              ),
-              child: _isLoadingSmartProjects
-                  ? const Center(child: CircularProgressIndicator())
-                  : _smartProjectsError != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Projecten laden mislukt: $_smartProjectsError',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: visibleProjects.length,
-                          itemBuilder: (context, index) {
-                            final project = Map<String, dynamic>.from(visibleProjects[index]);
-                            final projectId =
-                                _text(project['project_id']).isNotEmpty ? _text(project['project_id']) : _text(project['id']);
-                            final projectName = _text(project['project_naam']).isEmpty
-                                ? 'Naamloos project'
-                                : _text(project['project_naam']);
-                            final region = _text(project['werk_regio']).isEmpty
-                                ? 'Geen regio'
-                                : _text(project['werk_regio']);
-                            final openTaskCount = _asInt(project['open_taken']);
-                            final totalTaskCount = _asInt(project['totaal_taken']);
-                            final neededOperators = _asInt(
-                              project['standaard_aantal_operators'] ?? project['benodigde_operators'],
-                              fallback: 1,
-                            );
-                            final hasAssignedHours =
-                                _asDouble(project['reeds_toegewezen_uren']) > 0;
-                            final selected =
-                                selectedProjectId.isNotEmpty &&
-                                projectId.isNotEmpty &&
-                                selectedProjectId == projectId;
-
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(16),
-                                  onTap: projectId.isEmpty
-                                      ? null
-                                      : () {
-                                          _onProjectSelected(projectId);
-                                        },
-                                  child: Container(
-                                    padding: const EdgeInsets.all(14),
-                                    decoration: BoxDecoration(
-                                      color: selected ? cs.primaryContainer : cs.surface,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: hasAssignedHours
-                                            ? Colors.orange
-                                            : selected
-                                            ? cs.primary.withValues(alpha: 0.60)
-                                            : cs.onSurface.withValues(alpha: 0.06),
-                                        width: hasAssignedHours ? 2 : 1,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.03),
-                                          blurRadius: 12,
-                                          offset: const Offset(0, 5),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          projectName,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 5),
-                                        Text(
-                                          region,
-                                          style: GoogleFonts.inter(
-                                            fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.68),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Benodigde operators: $neededOperators',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.74),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: cs.primary.withValues(alpha: 0.10),
-                                            borderRadius: BorderRadius.circular(999),
-                                          ),
-                                          child: Text(
-                                            '$openTaskCount open taken van de $totalTaskCount',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w800,
-                                              color: cs.primary,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            flex: 2,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF111019) : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-              ),
-              child: _selectedProject == null
-                  ? Center(
+    Widget buildLeftColumn() {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF111019) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+        ),
+        child: _isLoadingSmartProjects
+            ? const Center(child: CircularProgressIndicator())
+            : _smartProjectsError != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
                       child: Text(
-                        'Selecteer een project in de lijst om de slimme planner te starten.',
+                        'Projecten laden mislukt: $_smartProjectsError',
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface.withValues(alpha: 0.72),
-                        ),
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                       ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
-                          style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: visibleProjects.length,
+                    itemBuilder: (context, index) {
+                      final project = Map<String, dynamic>.from(visibleProjects[index]);
+                      final projectId = _text(project['project_id']).isNotEmpty
+                          ? _text(project['project_id'])
+                          : _text(project['id']);
+                      final projectName = _text(project['project_naam']).isEmpty
+                          ? 'Naamloos project'
+                          : _text(project['project_naam']);
+                      final region = _text(project['werk_regio']).isEmpty
+                          ? 'Geen regio'
+                          : _text(project['werk_regio']);
+                      final openTaskCount = _asInt(project['open_taken']);
+                      final totalTaskCount = _asInt(project['totaal_taken']);
+                      final neededOperators = _asInt(
+                        project['standaard_aantal_operators'] ?? project['benodigde_operators'],
+                        fallback: 1,
+                      );
+                      final hasAssignedHours = _asDouble(project['reeds_toegewezen_uren']) > 0;
+                      final selected = selectedProjectId.isNotEmpty &&
+                          projectId.isNotEmpty &&
+                          selectedProjectId == projectId;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: projectId.isEmpty ? null : () => _onProjectSelected(projectId),
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: selected ? cs.primaryContainer : cs.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: hasAssignedHours
+                                      ? Colors.orange
+                                      : selected
+                                          ? cs.primary.withValues(alpha: 0.60)
+                                          : cs.onSurface.withValues(alpha: 0.06),
+                                  width: hasAssignedHours ? 2 : 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.03),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Totaal benodigd',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: cs.onSurface.withValues(alpha: 0.62),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                formatHoursToText(_asDouble(_selectedProject?['benodigde_uren_totaal'])),
-                                                style: GoogleFonts.inter(
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 10),
-                                              Text(
-                                                'Standaard per persoon',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: cs.onSurface.withValues(alpha: 0.62),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                formatHoursToText(_asDouble(_selectedProject?['standaard_uren_per_shift'])),
-                                                style: GoogleFonts.inter(
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Reeds toegewezen',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: cs.onSurface.withValues(alpha: 0.62),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                formatHoursToText(_asDouble(_selectedProject?['reeds_toegewezen_uren'])),
-                                                style: GoogleFonts.inter(
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 10),
-                                              Text(
-                                                'Nog in te vullen',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: cs.onSurface.withValues(alpha: 0.62),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                formatHoursToText(_asDouble(_selectedProject?['resterende_uren_per_beurt'])),
-                                                style: GoogleFonts.inter(
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 14,
-                                                  color: cs.primary,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
+                                  Text(
+                                    projectName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        _StepperCircleButton(
-                                          icon: Icons.remove_rounded,
-                                          onPressed: () {
-                                            setState(() {
-                                              _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
-                                              _hoursController.text = _shiftHours.toStringAsFixed(2);
-                                            });
-                                          },
-                                        ),
-                                        Expanded(
-                                          child: Column(
-                                            children: [
-                                              Text(
-                                                'Uren per shift',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: cs.onSurface.withValues(alpha: 0.68),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                formatHoursToText(_shiftHours),
-                                                textAlign: TextAlign.center,
-                                                style: GoogleFonts.inter(
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 15,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        _StepperCircleButton(
-                                          icon: Icons.add_rounded,
-                                          onPressed: () {
-                                            setState(() {
-                                              _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
-                                              _hoursController.text = _shiftHours.toStringAsFixed(2);
-                                            });
-                                          },
-                                        ),
-                                      ],
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    region,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.onSurface.withValues(alpha: 0.68),
                                     ),
                                   ),
-                                  if (_hoursExceedSelectedWindow())
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: Text(
-                                        'Waarschuwing: Het aantal uren past niet binnen het tijdsbestek van de klant '
-                                        '(${_text(_selectedProject?['tijdslot_start'])} - ${_text(_selectedProject?['tijdslot_eind'])}).',
-                                        style: GoogleFonts.inter(
-                                          color: const Color(0xFFCC2F2F),
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 12.5,
-                                        ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Benodigde operators: $neededOperators',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.onSurface.withValues(alpha: 0.74),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: cs.primary.withValues(alpha: 0.10),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '$openTaskCount open taken van de $totalTaskCount',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: cs.primary,
                                       ),
                                     ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: cs.onSurface.withValues(alpha: isDark ? 0.10 : 0.04),
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(color: cs.onSurface.withValues(alpha: 0.07)),
-                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+      );
+    }
+
+    Widget buildRightColumnDesktop() {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF111019) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+        ),
+        child: _selectedProject == null
+            ? Center(
+                child: Text(
+                  'Selecteer een project in de lijst om de slimme planner te starten.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurface.withValues(alpha: 0.72),
+                  ),
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
+                    style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Huidige Bezetting',
+                                          'Totaal benodigd',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          formatHoursToText(_asDouble(_selectedProject?['benodigde_uren_totaal'])),
                                           style: GoogleFonts.inter(
                                             fontWeight: FontWeight.w900,
                                             fontSize: 14,
                                           ),
                                         ),
-                                        const SizedBox(height: 8),
-                                        if (_isLoadingPlannedOperators)
-                                          const Padding(
-                                            padding: EdgeInsets.symmetric(vertical: 4),
-                                            child: LinearProgressIndicator(minHeight: 3),
-                                          )
-                                        else if (_plannedOperatorsError != null)
-                                          Text(
-                                            'Kon bezetting niet laden.',
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.w700,
-                                              color: const Color(0xFFCC2F2F),
-                                            ),
-                                          )
-                                        else if (_plannedOperators.isEmpty)
-                                          Text(
-                                            'Nog geen operators ingepland.',
-                                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                                          )
-                                        else
-                                          ListView.builder(
-                                            shrinkWrap: true,
-                                            physics: const NeverScrollableScrollPhysics(),
-                                            itemCount: _plannedOperators.length,
-                                            itemBuilder: (context, index) {
-                                              final operator = _plannedOperators[index];
-                                              final filled = _asInt(operator['aantal_beurten_gevuld']);
-                                              final total = _asInt(_selectedProject?['totaal_taken']);
-                                              final name = _text(operator['operator_naam']).isEmpty
-                                                  ? 'Operator'
-                                                  : _text(operator['operator_naam']);
-                                              return Padding(
-                                                padding: const EdgeInsets.only(bottom: 6),
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      Icons.person,
-                                                      size: 16,
-                                                      color: cs.onSurface.withValues(alpha: 0.74),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Expanded(
-                                                      child: Text(
-                                                        '$filled van de $total gevuld door $name',
-                                                        style: GoogleFonts.inter(
-                                                          fontWeight: FontWeight.w700,
-                                                          fontSize: 12.5,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        const SizedBox(height: 6),
+                                        const SizedBox(height: 10),
                                         Text(
-                                          'Nog in te vullen: ${_asInt(_selectedProject?['open_taken'])} deeltaken.',
+                                          'Standaard per persoon',
                                           style: GoogleFonts.inter(
-                                            fontWeight: FontWeight.w800,
-                                            color: cs.primary.withValues(alpha: 0.90),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          formatHoursToText(_asDouble(_selectedProject?['standaard_uren_per_shift'])),
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Reeds toegewezen',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          formatHoursToText(_asDouble(_selectedProject?['reeds_toegewezen_uren'])),
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'Nog in te vullen',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          formatHoursToText(_asDouble(_selectedProject?['resterende_uren_per_beurt'])),
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                            color: cs.primary,
                                           ),
                                         ),
                                       ],
@@ -1205,88 +1046,643 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            SizedBox(
-                              height: 52,
-                              child: ElevatedButton(
-                                onPressed: _isCalculating ? null : _runSmartPlanning,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: cs.primary,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                ),
-                                child: _isCalculating
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.0,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                              ),
+                              child: Row(
+                                children: [
+                                  _StepperCircleButton(
+                                    icon: Icons.remove_rounded,
+                                    onPressed: () {
+                                      setState(() {
+                                        _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
+                                        _hoursController.text = _shiftHours.toStringAsFixed(2);
+                                      });
+                                    },
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          'Uren per shift',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: cs.onSurface.withValues(alpha: 0.68),
+                                          ),
                                         ),
-                                      )
-                                    : Text(
-                                        'Slim Inplannen',
-                                        style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          formatHoursToText(_shiftHours),
+                                          textAlign: TextAlign.center,
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  _StepperCircleButton(
+                                    icon: Icons.add_rounded,
+                                    onPressed: () {
+                                      setState(() {
+                                        _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
+                                        _hoursController.text = _shiftHours.toStringAsFixed(2);
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_hoursExceedSelectedWindow())
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Text(
+                                  'Waarschuwing: Het aantal uren past niet binnen het tijdsbestek van de klant '
+                                  '(${_text(_selectedProject?['tijdslot_start'])} - ${_text(_selectedProject?['tijdslot_eind'])}).',
+                                  style: GoogleFonts.inter(
+                                    color: const Color(0xFFCC2F2F),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: cs.onSurface.withValues(alpha: isDark ? 0.10 : 0.04),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: cs.onSurface.withValues(alpha: 0.07)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Huidige Bezetting',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (_isLoadingPlannedOperators)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 4),
+                                      child: LinearProgressIndicator(minHeight: 3),
+                                    )
+                                  else if (_plannedOperatorsError != null)
+                                    Text(
+                                      'Kon bezetting niet laden.',
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFFCC2F2F),
                                       ),
+                                    )
+                                  else if (_plannedOperators.isEmpty)
+                                    Text(
+                                      'Nog geen operators ingepland.',
+                                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                    )
+                                  else
+                                    ListView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: _plannedOperators.length,
+                                      itemBuilder: (context, index) {
+                                        final operator = _plannedOperators[index];
+                                        final filled = _asInt(operator['aantal_beurten_gevuld']);
+                                        final total = _asInt(_selectedProject?['totaal_taken']);
+                                        final name = _text(operator['operator_naam']).isEmpty
+                                            ? 'Operator'
+                                            : _text(operator['operator_naam']);
+                                        return Padding(
+                                          padding: const EdgeInsets.only(bottom: 6),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.person,
+                                                size: 16,
+                                                color: cs.onSurface.withValues(alpha: 0.74),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  '$filled van de $total gevuld door $name',
+                                                  style: GoogleFonts.inter(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 12.5,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Nog in te vullen: ${_asInt(_selectedProject?['open_taken'])} deeltaken.',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w800,
+                                      color: cs.primary.withValues(alpha: 0.90),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        Expanded(
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _isCalculating ? null : _runSmartPlanning,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cs.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
                           child: _isCalculating
-                              ? const Center(child: CircularProgressIndicator())
-                              : !_hasCalculated
-                                  ? Center(
-                                      child: Text(
-                                        'Klik op "Slim Inplannen" om operator matches te berekenen.',
-                                        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                                      ),
-                                    )
-                                  : filteredResults.isEmpty
-                                      ? Center(
-                                          child: Text(
-                                            'Geen plannerresultaten gevonden voor de huidige filters.',
-                                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                                          ),
-                                        )
-                                      : ListView.builder(
-                                          itemCount: filteredResults.length,
-                                          itemBuilder: (context, index) {
-                                            return _buildResultCard(filteredResults[index], index: index);
-                                          },
-                                        ),
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.0,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : Text(
+                                  'Slim Inplannen',
+                                  style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                                ),
                         ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: selectedResult == null ? null : () => _confirmBooking(selectedResult),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(50),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            ),
-                            child: Text(
-                              'Definitief Inplannen',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _isCalculating
+                        ? const Center(child: CircularProgressIndicator())
+                        : !_hasCalculated
+                            ? Center(
+                                child: Text(
+                                  'Klik op "Slim Inplannen" om operator matches te berekenen.',
+                                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                ),
+                              )
+                            : filteredResults.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      'Geen plannerresultaten gevonden voor de huidige filters.',
+                                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    itemCount: filteredResults.length,
+                                    itemBuilder: (context, index) {
+                                      return _buildResultCard(filteredResults[index], index: index);
+                                    },
+                                  ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: selectedResult == null ? null : () => _confirmBooking(selectedResult),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: Text(
+                        'Definitief Inplannen',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      );
+    }
+
+    Widget buildRightColumnMobile() {
+      // On mobile we only show this column when a project is selected.
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF111019) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconButton(
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => setState(() => _selectedProject = null),
+              tooltip: 'Terug',
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
+                      style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Totaal benodigd',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface.withValues(alpha: 0.62),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  formatHoursToText(_asDouble(_selectedProject?['benodigde_uren_totaal'])),
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Standaard per persoon',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface.withValues(alpha: 0.62),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  formatHoursToText(_asDouble(_selectedProject?['standaard_uren_per_shift'])),
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Reeds toegewezen',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface.withValues(alpha: 0.62),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  formatHoursToText(_asDouble(_selectedProject?['reeds_toegewezen_uren'])),
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Nog in te vullen',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface.withValues(alpha: 0.62),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  formatHoursToText(_asDouble(_selectedProject?['resterende_uren_per_beurt'])),
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 14,
+                                    color: cs.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                      ),
+                      child: Row(
+                        children: [
+                          _StepperCircleButton(
+                            icon: Icons.remove_rounded,
+                            onPressed: () {
+                              setState(() {
+                                _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
+                                _hoursController.text = _shiftHours.toStringAsFixed(2);
+                              });
+                            },
+                          ),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                Text(
+                                  'Uren per shift',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: cs.onSurface.withValues(alpha: 0.68),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  formatHoursToText(_shiftHours),
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _StepperCircleButton(
+                            icon: Icons.add_rounded,
+                            onPressed: () {
+                              setState(() {
+                                _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
+                                _hoursController.text = _shiftHours.toStringAsFixed(2);
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_hoursExceedSelectedWindow())
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Waarschuwing: Het aantal uren past niet binnen het tijdsbestek van de klant '
+                          '(${_text(_selectedProject?['tijdslot_start'])} - ${_text(_selectedProject?['tijdslot_eind'])}).',
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFFCC2F2F),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cs.onSurface.withValues(alpha: isDark ? 0.10 : 0.04),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.07)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Huidige Bezetting',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (_isLoadingPlannedOperators)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 4),
+                              child: LinearProgressIndicator(minHeight: 3),
+                            )
+                          else if (_plannedOperatorsError != null)
+                            Text(
+                              'Kon bezetting niet laden.',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFCC2F2F),
+                              ),
+                            )
+                          else if (_plannedOperators.isEmpty)
+                            Text(
+                              'Nog geen operators ingepland.',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            )
+                          else
+                            ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _plannedOperators.length,
+                              itemBuilder: (context, index) {
+                                final operator = _plannedOperators[index];
+                                final filled = _asInt(operator['aantal_beurten_gevuld']);
+                                final total = _asInt(_selectedProject?['totaal_taken']);
+                                final name = _text(operator['operator_naam']).isEmpty
+                                    ? 'Operator'
+                                    : _text(operator['operator_naam']);
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.person,
+                                        size: 16,
+                                        color: cs.onSurface.withValues(alpha: 0.74),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          '$filled van de $total gevuld door $name',
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Nog in te vullen: ${_asInt(_selectedProject?['open_taken'])} deeltaken.',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
+                              color: cs.primary.withValues(alpha: 0.90),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _isCalculating ? null : _runSmartPlanning,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: cs.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: _isCalculating
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.0,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Text(
+                                'Slim Inplannen',
+                                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_isCalculating)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (!_hasCalculated)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Text(
+                            'Klik op "Slim Inplannen" om operator matches te berekenen.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      )
+                    else if (filteredResults.isEmpty)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Text(
+                            'Geen plannerresultaten gevonden voor de huidige filters.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      )
+                    else
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: filteredResults.length,
+                        itemBuilder: (context, index) {
+                          return _buildResultCard(filteredResults[index], index: index);
+                        },
+                      ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed:
+                            selectedResult == null ? null : () => _confirmBooking(selectedResult),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: Text(
+                          'Definitief Inplannen',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: isMobile
+          ? (_selectedProject == null ? buildLeftColumn() : buildRightColumnMobile())
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 1, child: buildLeftColumn()),
+                const SizedBox(width: 14),
+                Expanded(flex: 2, child: buildRightColumnDesktop()),
+              ],
+            ),
     );
   }
 
   Widget _buildManualPlanningTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
+    final isMobile = MediaQuery.of(context).size.width < 800;
     final agendaTasks = _filteredAgendaTasks;
 
     return Column(
       children: [
+        if (isMobile)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: OutlinedButton(
+              onPressed: () => setState(() => _showFilters = !_showFilters),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              child: Text(
+                _showFilters ? 'Filters & Zoeken verbergen' : 'Filters & Zoeken tonen',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 180),
+          crossFadeState: _showFilters ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          secondChild: const SizedBox.shrink(),
+          firstChild: Column(
+            children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Container(
@@ -1299,7 +1695,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             child: DropdownButtonFormField<String?>(
               initialValue: _selectedManualProjectId,
               decoration: InputDecoration(
-                labelText: 'Projectfilter',
+                labelText: isMobile ? 'Project' : 'Projectfilter',
                 labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
                 filled: true,
                 fillColor: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
@@ -1400,6 +1796,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 });
               },
             ),
+          ),
+        ),
+            ],
           ),
         ),
         Padding(

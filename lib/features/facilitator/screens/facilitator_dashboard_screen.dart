@@ -100,6 +100,13 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     }
   }
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour <= 11) return 'Goedemorgen';
+    if (hour >= 12 && hour <= 17) return 'Goedemiddag';
+    return 'Goedenavond';
+  }
+
   Future<String> _fetchUserName(String uid) async {
     try {
       final row = await AppSupabase.client
@@ -860,7 +867,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Goedemorgen, $userName! 👋',
+                        '${_getGreeting()}, $userName! 👋',
                         style: GoogleFonts.lato(
                           color: Colors.white,
                           fontSize: 28,
@@ -1248,6 +1255,14 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
     required double height,
     VoidCallback? onTap,
   }) {
+    final screenW = MediaQuery.of(context).size.width;
+    final isCompact = screenW < 600;
+    final touchedRadius = isCompact ? 60.0 : 85.0;
+    final baseRadius = isCompact ? 40.0 : 55.0;
+    final centerSpace = isCompact ? 34.0 : 40.0;
+    final touchedBorderW = isCompact ? 3.0 : 4.0;
+    final baseBorderW = isCompact ? 1.5 : 2.0;
+
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final titleColor = textTheme.bodyLarge?.color?.withValues(alpha: 0.75);
@@ -1343,10 +1358,11 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                         ),
                           borderData: FlBorderData(show: false),
                           sectionsSpace: 4,
-                          centerSpaceRadius: 40,
+                          centerSpaceRadius: centerSpace,
                           sections: List.generate(4, (i) {
                             final isTouched = i == _touchedProjectIndex;
-                            final radius = isTouched ? 85.0 : 55.0;
+                            final radius =
+                                isTouched ? touchedRadius : baseRadius;
                             final color = colors[i % colors.length];
                             final projName = _chartProjectNamen.length > i
                                 ? _chartProjectNamen[i]
@@ -1367,11 +1383,11 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                               borderSide: isTouched
                                   ? BorderSide(
                                       color: color.withValues(alpha: 0.55),
-                                      width: 4,
+                                      width: touchedBorderW,
                                     )
                                   : BorderSide(
                                       color: color.withValues(alpha: 0.35),
-                                      width: 2,
+                                      width: baseBorderW,
                                     ),
                             );
                           }),

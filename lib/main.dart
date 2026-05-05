@@ -17,6 +17,7 @@ import 'features/klant/client_dashboard.dart';
 import 'features/operator/operator_dashboard.dart';
 import 'features/auth/no_portals_assigned_screen.dart';
 import 'features/admin/screens/factuur_editor_screen.dart';
+import 'shared/layouts/mobile_bottom_nav_layout.dart';
 import 'providers/theme_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/theme_mode_provider.dart';
@@ -287,15 +288,15 @@ class MyApp extends StatelessWidget {
             scaffoldBackgroundColor:
                 const Color(0xFF131314), // Gemini Background
             cardColor: const Color(0xFF1E1F22), // Gemini Elevated Surface
-            dialogBackgroundColor: const Color(0xFF1E1F22),
+            dialogTheme: const DialogThemeData(
+              backgroundColor: Color(0xFF1E1F22),
+            ),
             primaryColor: const Color(0xFF8AB4F8), // Gemini Accent Blue
             colorScheme: const ColorScheme.dark(
               primary: Color(0xFF8AB4F8),
               secondary: Color(0xFF8AB4F8),
               surface: Color(0xFF1E1F22),
-              background: Color(0xFF131314),
               onSurface: Color(0xFFE3E3E3), // Primary Text
-              onBackground: Color(0xFFE3E3E3),
             ),
             dividerColor: const Color(0xFF444746), // Subtle border
             textTheme: GoogleFonts.latoTextTheme(ThemeData.dark().textTheme)
@@ -391,7 +392,8 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   }
 
   /// Default portal when multiple [portal_*] permissions exist: administrator → facilitator → operator → klant.
-  Widget _homeForPermissions(UserProvider userProvider) {
+  Widget _homeForPermissions(BuildContext context, UserProvider userProvider) {
+    final isDesktop = MediaQuery.of(context).size.width > 800;
     // Emergency: Generator always lands in administrator UI with navigation.
     if (userProvider.isGenerator) return const UserManagementScreen();
     if (userProvider.hasPermission('portal_admin') ||
@@ -399,7 +401,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       return const AdminDashboard();
     }
     if (userProvider.hasPermission('portal_facilitator')) {
-      return const FacilitatorDashboard();
+      return isDesktop ? const FacilitatorDashboard() : const MobileBottomNavLayout();
     }
     if (userProvider.hasPermission('portal_operator')) {
       return const OperatorDashboard();
@@ -410,14 +412,15 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     return const SizedBox.shrink();
   }
 
-  Widget _homeForRoleFallback(UserProvider userProvider) {
+  Widget _homeForRoleFallback(BuildContext context, UserProvider userProvider) {
+    final isDesktop = MediaQuery.of(context).size.width > 800;
     switch (userProvider.role) {
       case UserRole.generator:
         return const UserManagementScreen();
       case UserRole.administrator:
         return const AdminDashboard();
       case UserRole.facilitator:
-        return const FacilitatorDashboard();
+        return isDesktop ? const FacilitatorDashboard() : const MobileBottomNavLayout();
       case UserRole.operator:
         return const OperatorDashboard();
       case UserRole.klant:
@@ -535,11 +538,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
             }
 
             if (userProvider.hasAnyPortalPermission) {
-              return _homeForPermissions(userProvider);
+              return _homeForPermissions(context, userProvider);
             }
 
             if (userProvider.role != null) {
-              return _homeForRoleFallback(userProvider);
+              return _homeForRoleFallback(context, userProvider);
             }
 
             return NoPortalsAssignedScreen(onRetry: _clearIdentityCache);

@@ -32,6 +32,13 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   Timer? _liveTimer;
   DateTime _now = DateTime.now();
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour <= 11) return 'Goedemorgen';
+    if (hour >= 12 && hour <= 17) return 'Goedemiddag';
+    return 'Goedenavond';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -207,7 +214,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'Hoi, $_voornaam! 👋',
+                        '${_getGreeting()}, $_voornaam! 👋',
                         style: GoogleFonts.lato(
                           color: Colors.white,
                           fontSize: 26,

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/contracts/supabase_v1_contract.dart';
 import '../core/models/user_role.dart';
 
 /// Holds who is logged in and what portal/role they have.
@@ -13,6 +14,13 @@ class UserProvider extends ChangeNotifier {
   final Set<String> _permissions = {};
   Object? _lastError;
 
+  List<String> _mobileMenuPreferences = const [
+    'dashboard',
+    'agenda',
+    'tickets',
+    'crm',
+  ];
+
   String? get userId => _userId;
   String? get email => _email;
   String? get firstName => _firstName;
@@ -21,6 +29,7 @@ class UserProvider extends ChangeNotifier {
   UserRole? get role => _role;
   Set<String> get permissions => Set.unmodifiable(_permissions);
   Object? get lastError => _lastError;
+  List<String> get mobileMenuPreferences => List.unmodifiable(_mobileMenuPreferences);
 
   /// Lowercase role string for UI / policy checks (matches
   /// `gebruikers_metadata.rol` canonical values, except `beheerder`
@@ -135,12 +144,15 @@ class UserProvider extends ChangeNotifier {
     try {
       final g = await Supabase.instance.client
           .from('gebruikers')
-          .select('profielfoto_url')
+          .select('profielfoto_url, ${GebruikersTable.mobielMenuVoorkeuren}')
           .eq('id', user.id)
           .maybeSingle();
       final raw = g?['profielfoto_url']?.toString().trim();
       _profilePhotoUrl =
           (raw != null && raw.isNotEmpty) ? raw : null;
+
+      final prefsRaw = g?[GebruikersTable.mobielMenuVoorkeuren];
+      _mobileMenuPreferences = _normalizeMobileMenuPrefs(prefsRaw);
     } catch (_) {
       // RLS or schema variance — profile UI still loads its own row.
     }
@@ -184,6 +196,11 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setMobileMenuPreferences(List<String> keys) {
+    _mobileMenuPreferences = _normalizeMobileMenuPrefs(keys);
+    notifyListeners();
+  }
+
   void clear() {
     _userId = null;
     _email = null;
@@ -192,7 +209,31 @@ class UserProvider extends ChangeNotifier {
     _role = null;
     _permissions.clear();
     _lastError = null;
+    _mobileMenuPreferences = const ['dashboard', 'agenda', 'tickets', 'crm'];
     notifyListeners();
+  }
+
+  List<String> _normalizeMobileMenuPrefs(dynamic raw) {
+    const fallback = ['dashboard', 'agenda', 'tickets', 'crm'];
+    final out = <String>[];
+    if (raw is List) {
+      for (final v in raw) {
+        final s = (v ?? '').toString().trim().toLowerCase();
+        if (s.isEmpty) continue;
+        if (!out.contains(s)) out.add(s);
+      }
+    } else if (raw is Iterable) {
+      for (final v in raw) {
+        final s = (v ?? '').toString().trim().toLowerCase();
+        if (s.isEmpty) continue;
+        if (!out.contains(s)) out.add(s);
+      }
+    }
+
+    // Enforce 4 items for bottom nav.
+    final trimmed = out.where((e) => e.isNotEmpty).take(4).toList(growable: false);
+    if (trimmed.length == 4) return trimmed;
+    return fallback;
   }
 
   UserRole? _parseRole(String? raw) {

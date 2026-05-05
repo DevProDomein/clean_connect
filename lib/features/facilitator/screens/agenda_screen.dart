@@ -23,9 +23,7 @@ class AgendaScreen extends StatefulWidget {
 
 class _AgendaScreenState extends State<AgendaScreen> {
   static const double _radius = 24;
-  static const Color _navy = Color(0xFF0F172A);
   static const Color _muted = Color(0xFF64748B);
-  static const Color _pageBg = Color(0xFFF7F8FB);
   static const Color _blue = Color(0xFF2563EB);
   static const Color _amber = Color(0xFFF59E0B);
   static const Color _orange = Color(0xFFFF6B35);
@@ -404,6 +402,11 @@ class _AgendaScreenState extends State<AgendaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final onBody = textTheme.bodyLarge?.color;
+    final onMuted = textTheme.bodyMedium?.color ??
+        textTheme.bodyLarge?.color?.withValues(alpha: 0.6);
     if (!_canAccess()) {
       return Scaffold(
         drawer: const AppDrawer(),
@@ -425,19 +428,20 @@ class _AgendaScreenState extends State<AgendaScreen> {
     _selectedDay ??= _normalizeDate(_focusedDay);
 
     return Scaffold(
-      backgroundColor: _pageBg,
+      backgroundColor: theme.scaffoldBackgroundColor,
       drawer: const AppDrawer(),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: theme.appBarTheme.backgroundColor,
         elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: _navy),
+        foregroundColor: theme.appBarTheme.foregroundColor,
+        surfaceTintColor: Colors.transparent,
+        iconTheme: IconThemeData(color: theme.iconTheme.color),
         title: Text(
           'Mijn Agenda',
           style: GoogleFonts.lato(
             fontWeight: FontWeight.w900,
             fontSize: 20,
-            color: _navy,
+            color: onBody,
           ),
         ),
         actions: [
@@ -468,83 +472,101 @@ class _AgendaScreenState extends State<AgendaScreen> {
                     children: [
                       Expanded(
                         child: TableCalendar<Map<String, dynamic>>(
-                        firstDay: DateTime(2022, 1, 1),
-                        lastDay: DateTime(2035, 12, 31),
-                        focusedDay: _focusedDay,
-                        selectedDayPredicate: (d) =>
-                            isSameDay(_selectedDay, d),
-                        onDaySelected: (s, f) {
-                          setState(() {
-                            _selectedDay = s;
-                            _focusedDay = f;
-                          });
-                        },
-                        onPageChanged: (f) {
-                          setState(() {
-                            _focusedDay = f;
-                          });
-                        },
-                        calendarFormat: _calendarFormat,
-                        availableCalendarFormats: const {
-                          CalendarFormat.month: 'Maand',
-                          CalendarFormat.week: 'Week',
-                        },
-                        onFormatChanged: (f) {
-                          if (mounted) {
-                            setState(() => _calendarFormat = f);
-                          }
-                        },
-                        startingDayOfWeek: StartingDayOfWeek.monday,
-                        eventLoader: _eventsForDay,
-                        locale: 'nl_NL',
-                        headerStyle: HeaderStyle(
-                          titleCentered: true,
-                          titleTextStyle: GoogleFonts.lato(
-                            color: _navy,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        calendarStyle: CalendarStyle(
-                          todayDecoration: BoxDecoration(
-                            color: _blue.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          selectedDecoration: const BoxDecoration(
-                            color: _orange,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        calendarBuilders: CalendarBuilders(
-                          markerBuilder: (context, day, evs) {
-                            if (evs.isEmpty) {
-                              return null;
-                            }
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: evs
-                                    .take(5)
-                                    .map(
-                                      (e) => Container(
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 1.5,
-                                        ),
-                                        width: 6,
-                                        height: 6,
-                                        decoration: BoxDecoration(
-                                          color: _dotFor(e),
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                              ),
-                            );
+                          firstDay: DateTime(2022, 1, 1),
+                          lastDay: DateTime(2035, 12, 31),
+                          focusedDay: _focusedDay,
+                          selectedDayPredicate: (d) =>
+                              isSameDay(_selectedDay, d),
+                          onDaySelected: (s, f) {
+                            setState(() {
+                              _selectedDay = s;
+                              _focusedDay = f;
+                            });
                           },
-                        ),
+                          onPageChanged: (f) {
+                            setState(() {
+                              _focusedDay = f;
+                            });
+                          },
+                          calendarFormat: _calendarFormat,
+                          availableCalendarFormats: const {
+                            CalendarFormat.month: 'Maand',
+                            CalendarFormat.week: 'Week',
+                          },
+                          onFormatChanged: (f) {
+                            if (mounted) {
+                              setState(() => _calendarFormat = f);
+                            }
+                          },
+                          startingDayOfWeek: StartingDayOfWeek.monday,
+                          eventLoader: _eventsForDay,
+                          locale: 'nl_NL',
+                          headerStyle: HeaderStyle(
+                            titleCentered: true,
+                            formatButtonVisible: true,
+                            titleTextStyle: TextStyle(
+                              color: onBody,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            leftChevronIcon: Icon(
+                              Icons.chevron_left,
+                              color: theme.iconTheme.color,
+                            ),
+                            rightChevronIcon: Icon(
+                              Icons.chevron_right,
+                              color: theme.iconTheme.color,
+                            ),
+                          ),
+                          daysOfWeekStyle: DaysOfWeekStyle(
+                            weekdayStyle: TextStyle(color: onBody),
+                            weekendStyle: TextStyle(color: onMuted),
+                          ),
+                          calendarStyle: CalendarStyle(
+                            defaultTextStyle: TextStyle(color: onBody),
+                            weekendTextStyle: TextStyle(color: onMuted),
+                            outsideTextStyle: TextStyle(
+                              color: theme.dividerColor,
+                            ),
+                            todayDecoration: BoxDecoration(
+                              color: _blue.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            selectedDecoration: const BoxDecoration(
+                              color: _orange,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          calendarBuilders: CalendarBuilders(
+                            markerBuilder: (context, day, evs) {
+                              if (evs.isEmpty) {
+                                return null;
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: evs
+                                      .take(5)
+                                      .map(
+                                        (e) => Container(
+                                          margin: const EdgeInsets.symmetric(
+                                            horizontal: 1.5,
+                                          ),
+                                          width: 6,
+                                          height: 6,
+                                          decoration: BoxDecoration(
+                                            color: _dotFor(e),
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ),
                       Expanded(
@@ -623,6 +645,11 @@ class _AgendaScreenState extends State<AgendaScreen> {
         return const SizedBox(height: 10);
       },
       itemBuilder: (context, i) {
+        final theme = Theme.of(context);
+        final textTheme = theme.textTheme;
+        final onBody = textTheme.bodyLarge?.color;
+        final onMuted = textTheme.bodyMedium?.color ??
+            textTheme.bodyLarge?.color?.withValues(alpha: 0.6);
         final e = list[i];
         final isDks = _afspraakType(e) == 'dks';
         final accent = isDks ? _amber : _blue;
@@ -635,11 +662,13 @@ class _AgendaScreenState extends State<AgendaScreen> {
             onTap: () => _onAgendaItemTap(e),
             child: Container(
               decoration: BoxDecoration(
-                color: isSelectedDay ? Colors.blue.shade50 : Colors.white,
+                color: isSelectedDay
+                    ? theme.primaryColor.withValues(alpha: 0.10)
+                    : theme.cardColor,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
                   color: isSelectedDay
-                      ? Colors.blue.withValues(alpha: 0.30)
+                      ? theme.primaryColor.withValues(alpha: 0.30)
                       : Colors.transparent,
                 ),
                 boxShadow: [
@@ -685,7 +714,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                                     style: GoogleFonts.lato(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w900,
-                                      color: _navy,
+                                      color: onBody,
                                     ),
                                   ),
                                   const SizedBox(height: 6),
@@ -706,7 +735,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                                     style: GoogleFonts.lato(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
-                                      color: _navy,
+                                      color: onBody,
                                     ),
                                   ),
                                   if (_adresOf(e).isNotEmpty) ...[
@@ -717,7 +746,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                                         Icon(
                                           Icons.location_on_outlined,
                                           size: 16,
-                                          color: _muted,
+                                          color: onMuted,
                                         ),
                                         const SizedBox(width: 4),
                                         Expanded(
@@ -725,7 +754,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
                                             _adresOf(e),
                                             style: GoogleFonts.lato(
                                               fontSize: 14,
-                                              color: _muted,
+                                              color: onMuted,
                                               fontWeight: FontWeight.w600,
                                             ),
                                           ),
