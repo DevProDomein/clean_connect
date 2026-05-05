@@ -70,24 +70,25 @@ class MyApp extends StatelessWidget {
         const radius = BorderRadius.all(Radius.circular(24));
         final shape = RoundedRectangleBorder(borderRadius: radius);
 
-        // Apple-style day/night palettes (reference aligned).
-        const lightBg = Color(0xFFF5F5F7);
-        // Dark mode should feel truly deep (less matte, more premium).
-        const darkBg = Color(0xFF05040A);
-        // Keep cards close to background for a "glass" vibe.
-        const darkCard = Color(0xFF0A0912);
-        const accentCoral = Color(0xFFFF6B35);
-        const navy = Color(0xFF0F172A);
+        // Light: clean with a professional deep blue/indigo accent.
+        const lightBg = Color(0xFFF6F8FC);
+        const lightPrimary = Color(0xFF1E3A8A); // Indigo 900-ish
+
+        // Dark (Gemini-style): deep space + slightly lighter surfaces + soft glow accent.
+        const darkBg = Color(0xFF131314);
+        const darkCard = Color(0xFF282A2D);
+        const geminiAccent = Color(0xFF8AB4F8);
+
         const lightText = Color(0xFF1C1C1E);
         const darkText = Color(0xFFF5F5F7);
 
         ThemeData buildTheme({required Brightness brightness}) {
           final isDark = brightness == Brightness.dark;
           final scheme = ColorScheme.fromSeed(
-            seedColor: isDark ? accentCoral : navy,
+            seedColor: isDark ? geminiAccent : lightPrimary,
             brightness: brightness,
-            primary: isDark ? accentCoral : navy,
-            secondary: isDark ? accentCoral : accentCoral,
+            primary: isDark ? geminiAccent : lightPrimary,
+            secondary: isDark ? geminiAccent : lightPrimary,
             surface: isDark ? darkCard : Colors.white,
             onSurface: isDark ? darkText : lightText,
           );
@@ -96,53 +97,54 @@ class MyApp extends StatelessWidget {
             colorScheme: scheme,
             useMaterial3: true,
             scaffoldBackgroundColor: isDark ? darkBg : lightBg,
+            fontFamily: GoogleFonts.inter().fontFamily,
           );
 
           final textTheme = GoogleFonts.interTextTheme(base.textTheme).copyWith(
             displayLarge: GoogleFonts.inter(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
               color: scheme.onSurface,
             ),
             displayMedium: GoogleFonts.inter(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
               color: scheme.onSurface,
             ),
             displaySmall: GoogleFonts.inter(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
               color: scheme.onSurface,
             ),
             headlineLarge: GoogleFonts.inter(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
               color: scheme.onSurface,
             ),
             headlineMedium: GoogleFonts.inter(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
               color: scheme.onSurface,
             ),
             headlineSmall: GoogleFonts.inter(
               fontSize: 30,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
               color: scheme.onSurface,
             ),
             titleLarge: GoogleFonts.inter(
               fontSize: 22,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               letterSpacing: -0.5,
               color: scheme.onSurface,
             ),
             titleMedium: GoogleFonts.inter(
               fontSize: 16,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
               color: scheme.onSurface.withValues(alpha: 0.82),
             ),
             titleSmall: GoogleFonts.inter(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
               color: scheme.onSurface.withValues(alpha: 0.82),
             ),
             bodyLarge: GoogleFonts.inter(
@@ -258,7 +260,7 @@ class MyApp extends StatelessWidget {
               ),
             ),
             floatingActionButtonTheme: FloatingActionButtonThemeData(
-              backgroundColor: accentCoral,
+              backgroundColor: scheme.primary,
               foregroundColor: Colors.white,
             ),
             appBarTheme: AppBarTheme(
@@ -297,7 +299,9 @@ class MyApp extends StatelessWidget {
             }
             return null;
           },
-          home: const AuthGate(),
+          home: const SelectionArea(
+            child: AuthGate(),
+          ),
         );
       },
     );
