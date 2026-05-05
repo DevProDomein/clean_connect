@@ -124,23 +124,28 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
   Future<void> _onUitklokken() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Uitklokken'),
-        content: const Text(
-          'Weet u zeker dat u wilt uitklokken? Dit sluit de werkbon definitief af en registreert uw uren.',
+      builder: (c) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Uitklokken'),
+          content: const Text(
+            'Weet u zeker dat u wilt uitklokken? Dit sluit de werkbon definitief af en registreert uw uren.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Annuleren'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text(
+                'Uitklokken',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Annuleren', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Uitklokken', style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
 
@@ -181,30 +186,45 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        leading: const BackButton(color: Colors.black),
-        title: Text('Actieve Werkbon', style: GoogleFonts.lato(fontWeight: FontWeight.w900, color: Colors.black)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        leading: const BackButton(),
+        title: Text(
+          'Actieve Werkbon',
+          style: GoogleFonts.lato(
+            fontWeight: FontWeight.w900,
+            color: Theme.of(context).textTheme.titleLarge?.color,
+          ),
+        ),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         elevation: 1,
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_parsedStartTime != null) _buildLiveTimerHeader(),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CupertinoActivityIndicator(radius: 16))
-                : _errorMessage.isNotEmpty
-                    ? Center(child: Text('Fout: $_errorMessage', style: const TextStyle(color: Colors.red)))
-                    : ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: _groupedTasks.entries.map((entry) => _buildRoomCard(entry.key, entry.value)).toList(),
-                      ),
-          ),
-          if (!_isLoading && _errorMessage.isEmpty) _buildFooter(),
-        ],
+      body: SelectionArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_parsedStartTime != null) _buildLiveTimerHeader(),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CupertinoActivityIndicator(radius: 16))
+                  : _errorMessage.isNotEmpty
+                      ? Center(
+                          child: Text(
+                            'Fout: $_errorMessage',
+                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          ),
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: _groupedTasks.entries
+                              .map((entry) => _buildRoomCard(entry.key, entry.value))
+                              .toList(),
+                        ),
+            ),
+            if (!_isLoading && _errorMessage.isEmpty) _buildFooter(),
+          ],
+        ),
       ),
     );
   }
@@ -242,7 +262,7 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, 4)),

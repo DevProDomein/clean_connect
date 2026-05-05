@@ -46,7 +46,6 @@ class OperatorMeldingenScreen extends StatefulWidget {
 
 class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
     with SingleTickerProviderStateMixin {
-  static const Color _bg = Color(0xFFF5F5F7);
   static const Color _navy = Color(0xFF0F172A);
   static const Color _accent = Color(0xFF2563EB);
 
@@ -262,22 +261,22 @@ class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       drawer: const AppDrawer(),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(
           'Mijn Meldingen',
           style: GoogleFonts.lato(
             fontWeight: FontWeight.w900,
-            color: _navy,
+            color: Theme.of(context).textTheme.titleLarge?.color,
             fontSize: 22,
             letterSpacing: -0.4,
           ),
         ),
-        iconTheme: const IconThemeData(color: _navy),
+        iconTheme: Theme.of(context).appBarTheme.iconTheme,
         bottom: TabBar(
           controller: _tabController,
           labelColor: _accent,
@@ -298,12 +297,14 @@ class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildNewForm(),
-          _buildHistory(),
-        ],
+      body: SelectionArea(
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildNewForm(),
+            _buildHistory(),
+          ],
+        ),
       ),
     );
   }

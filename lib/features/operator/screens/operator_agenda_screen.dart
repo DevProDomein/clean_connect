@@ -596,46 +596,47 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CupertinoActivityIndicator(radius: 18))
-          : _loadError != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Agenda laden mislukt.',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 17,
-                            color: _navy,
+      body: SelectionArea(
+        child: _isLoading
+            ? const Center(child: CupertinoActivityIndicator(radius: 18))
+            : _loadError != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Agenda laden mislukt.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 17,
+                              color: _navy,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '$_loadError',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w600,
-                            color: _muted,
-                            fontSize: 14,
+                          const SizedBox(height: 8),
+                          Text(
+                            '$_loadError',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w600,
+                              color: _muted,
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        FilledButton(
-                          onPressed: _loadAgenda,
-                          child: Text(
-                            'Opnieuw',
-                            style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: _loadAgenda,
+                            child: Text(
+                              'Opnieuw',
+                              style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                )
+                  )
               : Column(
                   children: [
                     _buildFiltersPanel(cs),
@@ -647,8 +648,7 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
                           firstDay: DateTime.utc(2022, 1, 1),
                           lastDay: DateTime.utc(2036, 12, 31),
                           focusedDay: _focusedDay,
-                          selectedDayPredicate: (d) =>
-                              isSameDay(_selectedDay, d),
+                          selectedDayPredicate: (d) => isSameDay(_selectedDay, d),
                           onDaySelected: (selected, focused) {
                             setState(() {
                               _selectedDay = selected;
@@ -706,8 +706,7 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
                             markerBuilder: (context, day, evs) {
                               if (evs.isEmpty) return null;
                               return Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.only(bottom: 4),
                                 child: Container(
                                   width: 7,
                                   height: 7,
@@ -725,6 +724,7 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
                     Expanded(child: _dayList(cs)),
                   ],
                 ),
+      ),
     );
   }
 

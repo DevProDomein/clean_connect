@@ -548,7 +548,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => ManualPlanModal(opdrachtId: opdrachtId),
+      builder: (_) => SelectionArea(
+        child: ManualPlanModal(opdrachtId: opdrachtId),
+      ),
     );
     if (!mounted || result != true) return;
     await _fetchSmartProjects();
@@ -562,7 +564,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _ExtraOpdrachtModal(),
+      builder: (_) => const SelectionArea(
+        child: _ExtraOpdrachtModal(),
+      ),
     );
     if (!mounted || ok != true) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1875,7 +1879,8 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
     try {
       final res = await Supabase.instance.client
           .from('projecten')
-          .select('id, project_naam, werk_regio, bedrijfsnaam, bedrijven(bedrijfsnaam)')
+          // `bedrijfsnaam` is not a column on `projecten`; fetch it via join.
+          .select('id, project_naam, werk_regio, bedrijven(bedrijfsnaam)')
           .eq('status', 'actief')
           .order('project_naam', ascending: true);
       final rows = (res as List)
@@ -1950,8 +1955,9 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
     try {
       final p = _selectedProject!;
       final bedrijven = p['bedrijven'];
-      final joinedBedrijfsnaam = (bedrijven is Map) ? _t(bedrijven['bedrijfsnaam']) : '';
-      final bedrijfsnaam = _t(p['bedrijfsnaam']).isNotEmpty ? _t(p['bedrijfsnaam']) : joinedBedrijfsnaam;
+      final bedrijfsnaam = (bedrijven is Map)
+          ? _t(bedrijven['bedrijfsnaam'])
+          : 'Onbekend Bedrijf';
 
       await Supabase.instance.client.from('opdrachten').insert({
         'project_id': p['id'],

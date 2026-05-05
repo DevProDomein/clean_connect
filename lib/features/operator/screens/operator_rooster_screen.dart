@@ -363,19 +363,19 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       drawer: const AppDrawer(),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
         scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
+        iconTheme: Theme.of(context).appBarTheme.iconTheme,
         title: const Text(''),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh, color: Colors.black), onPressed: _loadData),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadData),
         ],
       ),
-      body: _buildBody(),
+      body: SelectionArea(child: _buildBody()),
     );
   }
 

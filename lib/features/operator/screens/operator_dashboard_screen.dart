@@ -1020,47 +1020,49 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CupertinoActivityIndicator(radius: 18))
-          : _loadError != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Kon dashboard niet laden.\n$_loadError',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.lato(
-                            color: Colors.red.shade800,
-                            fontWeight: FontWeight.w600,
+      body: SelectionArea(
+        child: _loading
+            ? const Center(child: CupertinoActivityIndicator(radius: 18))
+            : _loadError != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Kon dashboard niet laden.\n$_loadError',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.lato(
+                              color: Colors.red.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: _loadDashboardData,
+                            child: const Text('Opnieuw'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : RefreshIndicator(
+                    color: _electricBlue,
+                    onRefresh: _loadDashboardData,
+                    child: CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: _buildHeroBanner(voorNaam),
                         ),
-                        const SizedBox(height: 16),
-                        FilledButton(
-                          onPressed: _loadDashboardData,
-                          child: const Text('Opnieuw'),
-                        ),
+                        SliverToBoxAdapter(child: _bentoBlock()),
                       ],
                     ),
                   ),
-                )
-              : RefreshIndicator(
-                  color: _electricBlue,
-                  onRefresh: _loadDashboardData,
-                  child: CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: _buildHeroBanner(voorNaam),
-                      ),
-                      SliverToBoxAdapter(child: _bentoBlock()),
-                    ],
-                  ),
-                ),
+      ),
     );
   }
 }

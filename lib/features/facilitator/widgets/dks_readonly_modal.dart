@@ -9,7 +9,9 @@ void showDksReadonlyModal(BuildContext context, {required String rapportId}) {
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => DksReadonlyModal(rapportId: rapportId),
+    builder: (ctx) => SelectionArea(
+      child: DksReadonlyModal(rapportId: rapportId),
+    ),
   );
 }
 

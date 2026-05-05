@@ -17,7 +17,9 @@ class ProjectInfoModal extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => ProjectInfoModal(projectId: projectId),
+      builder: (ctx) => SelectionArea(
+        child: ProjectInfoModal(projectId: projectId),
+      ),
     );
   }
 

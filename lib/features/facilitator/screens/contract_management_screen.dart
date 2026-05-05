@@ -109,71 +109,73 @@ class _ContractManagementScreenState extends State<ContractManagementScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDlg) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Text(
-                'Contract verlengen',
-                style: GoogleFonts.lato(fontWeight: FontWeight.w900),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Met hoeveel jaar wilt u dit contract laten doorlopen?',
-                    style: GoogleFonts.lato(height: 1.35),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Slider(
-                          min: 1,
-                          max: 7,
-                          divisions: 6,
-                          value: years.toDouble(),
-                          label: '$years jr',
-                          onChanged: (v) => setDlg(() => years = v.round()),
+        return SelectionArea(
+          child: StatefulBuilder(
+            builder: (ctx, setDlg) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Text(
+                  'Contract verlengen',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w900),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Met hoeveel jaar wilt u dit contract laten doorlopen?',
+                      style: GoogleFonts.lato(height: 1.35),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            min: 1,
+                            max: 7,
+                            divisions: 6,
+                            value: years.toDouble(),
+                            label: '$years jr',
+                            onChanged: (v) => setDlg(() => years = v.round()),
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        width: 48,
-                        child: Text('$years jr', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
-                      ),
-                    ],
+                        SizedBox(
+                          width: 48,
+                          child: Text('$years jr', style: GoogleFonts.lato(fontWeight: FontWeight.w900)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuleer')),
+                  FilledButton(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      try {
+                        await _repo.extendProjectEndDate(
+                          projectId: vm['project_id'] as String,
+                          yearsToAdd: years,
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Contract verlengd met $years jaar.'),
+                            backgroundColor: Colors.green.shade700,
+                          ),
+                        );
+                        await _load();
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Mislukt: $e')));
+                      }
+                    },
+                    child: Text('Opslaan', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
                   ),
                 ],
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuleer')),
-                FilledButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    try {
-                      await _repo.extendProjectEndDate(
-                        projectId: vm['project_id'] as String,
-                        yearsToAdd: years,
-                      );
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Contract verlengd met $years jaar.'),
-                          backgroundColor: Colors.green.shade700,
-                        ),
-                      );
-                      await _load();
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Mislukt: $e')));
-                    }
-                  },
-                  child: Text('Opslaan', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
-                ),
-              ],
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );

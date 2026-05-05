@@ -793,7 +793,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
           ),
         ],
       ),
-      body: _buildBody(),
+      body: SelectionArea(child: _buildBody()),
     );
   }
 

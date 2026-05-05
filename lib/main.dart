@@ -74,29 +74,22 @@ class MyApp extends StatelessWidget {
         const lightBg = Color(0xFFF6F8FC);
         const lightPrimary = Color(0xFF1E3A8A); // Indigo 900-ish
 
-        // Dark (Gemini-style): deep space + slightly lighter surfaces + soft glow accent.
-        const darkBg = Color(0xFF131314);
-        const darkCard = Color(0xFF282A2D);
-        const geminiAccent = Color(0xFF8AB4F8);
-
         const lightText = Color(0xFF1C1C1E);
-        const darkText = Color(0xFFF5F5F7);
 
         ThemeData buildTheme({required Brightness brightness}) {
-          final isDark = brightness == Brightness.dark;
           final scheme = ColorScheme.fromSeed(
-            seedColor: isDark ? geminiAccent : lightPrimary,
+            seedColor: lightPrimary,
             brightness: brightness,
-            primary: isDark ? geminiAccent : lightPrimary,
-            secondary: isDark ? geminiAccent : lightPrimary,
-            surface: isDark ? darkCard : Colors.white,
-            onSurface: isDark ? darkText : lightText,
+            primary: lightPrimary,
+            secondary: lightPrimary,
+            surface: Colors.white,
+            onSurface: lightText,
           );
 
           final base = ThemeData(
             colorScheme: scheme,
             useMaterial3: true,
-            scaffoldBackgroundColor: isDark ? darkBg : lightBg,
+            scaffoldBackgroundColor: lightBg,
             fontFamily: GoogleFonts.inter().fontFamily,
           );
 
@@ -187,7 +180,7 @@ class MyApp extends StatelessWidget {
             cardTheme: CardThemeData(
               shape: shape,
               elevation: 0,
-              color: isDark ? darkCard : Colors.white,
+              color: Colors.white,
               shadowColor: Colors.black.withValues(alpha: 0.05),
               margin: const EdgeInsets.all(0),
             ),
@@ -253,7 +246,7 @@ class MyApp extends StatelessWidget {
                 ),
               ),
               filled: true,
-              fillColor: isDark ? darkCard : Colors.white,
+              fillColor: Colors.white,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 14,
@@ -289,7 +282,45 @@ class MyApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
           theme: buildTheme(brightness: Brightness.light),
-          darkTheme: buildTheme(brightness: Brightness.dark),
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor:
+                const Color(0xFF131314), // Gemini deep background
+            cardColor: const Color(0xFF1E1F22), // Gemini surface/cards
+            primaryColor: const Color(0xFF8AB4F8), // Gemini light blue accent
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFF8AB4F8),
+              secondary: Color(0xFF8AB4F8),
+              surface: Color(0xFF1E1F22),
+              background: Color(0xFF131314),
+              onSurface: Color(0xFFE3E3E3), // Light grey text
+              onBackground: Color(0xFFE3E3E3),
+            ),
+            textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme)
+                .copyWith(
+              bodyLarge: const TextStyle(color: Color(0xFFE3E3E3)),
+              bodyMedium: const TextStyle(color: Color(0xFFC4C7C5)),
+              titleLarge: const TextStyle(
+                color: Color(0xFFE3E3E3),
+                fontWeight: FontWeight.bold,
+              ),
+              titleMedium: const TextStyle(
+                color: Color(0xFFE3E3E3),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF131314),
+              foregroundColor: Color(0xFFE3E3E3),
+              elevation: 0,
+              iconTheme: IconThemeData(color: Color(0xFFE3E3E3)),
+            ),
+            dividerColor: const Color(0xFF444746), // Gemini subtle border color
+            dialogBackgroundColor: const Color(0xFF1E1F22),
+            bottomSheetTheme: const BottomSheetThemeData(
+              backgroundColor: Color(0xFF1E1F22),
+            ),
+          ),
           themeMode: themeMode,
           onGenerateRoute: (settings) {
             if (settings.name == '/factuur_aanmaken') {

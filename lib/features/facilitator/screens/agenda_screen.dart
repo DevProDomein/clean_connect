@@ -362,13 +362,15 @@ class _AgendaScreenState extends State<AgendaScreen> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => OpnameEditModal(
-          afspraakId: (item['id'] ?? '').toString(),
-          onSaved: () {
-            if (mounted) {
-              _loadAgenda();
-            }
-          },
+        builder: (_) => SelectionArea(
+          child: OpnameEditModal(
+            afspraakId: (item['id'] ?? '').toString(),
+            onSaved: () {
+              if (mounted) {
+                _loadAgenda();
+              }
+            },
+          ),
         ),
       );
     } else if (item['afspraak_type'] == 'dks' ||
