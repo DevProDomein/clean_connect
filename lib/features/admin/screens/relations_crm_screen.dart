@@ -24,6 +24,8 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
   bool _isLoading = true;
   Object? _loadError;
 
+  Future<void> _loadRelaties() => _fetch();
+
   @override
   void initState() {
     super.initState();
@@ -127,13 +129,12 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
   }
 
   Future<void> _openCreate() async {
-    await Navigator.of(context).push(
+    Navigator.push(
+      context,
       MaterialPageRoute(
-        settings: const RouteSettings(name: '/admin/relations/detail'),
-        builder: (_) => const RelationDetailScreen(bedrijfId: null),
+        builder: (context) => const RelationDetailScreen(bedrijfId: null),
       ),
-    );
-    if (mounted) _fetch();
+    ).then((_) => _loadRelaties());
   }
 
   @override
@@ -175,10 +176,14 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
           foregroundColor: Colors.white,
           elevation: 4,
           onPressed: _openCreate,
-          icon: const Icon(Icons.add_rounded),
+          icon: const Icon(Icons.add),
           label: Text(
-            '+ Nieuwe Relatie',
-            style: GoogleFonts.lato(fontWeight: FontWeight.w900, letterSpacing: -0.2),
+            'Nieuwe Relatie',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.2,
+              color: Colors.white,
+            ),
           ),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),

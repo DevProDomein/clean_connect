@@ -470,7 +470,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       return isDesktop ? const FacilitatorDashboard() : const MobileBottomNavLayout();
     }
     if (userProvider.hasPermission('portal_operator')) {
-      return const OperatorDashboard();
+      return isDesktop ? const OperatorDashboard() : const MobileBottomNavLayout();
     }
     if (userProvider.hasPermission('portal_klant')) {
       return const ClientDashboard();
@@ -488,7 +488,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       case UserRole.facilitator:
         return isDesktop ? const FacilitatorDashboard() : const MobileBottomNavLayout();
       case UserRole.operator:
-        return const OperatorDashboard();
+        return isDesktop ? const OperatorDashboard() : const MobileBottomNavLayout();
       case UserRole.klant:
         return const ClientDashboard();
       case null:

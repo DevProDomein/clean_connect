@@ -5,13 +5,14 @@ import 'package:provider/provider.dart';
 
 import '../../core/widgets/app_drawer.dart';
 import '../../providers/user_provider.dart';
+import '../../core/models/user_role.dart';
 import '../../features/facilitator/screens/facilitator_dashboard_screen.dart';
 import '../../features/facilitator/screens/agenda_screen.dart';
 import '../../features/facilitator/screens/ticket_overview_screen.dart';
-import '../../features/facilitator/screens/planbord_screen.dart';
-import '../../features/facilitator/screens/relations_crm_screen.dart'
-    as facilitator_crm;
-import '../../features/facilitator/screens/quote_overview_screen.dart';
+import '../../features/operator/screens/operator_dashboard_screen.dart';
+import '../../features/operator/screens/operator_rooster_screen.dart';
+import '../../features/operator/screens/operator_uren_screen.dart';
+import '../../features/operator/screens/operator_meldingen_screen.dart';
 
 class MobileBottomNavLayout extends StatefulWidget {
   const MobileBottomNavLayout({super.key, this.initialKey});
@@ -25,52 +26,102 @@ class MobileBottomNavLayout extends StatefulWidget {
 class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
   int _index = 0;
 
+  static const _facilitatorKeys = <String>[
+    'dashboard',
+    'agenda',
+    'tickets',
+  ];
+
+  static const _operatorKeys = <String>[
+    'dashboard',
+    'rooster',
+    'uren',
+    'meldingen',
+  ];
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final key = (widget.initialKey ?? '').trim().toLowerCase();
     if (key.isEmpty) return;
-    final prefs = context.read<UserProvider>().mobileMenuPreferences;
-    final i = prefs.indexOf(key);
+    final role = context.read<UserProvider>().role;
+    final keys = _keysForRole(role);
+    final i = keys.indexOf(key);
     if (i >= 0 && i != _index) {
       _index = i;
     }
   }
 
-  static const _fallbackPrefs = <String>[
-    'dashboard',
-    'agenda',
-    'tickets',
-    'crm',
-  ];
+  List<String> _keysForRole(UserRole? role) {
+    switch (role) {
+      case UserRole.operator:
+        return _operatorKeys;
+      case UserRole.facilitator:
+      default:
+        return _facilitatorKeys;
+    }
+  }
 
   ({String label, IconData icon, Widget screen}) _mapKey(String key) {
     switch (key) {
       case 'dashboard':
-        return (label: 'Dashboard', icon: Icons.dashboard_outlined, screen: const FacilitatorDashboard());
+        final role = context.read<UserProvider>().role;
+        if (role == UserRole.operator) {
+          return (
+            label: 'Dashboard',
+            icon: Icons.dashboard_outlined,
+            screen: const OperatorDashboardScreen(),
+          );
+        }
+        return (
+          label: 'Dashboard',
+          icon: Icons.dashboard_outlined,
+          screen: const FacilitatorDashboard(),
+        );
       case 'agenda':
-        return (label: 'Agenda', icon: Icons.event_note_outlined, screen: const AgendaScreen());
+        return (
+          label: 'Mijn Agenda',
+          icon: Icons.event_outlined,
+          screen: const AgendaScreen(),
+        );
       case 'tickets':
-        return (label: 'Tickets', icon: Icons.confirmation_number_outlined, screen: const TicketOverviewScreen());
-      case 'planbord':
-        return (label: 'Planbord', icon: Icons.view_kanban_outlined, screen: const PlanbordScreen());
-      case 'crm':
-        return (label: 'CRM', icon: Icons.groups_2_outlined, screen: const facilitator_crm.RelationsCrmScreen());
-      case 'offertes':
-        return (label: 'Offertes', icon: Icons.request_quote_outlined, screen: const QuoteOverviewScreen());
+        return (
+          label: 'Tickets',
+          icon: Icons.confirmation_number_outlined,
+          screen: const TicketOverviewScreen(),
+        );
+      case 'rooster':
+        return (
+          label: 'Mijn Rooster',
+          icon: Icons.calendar_month_outlined,
+          screen: const OperatorRoosterScreen(),
+        );
+      case 'uren':
+        return (
+          label: 'Mijn Uren',
+          icon: Icons.timelapse_outlined,
+          screen: const OperatorUrenScreen(),
+        );
+      case 'meldingen':
+        return (
+          label: 'Meldingen',
+          icon: Icons.notifications_none_outlined,
+          screen: const OperatorMeldingenScreen(),
+        );
       default:
-        return (label: 'Dashboard', icon: Icons.dashboard_outlined, screen: const FacilitatorDashboard());
+        return (
+          label: 'Dashboard',
+          icon: Icons.dashboard_outlined,
+          screen: const FacilitatorDashboard(),
+        );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width > 800;
-    final prefs = context.watch<UserProvider>().mobileMenuPreferences;
-    final keys = (prefs.length == 4 ? prefs : _fallbackPrefs)
-        .map((e) => e.trim().toLowerCase())
-        .where((e) => e.isNotEmpty)
-        .toList(growable: false);
+    final role = context.watch<UserProvider>().role;
+    final keys = _keysForRole(role);
 
     final mapped = keys.map(_mapKey).toList(growable: false);
     final safeIndex = (_index >= 0 && _index < mapped.length) ? _index : 0;
@@ -101,34 +152,45 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
       extendBody: true,
       drawer: const AppDrawer(),
       body: body,
-      bottomNavigationBar: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(18),
-          topRight: Radius.circular(18),
-        ),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: SafeArea(
-            bottom: true,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: BottomNavigationBar(
-                backgroundColor: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.black.withValues(alpha: 0.60)
-                    : Colors.white.withValues(alpha: 0.82),
-                elevation: 0,
-                type: BottomNavigationBarType.fixed,
-                selectedItemColor: Colors.blueAccent,
-                unselectedItemColor: Colors.grey.shade500,
-                currentIndex: safeIndex,
-                onTap: (i) => setState(() => _index = i),
-                items: [
-                  for (final it in mapped)
-                    BottomNavigationBarItem(
-                      icon: Icon(it.icon),
-                      label: it.label,
-                    ),
-                ],
+      bottomNavigationBar: SafeArea(
+        bottom: true,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 24, right: 24, bottom: 32),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(30),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.black.withValues(alpha: 128) // ~0.50
+                      : Colors.white.withValues(alpha: 179), // ~0.70
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 51), // ~0.20
+                    width: 1,
+                  ),
+                ),
+                child: BottomNavigationBar(
+                  elevation: 0,
+                  backgroundColor: Colors.transparent,
+                  type: BottomNavigationBarType.fixed,
+                  selectedItemColor: Theme.of(context).colorScheme.primary,
+                  unselectedItemColor:
+                      Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 140), // ~0.55
+                  currentIndex: safeIndex,
+                  onTap: (i) => setState(() => _index = i),
+                  items: [
+                    for (final it in mapped)
+                      BottomNavigationBarItem(
+                        icon: Icon(it.icon),
+                        label: it.label,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
