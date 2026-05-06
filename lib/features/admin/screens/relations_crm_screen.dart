@@ -165,7 +165,8 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
         floatingActionButton: FloatingActionButton.extended(
           backgroundColor: cs.primary,
           foregroundColor: Colors.white,
-          elevation: 4,
+          elevation: 1,
+          highlightElevation: 2,
           onPressed: () {
             Navigator.push(
               context,

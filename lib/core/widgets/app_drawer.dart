@@ -400,7 +400,12 @@ class AppDrawerContent extends StatelessWidget {
                       ),
                       if (canSalesCentre)
                         ExpansionTile(
-                          leading: null,
+                          leading: isDesktop
+                              ? null
+                              : Icon(
+                                  Icons.campaign_outlined,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
                           title: Text('Sales Centre', style: groupStyle()),
                           childrenPadding:
                               const EdgeInsets.fromLTRB(28, 0, 12, 8),

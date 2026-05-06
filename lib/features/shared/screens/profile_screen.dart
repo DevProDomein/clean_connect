@@ -54,8 +54,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     'offertes': 'Offertes',
   };
 
-  static const int _maxMobileMenuItems = 4;
-  List<String> _mobileMenuPrefs = const ['dashboard', 'agenda', 'tickets', 'crm'];
+  static const int _maxMobileMenuItems = 3;
+  List<String> _mobileMenuPrefs = const ['dashboard', 'agenda', 'tickets'];
 
   @override
   void initState() {
@@ -161,11 +161,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final trimmedPhone = _telefoonCtrl.text.trim();
       final trimmedFoto = _profielfotoUrl?.trim();
+      final prefsToSave =
+          _mobileMenuPrefs.take(_maxMobileMenuItems).toList(growable: false);
       final Map<String, dynamic> updates = {
         'telefoon': trimmedPhone,
         if (trimmedFoto != null && trimmedFoto.isNotEmpty)
           _colProfielfoto: trimmedFoto,
-        GebruikersTable.mobielMenuVoorkeuren: _mobileMenuPrefs,
+        GebruikersTable.mobielMenuVoorkeuren: prefsToSave,
       };
 
       await Supabase.instance.client
@@ -175,7 +177,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (!mounted) return;
       context.read<UserProvider>().setProfilePhotoUrl(_profielfotoUrl);
-      context.read<UserProvider>().setMobileMenuPreferences(_mobileMenuPrefs);
+      context.read<UserProvider>().setMobileMenuPreferences(prefsToSave);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -609,7 +611,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     final trimmed = out.take(_maxMobileMenuItems).toList(growable: false);
     if (trimmed.length == _maxMobileMenuItems) return trimmed;
-    return const ['dashboard', 'agenda', 'tickets', 'crm'];
+    return const ['dashboard', 'agenda', 'tickets'];
   }
 
   Widget _mobileMenuCard() {
@@ -723,19 +725,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: isDisabled ? _muted : _navy,
                 ),
               ),
-              onChanged: isDisabled
-                  ? null
-                  : (v) {
-                      setState(() {
-                        final next = [..._mobileMenuPrefs];
-                        if (v == true) {
-                          if (!next.contains(key)) next.add(key);
-                        } else {
-                          next.removeWhere((e) => e == key);
-                        }
-                        _mobileMenuPrefs = next.take(_maxMobileMenuItems).toList(growable: false);
-                      });
-                    },
+              onChanged: (v) {
+                if (v == true &&
+                    !isChecked &&
+                    _mobileMenuPrefs.length >= _maxMobileMenuItems) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'U kunt maximaal 3 menu-onderdelen kiezen voor de zwevende balk.',
+                        style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                      ),
+                      backgroundColor: _navy.withValues(alpha: 0.92),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                  return;
+                }
+                setState(() {
+                  final next = [..._mobileMenuPrefs];
+                  if (v == true) {
+                    if (!next.contains(key)) next.add(key);
+                  } else {
+                    next.removeWhere((e) => e == key);
+                  }
+                  _mobileMenuPrefs =
+                      next.take(_maxMobileMenuItems).toList(growable: false);
+                });
+              },
             );
           }),
         ],
