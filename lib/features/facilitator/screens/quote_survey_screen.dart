@@ -584,7 +584,13 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                 showModalBottomSheet<void>(
                   context: context,
                   isScrollControlled: true,
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width > 800
+                        ? 1200
+                        : MediaQuery.of(context).size.width,
+                  ),
                   backgroundColor: Colors.transparent,
+                  elevation: 0,
                   builder: (_) => SelectionArea(
                     child: RoomAddModal(
                       offerteId: widget.offerteId,

@@ -250,7 +250,7 @@ class _RoomAddModalState extends State<RoomAddModal> {
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
           child: Center(
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: isDesktop ? 1000 : double.infinity),
+              constraints: BoxConstraints(maxWidth: isDesktop ? 1200 : double.infinity),
               child: Container(
                 decoration: BoxDecoration(
                   color: sheetBg,
