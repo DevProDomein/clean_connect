@@ -42,6 +42,9 @@ Future<void> main() async {
   await Supabase.initialize(
     url: supabaseUrl,
     anonKey: supabaseAnonKey,
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.implicit,
+    ),
   );
 
   // Load theme first (await), then start realtime updates.
@@ -371,13 +374,27 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   late final bool _forceSetPasswordFlow;
 
   bool _isPasswordLink() {
-    // CRITICAL: Check URL string first, before auth stream/session logic.
-    // This prevents a navigation deadlock when a stale/broken session exists.
-    final url = Uri.base.toString().toLowerCase();
-    return url.contains('access_token') ||
-        url.contains('type=recovery') ||
-        url.contains('type=invite') ||
-        url.contains('set-password');
+    // CRITICAL SECURITY: Hijack routing if an auth token exists in the URL.
+    // Must run BEFORE any session/dashboard logic to prevent password bypass.
+    final uri = Uri.base;
+    final path = uri.path.toLowerCase();
+    final frag = uri.fragment.toLowerCase(); // may include "access_token=..." query string
+    final qp = uri.queryParameters;
+
+    // Supabase on web often uses URL fragments (#...) containing query params.
+    final fragQuery = Uri.tryParse('https://local/?${uri.fragment}')?.queryParameters ?? const {};
+    final type = (qp['type'] ?? fragQuery['type'] ?? '').toLowerCase();
+
+    final hasAccessToken = qp.containsKey('access_token') ||
+        fragQuery.containsKey('access_token') ||
+        frag.contains('access_token=');
+
+    final isRecoveryInviteOrSignup =
+        type == 'recovery' || type == 'invite' || type == 'signup';
+
+    final isSetPasswordPath = path == '/set-password' || frag.startsWith('/set-password');
+
+    return hasAccessToken || isRecoveryInviteOrSignup || isSetPasswordPath;
   }
 
   bool _hasRecoveryOrAccessTokenInUrl() {
@@ -389,8 +406,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     final fragQuery = Uri.tryParse('https://local/?$frag')?.queryParameters ?? const {};
 
     final type = (q['type'] ?? fragQuery['type'] ?? '').toLowerCase();
-    final hasAccessToken = q.containsKey('access_token') || fragQuery.containsKey('access_token');
-    final isRecovery = type == 'recovery' || frag.toLowerCase().contains('recovery');
+    final hasAccessToken = q.containsKey('access_token') ||
+        fragQuery.containsKey('access_token') ||
+        frag.toLowerCase().contains('access_token=');
+    final isRecovery = type == 'recovery' || frag.toLowerCase().contains('type=recovery');
 
     return hasAccessToken || isRecovery;
   }
