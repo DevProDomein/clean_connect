@@ -381,20 +381,25 @@ class AppDrawerContent extends StatelessWidget {
                             name: '/facilitator/crm',
                             icon: Icons.groups_2_outlined,
                             title: 'Klantbeheer',
-                            screen:
-                                const facilitator_crm.RelationsCrmScreen(),
+                            screen: isDesktop
+                                ? const facilitator_crm.RelationsCrmScreen()
+                                : const MobileBottomNavLayout(initialKey: 'crm'),
                           ),
                           navTile(
                             name: '/facilitator/projecten',
                             icon: Icons.view_kanban_outlined,
                             title: 'Projecten',
-                            screen: const ProjectOverviewScreen(),
+                            screen: isDesktop
+                                ? const ProjectOverviewScreen()
+                                : const MobileBottomNavLayout(initialKey: 'projecten'),
                           ),
                           navTile(
                             name: '/facilitator/contracts',
                             icon: Icons.handshake_outlined,
                             title: 'Contractbeheer',
-                            screen: const ContractManagementScreen(),
+                            screen: isDesktop
+                                ? const ContractManagementScreen()
+                                : const MobileBottomNavLayout(initialKey: 'contracts'),
                           ),
                         ],
                       ),
@@ -414,13 +419,17 @@ class AppDrawerContent extends StatelessWidget {
                               name: '/facilitator/quotes',
                               icon: Icons.request_quote_outlined,
                               title: 'Calculatie & Offertes',
-                              screen: const QuoteOverviewScreen(),
+                              screen: isDesktop
+                                  ? const QuoteOverviewScreen()
+                                  : const MobileBottomNavLayout(initialKey: 'offertes'),
                             ),
                             navTile(
                               name: '/facilitator/sales-centre',
                               icon: Icons.campaign_outlined,
                               title: 'Opnames & Leads',
-                              screen: const SalesCentreScreen(),
+                              screen: isDesktop
+                                  ? const SalesCentreScreen()
+                                  : const MobileBottomNavLayout(initialKey: 'sales-centre'),
                             ),
                           ],
                         )
@@ -429,7 +438,9 @@ class AppDrawerContent extends StatelessWidget {
                           name: '/facilitator/quotes',
                           icon: Icons.request_quote_outlined,
                           title: 'Calculatie & Offertes',
-                          screen: const QuoteOverviewScreen(),
+                          screen: isDesktop
+                              ? const QuoteOverviewScreen()
+                              : const MobileBottomNavLayout(initialKey: 'offertes'),
                         ),
                       navTile(
                         name: '/facilitator/planning',
@@ -443,13 +454,17 @@ class AppDrawerContent extends StatelessWidget {
                         name: '/facilitator/planning-agenda',
                         icon: Icons.event_available_outlined,
                         title: 'Planning (Agenda)',
-                        screen: const PlanningAgendaScreen(),
+                        screen: isDesktop
+                            ? const PlanningAgendaScreen()
+                            : const MobileBottomNavLayout(initialKey: 'planning-agenda'),
                       ),
                       navTile(
                         name: '/facilitator/dks',
                         icon: Icons.fact_check_outlined,
                         title: 'Kwaliteit (DKS)',
-                        screen: const DksDashboardScreen(),
+                        screen: isDesktop
+                            ? const DksDashboardScreen()
+                            : const MobileBottomNavLayout(initialKey: 'dks'),
                       ),
                       navTile(
                         name: '/facilitator/tickets',

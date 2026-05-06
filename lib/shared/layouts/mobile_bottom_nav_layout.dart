@@ -9,6 +9,14 @@ import '../../core/models/user_role.dart';
 import '../../features/facilitator/screens/facilitator_dashboard_screen.dart';
 import '../../features/facilitator/screens/agenda_screen.dart';
 import '../../features/facilitator/screens/planbord_screen.dart';
+import '../../features/facilitator/screens/planning_agenda_screen.dart';
+import '../../features/facilitator/screens/dks_dashboard_screen.dart';
+import '../../features/facilitator/screens/project_overview_screen.dart';
+import '../../features/facilitator/screens/contract_management_screen.dart';
+import '../../features/facilitator/screens/quote_overview_screen.dart';
+import '../../features/facilitator/screens/sales_centre_screen.dart';
+import '../../features/facilitator/screens/relations_crm_screen.dart'
+    as facilitator_crm;
 import '../../features/facilitator/screens/ticket_overview_screen.dart';
 import '../../features/operator/screens/operator_dashboard_screen.dart';
 import '../../features/operator/screens/operator_rooster_screen.dart';
@@ -31,14 +39,13 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
   // This is intentionally a little larger than the pill height to cover margins.
   static const double _mobileBottomInset = 100.0;
 
-  static const _facilitatorKeys = <String>[
+  static const _facilitatorFallbackKeys = <String>[
     'dashboard',
     'agenda',
     'tickets',
-    'planbord',
   ];
 
-  static const _operatorKeys = <String>[
+  static const _operatorFallbackKeys = <String>[
     'dashboard',
     'rooster',
     'uren',
@@ -59,12 +66,47 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
   }
 
   List<String> _keysForRole(UserRole? role) {
+    final up = context.read<UserProvider>();
+    final initialKey = (widget.initialKey ?? '').trim().toLowerCase();
+
     switch (role) {
       case UserRole.operator:
-        return _operatorKeys;
+        final allowed = <String>{..._operatorFallbackKeys};
+        final prefs = up.mobileMenuPreferences
+            .map((e) => e.trim().toLowerCase())
+            .where((k) => allowed.contains(k))
+            .toList(growable: false);
+        final out = (prefs.isNotEmpty ? prefs : _operatorFallbackKeys)
+            .toList(growable: true);
+        if (initialKey.isNotEmpty && allowed.contains(initialKey) && !out.contains(initialKey)) {
+          out.add(initialKey);
+        }
+        return out;
       case UserRole.facilitator:
       default:
-        return _facilitatorKeys;
+        final allowed = <String>{
+          'dashboard',
+          'agenda',
+          'tickets',
+          'planbord',
+          'crm',
+          'offertes',
+          'projecten',
+          'contracts',
+          'planning-agenda',
+          'dks',
+          'sales-centre',
+        };
+        final prefs = up.mobileMenuPreferences
+            .map((e) => e.trim().toLowerCase())
+            .where((k) => allowed.contains(k))
+            .toList(growable: false);
+        final out = (prefs.isNotEmpty ? prefs : _facilitatorFallbackKeys)
+            .toList(growable: true);
+        if (initialKey.isNotEmpty && allowed.contains(initialKey) && !out.contains(initialKey)) {
+          out.add(initialKey);
+        }
+        return out;
     }
   }
 
@@ -102,6 +144,48 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
           icon: Icons.calendar_month_outlined,
           screen: const PlanbordScreen(),
         );
+      case 'crm':
+        return (
+          label: 'CRM',
+          icon: Icons.groups_2_outlined,
+          screen: const facilitator_crm.RelationsCrmScreen(),
+        );
+      case 'offertes':
+        return (
+          label: 'Offertes',
+          icon: Icons.request_quote_outlined,
+          screen: const QuoteOverviewScreen(),
+        );
+      case 'projecten':
+        return (
+          label: 'Projecten',
+          icon: Icons.view_kanban_outlined,
+          screen: const ProjectOverviewScreen(),
+        );
+      case 'contracts':
+        return (
+          label: 'Contracten',
+          icon: Icons.handshake_outlined,
+          screen: const ContractManagementScreen(),
+        );
+      case 'planning-agenda':
+        return (
+          label: 'Agenda',
+          icon: Icons.event_available_outlined,
+          screen: const PlanningAgendaScreen(),
+        );
+      case 'dks':
+        return (
+          label: 'DKS',
+          icon: Icons.fact_check_outlined,
+          screen: const DksDashboardScreen(),
+        );
+      case 'sales-centre':
+        return (
+          label: 'Sales',
+          icon: Icons.campaign_outlined,
+          screen: const SalesCentreScreen(),
+        );
       case 'rooster':
         return (
           label: 'Mijn Rooster',
@@ -134,9 +218,26 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
     final isDesktop = MediaQuery.of(context).size.width > 800;
     final role = context.watch<UserProvider>().role;
     final keys = _keysForRole(role);
+    final initialKey = (widget.initialKey ?? '').trim().toLowerCase();
 
-    final mapped = keys.map(_mapKey).toList(growable: false);
-    final safeIndex = (_index >= 0 && _index < mapped.length) ? _index : 0;
+    // Enforce the 3-item limit for the floating mobile pill.
+    // If we were asked to open a specific page (initialKey), keep the pill at 3
+    // but ensure that page is reachable/selected.
+    final displayKeys = keys.take(3).toList(growable: true);
+    if (initialKey.isNotEmpty &&
+        keys.contains(initialKey) &&
+        !displayKeys.contains(initialKey)) {
+      if (displayKeys.length < 3) {
+        displayKeys.add(initialKey);
+      } else {
+        displayKeys[2] = initialKey;
+      }
+    }
+
+    final mapped = displayKeys.map(_mapKey).toList(growable: false);
+    final safeIndex = (_index >= 0 && _index < mapped.length)
+        ? _index
+        : (initialKey.isNotEmpty ? displayKeys.indexOf(initialKey).clamp(0, mapped.length - 1) : 0);
 
     final body = IndexedStack(
       index: safeIndex,

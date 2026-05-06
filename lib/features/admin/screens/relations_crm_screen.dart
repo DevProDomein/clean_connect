@@ -162,23 +162,25 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
             ),
           ],
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          backgroundColor: cs.primary,
-          foregroundColor: Colors.white,
-          elevation: 1,
-          highlightElevation: 2,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    const RelationDetailScreen(bedrijfId: null),
-              ),
-            ).then((_) => _loadRelaties());
-          },
-          icon: const Icon(Icons.add),
-          label: const Text('Nieuwe Relatie'),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        floatingActionButton: Padding(
+          padding: const EdgeInsets.only(bottom: 80.0),
+          child: FloatingActionButton.extended(
+            backgroundColor: cs.primary,
+            foregroundColor: Colors.white,
+            elevation: 1,
+            highlightElevation: 2,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RelationDetailScreen(bedrijfId: null),
+                ),
+              ).then((_) => _loadRelaties());
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Nieuwe Relatie'),
+            shape: const StadiumBorder(),
+          ),
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         body: SelectionArea(
@@ -323,7 +325,7 @@ class _RelationList extends StatelessWidget {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 110),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 150),
       itemCount: relations.length,
       itemBuilder: (context, index) {
         final relation = relations[index];

@@ -8,10 +8,12 @@ class QuoteSummaryModal extends StatefulWidget {
     super.key,
     required this.offerte,
     required this.ruimtes,
+    this.readOnly = false,
   });
 
   final Map<String, dynamic> offerte;
   final List<dynamic> ruimtes;
+  final bool readOnly;
 
   @override
   State<QuoteSummaryModal> createState() => _QuoteSummaryModalState();
@@ -322,35 +324,55 @@ class _QuoteSummaryModalState extends State<QuoteSummaryModal> {
                     top: BorderSide(color: Colors.grey.withValues(alpha: 0.22)),
                   ),
                 ),
-                child: ElevatedButton(
-                  onPressed: _isSending ? null : _sendFinal,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: cs.primary,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: cs.primary.withValues(alpha: 0.55),
-                    elevation: 0,
-                    minimumSize: const Size.fromHeight(56),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                  ),
-                  child: _isSending
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.6,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                child: widget.readOnly
+                    ? OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: cs.primary,
+                          side: BorderSide(color: cs.primary.withValues(alpha: 0.35)),
+                          elevation: 0,
+                          minimumSize: const Size.fromHeight(56),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
                           ),
-                        )
-                      : Text(
-                          'Definitief verzenden naar klant',
+                        ),
+                        child: Text(
+                          'Sluiten',
                           style: GoogleFonts.inter(
                             fontWeight: FontWeight.w900,
                             fontSize: 16,
                           ),
                         ),
-                ),
+                      )
+                    : ElevatedButton(
+                        onPressed: _isSending ? null : _sendFinal,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: cs.primary,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: cs.primary.withValues(alpha: 0.55),
+                          elevation: 0,
+                          minimumSize: const Size.fromHeight(56),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        child: _isSending
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.6,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Text(
+                                'Definitief verzenden naar klant',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                ),
+                              ),
+                      ),
               ),
             ),
           ],

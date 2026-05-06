@@ -8,6 +8,7 @@ import '../../../core/widgets/app_drawer.dart';
 import '../widgets/quote_summary_modal.dart';
 import '../widgets/room_add_modal.dart';
 import 'project_overview_screen.dart';
+import 'quote_create_header_screen.dart';
 
 class QuoteSurveyScreen extends StatefulWidget {
   const QuoteSurveyScreen({
@@ -64,6 +65,75 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   Map<String, dynamic>? _extractOfferte(List<Map<String, dynamic>> rows) {
     if (rows.isEmpty) return null;
     return rows.first;
+  }
+
+  String _statusOf(Map<String, dynamic>? offerte) {
+    final s = _text(offerte?['status']).toLowerCase();
+    if (s == 'verzonden') return 'send';
+    if (s == 'getekend') return 'signed';
+    return s;
+  }
+
+  bool _isConceptStatus(String status) => status == 'concept' || status == 'new';
+
+  Future<void> _showSummary({
+    required Map<String, dynamic> offerte,
+    required List<Map<String, dynamic>> ruimtes,
+    required bool readOnly,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SelectionArea(
+        child: QuoteSummaryModal(
+          offerte: offerte,
+          ruimtes: ruimtes,
+          readOnly: readOnly,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reviseToConcept(String offerteId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(
+            'Offerte heropenen?',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            'Wilt u deze offerte heropenen? De status gaat terug naar Concept.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Annuleren', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('Heropenen', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true) return;
+
+    await AppSupabase.client.from('offertes').update({'status': 'concept'}).eq('id', offerteId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(
+          'Offerte is heropend (Concept).',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
   }
 
   Widget _buildEmptyState() {
@@ -409,6 +479,29 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             );
           },
         ),
+        actions: [
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: offerteStream,
+            builder: (context, snapshot) {
+              final offerte = snapshot.hasData ? _extractOfferte(snapshot.data!) : null;
+              final status = _statusOf(offerte);
+              final isConcept = _isConceptStatus(status);
+              if (!isConcept || offerte == null) return const SizedBox.shrink();
+              return IconButton(
+                tooltip: 'Bewerk kaft (Stap 1)',
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      settings: const RouteSettings(name: '/facilitator/quotes/header/edit'),
+                      builder: (_) => QuoteCreateHeaderScreen(offerteId: widget.offerteId),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.edit_note_rounded),
+              );
+            },
+          ),
+        ],
       ),
       body: SelectionArea(
         child: StreamBuilder<List<Map<String, dynamic>>>(
@@ -447,42 +540,51 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 260),
-        child: FloatingActionButton.extended(
-          onPressed: () {
-            showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => SelectionArea(
-                child: RoomAddModal(
-                  offerteId: widget.offerteId,
-                  onSaved: () {
-                    setState(() {});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        behavior: SnackBarBehavior.floating,
-                        content: Text(
-                          'Ruimte toegevoegd.',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+      floatingActionButton: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: offerteStream,
+        builder: (context, snapshot) {
+          final offerte = snapshot.hasData ? _extractOfferte(snapshot.data!) : null;
+          final status = _statusOf(offerte);
+          final isConcept = _isConceptStatus(status);
+          if (!isConcept) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 260),
+            child: FloatingActionButton.extended(
+              onPressed: () {
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => SelectionArea(
+                    child: RoomAddModal(
+                      offerteId: widget.offerteId,
+                      onSaved: () {
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            content: Text(
+                              'Ruimte toegevoegd.',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+              backgroundColor: cs.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              icon: const Icon(Icons.add_rounded, size: 28),
+              label: Text(
+                'Ruimte Toevoegen',
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900),
               ),
-            );
-          },
-          backgroundColor: cs.primary,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          icon: const Icon(Icons.add_rounded, size: 28),
-          label: Text(
-            'Ruimte Toevoegen',
-            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900),
-          ),
-        ),
+            ),
+          );
+        },
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -494,6 +596,10 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             }
 
             final offerte = snapshot.hasData ? _extractOfferte(snapshot.data!) : null;
+            final status = _statusOf(offerte);
+            final isConcept = _isConceptStatus(status);
+            final isSent = status == 'send';
+            final isSigned = status == 'signed';
             final maandEx = _asDouble(offerte?['maandprijs_ex_btw']);
             final maandBtw = _asDouble(offerte?['maand_btw_bedrag']);
             final maandIncl = _asDouble(offerte?['maandprijs_inc_btw']);
@@ -697,36 +803,148 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: offerte == null
-                                        ? null
-                                        : () => _onPrimaryAction(
-                                              offerte: offerte,
-                                              ruimtes: ruimtes,
+                                  child: isConcept
+                                      ? ElevatedButton(
+                                          onPressed: offerte == null
+                                              ? null
+                                              : () => _onPrimaryAction(
+                                                    offerte: offerte,
+                                                    ruimtes: ruimtes,
+                                                  ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: cs.primary,
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            minimumSize: const Size.fromHeight(54),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(24),
                                             ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: cs.primary,
-                                      foregroundColor: Colors.white,
-                                      elevation: 0,
-                                      minimumSize: const Size.fromHeight(54),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(24),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      widget.isDirectProject
-                                          ? '🚀 Project Activeren & Taken Genereren'
-                                          : 'Maak definitief & Verzenden',
-                                      textAlign: TextAlign.center,
-                                      style: GoogleFonts.inter(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ),
+                                          ),
+                                          child: Text(
+                                            widget.isDirectProject
+                                                ? '🚀 Project Activeren & Taken Genereren'
+                                                : 'Maak definitief & Verzenden',
+                                            textAlign: TextAlign.center,
+                                            style: GoogleFonts.inter(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        )
+                                      : isSent
+                                          ? ElevatedButton(
+                                              onPressed: offerte == null
+                                                  ? null
+                                                  : () => _reviseToConcept(widget.offerteId),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: cs.primary,
+                                                foregroundColor: Colors.white,
+                                                elevation: 0,
+                                                minimumSize: const Size.fromHeight(54),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(24),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                '🔄 Offerte aanpassen / Heropenen',
+                                                textAlign: TextAlign.center,
+                                                style: GoogleFonts.inter(
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            )
+                                          : ElevatedButton(
+                                              onPressed: offerte == null
+                                                  ? null
+                                                  : () => _showSummary(
+                                                        offerte: offerte,
+                                                        ruimtes: ruimtes,
+                                                        readOnly: true,
+                                                      ),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: cs.primary,
+                                                foregroundColor: Colors.white,
+                                                elevation: 0,
+                                                minimumSize: const Size.fromHeight(54),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(24),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                'View Details',
+                                                textAlign: TextAlign.center,
+                                                style: GoogleFonts.inter(
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
+                                            ),
                                 ),
                               ],
                             ),
+                            if (!isConcept) ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton(
+                                  onPressed: offerte == null
+                                      ? null
+                                      : () => _showSummary(
+                                            offerte: offerte,
+                                            ruimtes: ruimtes,
+                                            readOnly: true,
+                                          ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(color: Colors.white.withValues(alpha: 0.30)),
+                                    minimumSize: const Size.fromHeight(52),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    isSigned ? 'View Details' : 'View Details',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        behavior: SnackBarBehavior.floating,
+                                        content: Text(
+                                          'PDF is nog niet beschikbaar.',
+                                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(color: Colors.white.withValues(alpha: 0.30)),
+                                    minimumSize: const Size.fromHeight(52),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'View PDF',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         );
                       }

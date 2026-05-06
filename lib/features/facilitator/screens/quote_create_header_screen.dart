@@ -12,7 +12,10 @@ import 'quote_survey_screen.dart';
 /// null on insert so Supabase can assign it automatically (trigger/sequence),
 /// which keeps this row as a "CONCEPT" in the overview until finalized.
 class QuoteCreateHeaderScreen extends StatefulWidget {
-  const QuoteCreateHeaderScreen({super.key});
+  const QuoteCreateHeaderScreen({super.key, this.offerteId});
+
+  /// When set, this screen edits an existing quote header ("De Kaft").
+  final String? offerteId;
 
   @override
   State<QuoteCreateHeaderScreen> createState() => _QuoteCreateHeaderScreenState();
@@ -56,6 +59,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
   final Set<String> _afwijkendeWeekdagen = <String>{};
 
   bool _saving = false;
+  bool _loading = false;
 
   static const List<_Option> _contractTypes = [
     _Option('vast', 'Vast'),
@@ -98,6 +102,113 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
     'De Ronde Venen',
     'Wijdemeren',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    final id = (widget.offerteId ?? '').trim();
+    if (id.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadExisting(id));
+    }
+  }
+
+  String _text(dynamic v) => (v ?? '').toString().trim();
+
+  TimeOfDay? _parseTime(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return null;
+    final parts = s.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h, minute: m);
+  }
+
+  Future<void> _loadExisting(String offerteId) async {
+    setState(() => _loading = true);
+    try {
+      final row = await AppSupabase.client
+          .from('offertes')
+          .select()
+          .eq('id', offerteId)
+          .maybeSingle();
+      if (!mounted) return;
+      if (row == null) {
+        _showError('Kon offerte niet laden.');
+        return;
+      }
+
+      final m = Map<String, dynamic>.from(row as Map);
+      setState(() {
+        _bedrijfsnaam.text = _text(m['bedrijfsnaam_klant']);
+        _kvk.text = _text(m['kvk_nummer']);
+        final regio = _text(m['werk_regio']);
+        _werkRegio = regio.isEmpty ? null : regio;
+
+        _adresStraat.text = _text(m['adres_straat_huisnr']);
+        _adresPostcode.text = _text(m['adres_postcode']);
+        _adresStad.text = _text(m['adres_stad']);
+
+        final uitvoerStraat = _text(m['uitvoer_adres_straat_huisnr']);
+        final uitvoerPostcode = _text(m['uitvoer_adres_postcode']);
+        final uitvoerStad = _text(m['uitvoer_adres_stad']);
+        _heeftAfwijkendUitvoerAdres =
+            uitvoerStraat.isNotEmpty || uitvoerPostcode.isNotEmpty || uitvoerStad.isNotEmpty;
+        _uitvoerAdresStraat.text = uitvoerStraat;
+        _uitvoerAdresPostcode.text = uitvoerPostcode;
+        _uitvoerAdresStad.text = uitvoerStad;
+
+        _contactVoornaam.text = _text(m['contact_voornaam']);
+        _contactAchternaam.text = _text(m['contact_achternaam']);
+        _contactEmail.text = _text(m['contact_email']);
+        _contactTelefoon.text = _text(m['contact_telefoon']);
+
+        final ct = _text(m['contract_type']).toLowerCase();
+        if (ct.isNotEmpty) _contractType = ct;
+
+        final freq = _text(m['periodieke_frequentie']).toLowerCase();
+        if (freq.isNotEmpty) _periodiekeFrequentie = freq;
+
+        _contractStartDatum = DateTime.tryParse(_text(m['contract_startdatum']));
+        _contractEindDatumHandmatig = DateTime.tryParse(_text(m['contract_einddatum']));
+
+        final reg = (m['reguliere_weekdagen'] as List?)
+                ?.whereType<String>()
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList() ??
+            const <String>[];
+        _reguliereWeekdagen
+          ..clear()
+          ..addAll(reg);
+
+        _tijdslotStart = _parseTime(_text(m['tijdslot_start']));
+        _tijdslotEind = _parseTime(_text(m['tijdslot_eind']));
+
+        final apStart = DateTime.tryParse(_text(m['afwijkende_periode_start']));
+        final apEnd = DateTime.tryParse(_text(m['afwijkende_periode_eind']));
+        _heeftAfwijkendePeriode = apStart != null && apEnd != null;
+        _afwijkendePeriodeStart = apStart;
+        _afwijkendePeriodeEind = apEnd;
+
+        final aw = (m['afwijkende_weekdagen'] as List?)
+                ?.whereType<String>()
+                .map((e) => e.trim())
+                .where((e) => e.isNotEmpty)
+                .toList() ??
+            const <String>[];
+        _afwijkendeWeekdagen
+          ..clear()
+          ..addAll(aw);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Kon offerte niet laden: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -329,28 +440,44 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         if (userId != null) 'aangemaakt_door_id': userId,
       };
 
-      final inserted = await AppSupabase.client
-          .from('offertes')
-          .insert(payload)
-          .select('id')
-          .single();
-      final newId = (inserted['id'] ?? '').toString();
+      final existingId = (widget.offerteId ?? '').trim();
+      if (existingId.isNotEmpty) {
+        await AppSupabase.client.from('offertes').update(payload).eq('id', existingId);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text(
+              'Offerte bijgewerkt.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+            ),
+          ),
+        );
+        Navigator.of(context).pop();
+      } else {
+        final inserted = await AppSupabase.client
+            .from('offertes')
+            .insert(payload)
+            .select('id')
+            .single();
+        final newId = (inserted['id'] ?? '').toString();
 
-      if (!mounted) return;
-      if (newId.isEmpty) {
-        _showError('Kon nieuw offerte-id niet ophalen.');
-        return;
+        if (!mounted) return;
+        if (newId.isEmpty) {
+          _showError('Kon nieuw offerte-id niet ophalen.');
+          return;
+        }
+
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            settings: const RouteSettings(name: '/facilitator/quotes/new/survey'),
+            builder: (_) => QuoteSurveyScreen(
+                  offerteId: newId,
+                  isDirectProject: false,
+                ),
+          ),
+        );
       }
-
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          settings: const RouteSettings(name: '/facilitator/quotes/new/survey'),
-          builder: (_) => QuoteSurveyScreen(
-                offerteId: newId,
-                isDirectProject: false,
-              ),
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       _showError('Kon offerte niet aanmaken: $e');
@@ -465,20 +592,22 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         backgroundColor: bg,
         elevation: 0,
         title: Text(
-          'Nieuwe Offerte',
+          (widget.offerteId ?? '').trim().isNotEmpty ? 'Offerte bewerken' : 'Nieuwe Offerte',
           style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
         ),
       ),
       body: SelectionArea(
-        child: Form(
-          key: _formKey,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 800),
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
-                children: [
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : Form(
+                key: _formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+                      children: [
                 Text(
                   'De Kaft',
                   style: GoogleFonts.inter(
@@ -973,11 +1102,11 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                     ),
                   ),
                 ),
-                ],
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
       ),
     );
   }
