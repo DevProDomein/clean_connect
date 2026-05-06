@@ -8,6 +8,7 @@ import '../../providers/user_provider.dart';
 import '../../core/models/user_role.dart';
 import '../../features/facilitator/screens/facilitator_dashboard_screen.dart';
 import '../../features/facilitator/screens/agenda_screen.dart';
+import '../../features/facilitator/screens/planbord_screen.dart';
 import '../../features/facilitator/screens/ticket_overview_screen.dart';
 import '../../features/operator/screens/operator_dashboard_screen.dart';
 import '../../features/operator/screens/operator_rooster_screen.dart';
@@ -26,10 +27,15 @@ class MobileBottomNavLayout extends StatefulWidget {
 class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
   int _index = 0;
 
+  // Keep interactive content above the floating nav pill.
+  // This is intentionally a little larger than the pill height to cover margins.
+  static const double _mobileBottomInset = 100.0;
+
   static const _facilitatorKeys = <String>[
     'dashboard',
     'agenda',
     'tickets',
+    'planbord',
   ];
 
   static const _operatorKeys = <String>[
@@ -90,6 +96,12 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
           icon: Icons.confirmation_number_outlined,
           screen: const TicketOverviewScreen(),
         );
+      case 'planbord':
+        return (
+          label: 'Planbord',
+          icon: Icons.calendar_month_outlined,
+          screen: const PlanbordScreen(),
+        );
       case 'rooster':
         return (
           label: 'Mijn Rooster',
@@ -149,11 +161,15 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
     }
 
     return Scaffold(
-      extendBody: true,
+      // Avoid rendering page content underneath the floating pill.
       drawer: const AppDrawer(),
-      body: body,
+      body: Padding(
+        padding: const EdgeInsets.only(bottom: _mobileBottomInset),
+        child: body,
+      ),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.only(left: 40, right: 40, bottom: 40),
+        // Narrow floating "island" pill styling.
+        padding: const EdgeInsets.only(left: 40, right: 40, bottom: 30),
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(40),

@@ -180,6 +180,7 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
           label: const Text('Nieuwe Relatie'),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         body: SelectionArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
