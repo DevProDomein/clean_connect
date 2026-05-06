@@ -21,6 +21,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const Color _navy = Color(0xFF0F172A);
   static const Color _muted = Color(0xFF64748B);
   static const Color _blue = Color(0xFF2563EB);
+  static const _radius24 = BorderRadius.all(Radius.circular(24));
 
   static const String _colProfielfoto = 'profielfoto_url';
   static const String _colTelefoon = 'telefoon';
@@ -202,6 +203,175 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _showChangePasswordDialog() async {
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    var obscure = true;
+    var saving = false;
+
+    Future<void> save(VoidCallback repaint) async {
+      final newPassword = newCtrl.text.trim();
+      final confirm = confirmCtrl.text.trim();
+      if (newPassword.isEmpty || confirm.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Vul beide velden in.',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+            ),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+        return;
+      }
+      if (newPassword.length < 6) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Het wachtwoord moet minimaal 6 tekens lang zijn.',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+            ),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+        return;
+      }
+      if (newPassword != confirm) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'De wachtwoorden komen niet overeen.',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+            ),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+        return;
+      }
+
+      saving = true;
+      repaint();
+      try {
+        await Supabase.instance.client.auth.updateUser(
+          UserAttributes(password: newPassword),
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Wachtwoord succesvol gewijzigd.',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+            ),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        newCtrl.clear();
+        confirmCtrl.clear();
+        if (!mounted) return;
+        Navigator.of(context).pop();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Wachtwoord wijzigen mislukt: $e',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w700),
+            ),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      } finally {
+        saving = false;
+        repaint();
+      }
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            void repaint() => setDialogState(() {});
+            return AlertDialog(
+              shape: const RoundedRectangleBorder(borderRadius: _radius24),
+              title: Text(
+                'Nieuw wachtwoord instellen',
+                style: GoogleFonts.lato(fontWeight: FontWeight.w900),
+              ),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: newCtrl,
+                      obscureText: obscure,
+                      decoration: InputDecoration(
+                        labelText: 'Nieuw Wachtwoord',
+                        labelStyle: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                        suffixIcon: IconButton(
+                          onPressed: saving
+                              ? null
+                              : () => setDialogState(() => obscure = !obscure),
+                          icon: Icon(
+                            obscure ? Icons.visibility : Icons.visibility_off,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: confirmCtrl,
+                      obscureText: obscure,
+                      decoration: InputDecoration(
+                        labelText: 'Bevestig Wachtwoord',
+                        labelStyle: GoogleFonts.lato(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.of(context).pop(),
+                  child: Text('Annuleren', style: GoogleFonts.lato(fontWeight: FontWeight.w800)),
+                ),
+                FilledButton(
+                  onPressed: saving ? null : () => save(repaint),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _blue,
+                    foregroundColor: Colors.white,
+                    shape: const RoundedRectangleBorder(borderRadius: _radius24),
+                  ),
+                  child: saving
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          'Wachtwoord Bijwerken',
+                          style: GoogleFonts.lato(fontWeight: FontWeight.w900),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    newCtrl.dispose();
+    confirmCtrl.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -355,6 +525,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       fontSize: 16,
                                     ),
                                   ),
+                          ),
+                          const SizedBox(height: 28),
+                          Text(
+                            'Beveiliging',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _muted,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Wachtwoord wijzigen',
+                                  style: GoogleFonts.lato(
+                                    fontWeight: FontWeight.w900,
+                                    color: _navy,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Stel een nieuw wachtwoord in voor uw account.',
+                                  style: GoogleFonts.lato(
+                                    fontWeight: FontWeight.w600,
+                                    color: _muted,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                FilledButton(
+                                  onPressed: _showChangePasswordDialog,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _blue,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Nieuw wachtwoord instellen',
+                                    style: GoogleFonts.lato(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),

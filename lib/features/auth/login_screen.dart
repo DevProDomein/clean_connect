@@ -65,7 +65,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await AppSupabase.client.auth.resetPasswordForEmail(email);
+      await AppSupabase.client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'https://cleanconnect-erp.web.app/set-password',
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppTexts.get('reset_sent'))),

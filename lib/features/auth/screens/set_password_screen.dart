@@ -1,7 +1,10 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/web_hard_redirect.dart';
 
 class SetPasswordScreen extends StatefulWidget {
   const SetPasswordScreen({super.key});
@@ -110,6 +113,11 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
 
       // CRITICAL SECURITY STEP: destroy the temporary link-session immediately.
       await _supabase.auth.signOut();
+
+      if (kIsWeb) {
+        // Hard redirect clears the fragment/path and prevents being trapped in reset flow.
+        if (hardRedirectToOrigin()) return;
+      }
 
       await _goToLogin(
         successMessage: 'Wachtwoord ingesteld. Log nu in met uw nieuwe wachtwoord.',
