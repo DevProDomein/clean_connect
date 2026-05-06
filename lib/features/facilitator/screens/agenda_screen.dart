@@ -12,6 +12,7 @@ import '../../../providers/user_provider.dart';
 import '../widgets/opname_afspraak_form_sheet.dart';
 import '../widgets/opname_edit_modal.dart';
 import 'dks_project_dossier_screen.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 /// Facilitator agenda from [app_facilitator_persoonlijke_agenda] (opname + DKS).
 class AgendaScreen extends StatefulWidget {
@@ -590,15 +591,18 @@ class _AgendaScreenState extends State<AgendaScreen> {
                     ],
                   ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openOpnameSheet,
-        tooltip: 'Nieuwe opname afspraak',
-        backgroundColor: _orange,
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(_radius / 2),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 85),
+        child: FloatingActionButton(
+          onPressed: _openOpnameSheet,
+          tooltip: 'Nieuwe opname afspraak',
+          backgroundColor: _orange,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(_radius / 2),
+          ),
+          child: const Icon(Icons.add, size: 32),
         ),
-        child: const Icon(Icons.add, size: 32),
       ),
     );
   }
@@ -639,12 +643,16 @@ class _AgendaScreenState extends State<AgendaScreen> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-      itemCount: list.length,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      itemCount: list.length + 1,
       separatorBuilder: (context, index) {
+        if (index >= list.length - 1) return const SizedBox.shrink();
         return const SizedBox(height: 10);
       },
       itemBuilder: (context, i) {
+        if (i >= list.length) {
+          return const SizedBox(height: mobileNavBuffer);
+        }
         final theme = Theme.of(context);
         final textTheme = theme.textTheme;
         final onBody = textTheme.bodyLarge?.color;

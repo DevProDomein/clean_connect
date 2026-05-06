@@ -14,6 +14,7 @@ import '../../../core/supabase_client.dart';
 import '../../../providers/user_provider.dart';
 import 'project_create_header_screen.dart';
 import 'project_detail_screen.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 /// Facilitator project portfolio: KPIs, server-driven filters, actieve [projecten].
 class ProjectOverviewScreen extends StatefulWidget {
@@ -408,16 +409,19 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _newProject,
-        backgroundColor: _orange,
-        foregroundColor: Colors.white,
-        elevation: 3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-        icon: const Icon(Icons.add_rounded, size: 26),
-        label: Text(
-          'Nieuw Project',
-          style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 15),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 85),
+        child: FloatingActionButton.extended(
+          onPressed: _newProject,
+          backgroundColor: _orange,
+          foregroundColor: Colors.white,
+          elevation: 3,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+          icon: const Icon(Icons.add_rounded, size: 26),
+          label: Text(
+            'Nieuw Project',
+            style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 15),
+          ),
         ),
       ),
       body: SelectionArea(
@@ -809,9 +813,12 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-      itemCount: _projects.length,
-      itemBuilder: (context, i) => _projectCard(_projects[i]),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+      itemCount: _projects.length + 1,
+      itemBuilder: (context, i) {
+        if (i >= _projects.length) return const SizedBox(height: mobileNavBuffer);
+        return _projectCard(_projects[i]);
+      },
     );
   }
 

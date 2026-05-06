@@ -6,6 +6,7 @@ import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../core/widgets/network_image_fallback.dart';
 import '../../admin/screens/relation_detail_screen.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 /// Facilitator-scoped Relatiebeheer (CRM) screen.
 ///
@@ -421,8 +422,11 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
       physics: const BouncingScrollPhysics(),
-      itemCount: filtered.length,
+      itemCount: filtered.length + 1,
       itemBuilder: (context, index) {
+        if (index >= filtered.length) {
+          return const SizedBox(height: mobileNavBuffer);
+        }
         return _buildClientCard(filtered[index], isDark);
       },
     );

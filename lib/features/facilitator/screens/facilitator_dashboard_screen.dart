@@ -19,6 +19,7 @@ import 'quote_overview_screen.dart';
 import 'sales_centre_screen.dart';
 import 'ticket_overview_screen.dart';
 import '../widgets/opname_edit_modal.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 /// Apple-style facilitator landing: hero, bento KPIs, quick actions,
 /// agenda vandaag. Data loads concurrently via `Future.wait`.
@@ -783,7 +784,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                         child: _buildAgendaSection(cs),
                       ),
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                    const SliverToBoxAdapter(child: SizedBox(height: mobileNavBuffer)),
                   ],
                 ),
               ),

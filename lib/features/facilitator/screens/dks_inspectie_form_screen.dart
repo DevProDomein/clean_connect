@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:signature/signature.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../shared/layouts/mobile_nav_buffer.dart';
+
 class DksInspectieFormScreen extends StatefulWidget {
   final String rapportId;
   const DksInspectieFormScreen({super.key, required this.rapportId});
@@ -314,6 +316,7 @@ class _DksInspectieFormScreenState extends State<DksInspectieFormScreen> {
                   ),
                   const SizedBox(height: 24),
                   _buildFooter(),
+                  const SizedBox(height: mobileNavBuffer),
                 ],
               ),
       ),

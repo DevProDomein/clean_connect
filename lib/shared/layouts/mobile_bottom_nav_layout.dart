@@ -35,10 +35,6 @@ class MobileBottomNavLayout extends StatefulWidget {
 class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
   int _index = 0;
 
-  // Keep interactive content above the floating nav pill.
-  // This is intentionally a little larger than the pill height to cover margins.
-  static const double _mobileBottomInset = 100.0;
-
   static const _facilitatorFallbackKeys = <String>[
     'dashboard',
     'agenda',
@@ -262,54 +258,36 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
     }
 
     return Scaffold(
-      // Avoid rendering page content underneath the floating pill.
+      extendBody: true,
+      extendBodyBehindAppBar: true,
       drawer: const AppDrawer(),
-      body: Padding(
-        padding: const EdgeInsets.only(bottom: _mobileBottomInset),
-        child: body,
-      ),
+      body: body,
       bottomNavigationBar: Padding(
-        // Narrow floating "island" pill styling.
-        padding: const EdgeInsets.only(left: 40, right: 40, bottom: 30),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(40),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 51),
-              width: 1.5,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(40),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.black.withValues(alpha: 77)
-                      : Colors.white.withValues(alpha: 102),
-                  borderRadius: BorderRadius.circular(40),
-                ),
-                child: BottomNavigationBar(
-                  elevation: 0,
-                  backgroundColor: Colors.transparent,
-                  type: BottomNavigationBarType.fixed,
-                  selectedItemColor: Theme.of(context).colorScheme.primary,
-                  unselectedItemColor:
-                      Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 140),
-                  currentIndex: safeIndex,
-                  onTap: (i) => setState(() => _index = i),
-                  items: [
-                    for (final it in mapped)
-                      BottomNavigationBarItem(
-                        icon: Icon(it.icon),
-                        label: it.label,
-                      ),
-                  ],
-                ),
+        padding: const EdgeInsets.only(left: 24, right: 24, bottom: 30),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(30),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            child: Container(
+              color: Theme.of(context).cardColor.withValues(alpha: 0.6),
+              child: BottomNavigationBar(
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                type: BottomNavigationBarType.fixed,
+                selectedItemColor: Theme.of(context).colorScheme.primary,
+                unselectedItemColor: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 140),
+                currentIndex: safeIndex,
+                onTap: (i) => setState(() => _index = i),
+                items: [
+                  for (final it in mapped)
+                    BottomNavigationBarItem(
+                      icon: Icon(it.icon),
+                      label: it.label,
+                    ),
+                ],
               ),
             ),
           ),

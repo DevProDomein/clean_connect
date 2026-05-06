@@ -163,7 +163,7 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
           ],
         ),
         floatingActionButton: Padding(
-          padding: const EdgeInsets.only(bottom: 80.0),
+          padding: const EdgeInsets.only(bottom: 85.0),
           child: FloatingActionButton.extended(
             backgroundColor: cs.primary,
             foregroundColor: Colors.white,

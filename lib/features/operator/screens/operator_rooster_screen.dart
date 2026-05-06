@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 import 'active_work_order_screen.dart';
 import '../widgets/packing_list_modal.dart';
 
@@ -453,7 +454,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
               ),
             ),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+          const SliverToBoxAdapter(child: SizedBox(height: mobileNavBuffer)),
         ],
       ),
     );
