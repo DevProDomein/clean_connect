@@ -152,24 +152,26 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
       extendBody: true,
       drawer: const AppDrawer(),
       body: body,
-      bottomNavigationBar: SafeArea(
-        bottom: true,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 24, right: 24, bottom: 32),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.only(left: 40, right: 40, bottom: 40),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(40),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 51),
+              width: 1.5,
+            ),
+          ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(40),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
               child: Container(
                 decoration: BoxDecoration(
                   color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.black.withValues(alpha: 128) // ~0.50
-                      : Colors.white.withValues(alpha: 179), // ~0.70
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 51), // ~0.20
-                    width: 1,
-                  ),
+                      ? Colors.black.withValues(alpha: 77)
+                      : Colors.white.withValues(alpha: 102),
+                  borderRadius: BorderRadius.circular(40),
                 ),
                 child: BottomNavigationBar(
                   elevation: 0,
@@ -180,7 +182,7 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
                       Theme.of(context)
                           .colorScheme
                           .onSurface
-                          .withValues(alpha: 140), // ~0.55
+                          .withValues(alpha: 140),
                   currentIndex: safeIndex,
                   onTap: (i) => setState(() => _index = i),
                   items: [

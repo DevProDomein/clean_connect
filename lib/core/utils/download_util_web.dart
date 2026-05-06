@@ -1,24 +1,31 @@
-// ignore_for_file: deprecated_member_use
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'dart:js_interop';
+import 'dart:typed_data';
+
+import 'package:web/web.dart' as web;
 
 Future<void> downloadStringAsFile({
   required String filename,
   required String content,
   String mimeType = 'application/xml',
 }) async {
-  final bytes = content.codeUnits;
-  final blob = html.Blob([bytes], mimeType);
-  final url = html.Url.createObjectUrlFromBlob(blob);
+  final bytes = Uint8List.fromList(content.codeUnits);
 
-  final anchor = html.AnchorElement(href: url)
+  final blob = web.Blob(
+    <JSAny>[bytes.toJS].toJS,
+    web.BlobPropertyBag(type: mimeType),
+  );
+
+  final url = web.URL.createObjectURL(blob);
+
+  final anchor = web.document.createElement('a') as web.HTMLAnchorElement
+    ..href = url
     ..download = filename
     ..style.display = 'none';
 
-  html.document.body?.children.add(anchor);
+  web.document.body?.appendChild(anchor);
   anchor.click();
   anchor.remove();
 
-  html.Url.revokeObjectUrl(url);
+  web.URL.revokeObjectURL(url);
 }
 

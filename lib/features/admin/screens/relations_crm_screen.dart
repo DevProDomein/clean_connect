@@ -128,15 +128,6 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
     if (mounted) _fetch();
   }
 
-  Future<void> _openCreate() async {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const RelationDetailScreen(bedrijfId: null),
-      ),
-    ).then((_) => _loadRelaties());
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -175,16 +166,17 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
           backgroundColor: cs.primary,
           foregroundColor: Colors.white,
           elevation: 4,
-          onPressed: _openCreate,
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    const RelationDetailScreen(bedrijfId: null),
+              ),
+            ).then((_) => _loadRelaties());
+          },
           icon: const Icon(Icons.add),
-          label: Text(
-            'Nieuwe Relatie',
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.2,
-              color: Colors.white,
-            ),
-          ),
+          label: const Text('Nieuwe Relatie'),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
         body: SelectionArea(

@@ -1,11 +1,11 @@
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/web_reload.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/theme_mode_provider.dart';
-import '../../features/auth/login_screen.dart';
 import '../../features/admin/screens/cfo_dashboard_screen.dart';
 import '../../features/admin/screens/creditors_screen.dart';
 import '../../features/admin/screens/expense_dashboard_screen.dart';
@@ -620,10 +620,11 @@ class AppDrawerPanel extends StatelessWidget {
                       await Supabase.instance.client.auth.signOut();
                       if (!context.mounted) return;
                       context.read<UserProvider>().clear();
-                      Navigator.of(context).pushAndRemoveUntil(
-                        CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                      Navigator.of(context).pushNamedAndRemoveUntil(
+                        '/login',
                         (route) => false,
                       );
+                      if (kIsWeb) forceWebReload();
                     },
                     icon: const Icon(Icons.logout, size: 18),
                     label: const Text('Uitloggen'),

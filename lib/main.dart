@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/cupertino.dart';
+import 'dart:async';
 
 import 'core/supabase_client.dart';
 import 'core/models/user_role.dart';
@@ -64,10 +65,36 @@ Future<void> main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  int _appEpoch = 0;
+  StreamSubscription<AuthState>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSub = AppSupabase.client.auth.onAuthStateChange.listen((state) {
+      if (!mounted) return;
+      if (state.event == AuthChangeEvent.signedOut) {
+        // Force a full widget tree rebuild after logout to avoid stale state.
+        context.read<UserProvider>().clear();
+        setState(() => _appEpoch++);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(
@@ -279,6 +306,7 @@ class MyApp extends StatelessWidget {
         final themeMode = context.watch<ThemeModeProvider>().mode;
 
         return MaterialApp(
+          key: ValueKey(_appEpoch),
           title: AppTexts.get('app_title'),
           supportedLocales: const [Locale('nl')],
           localizationsDelegates: const [
@@ -372,6 +400,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   String? _identityFutureUserId;
   Future<void>? _identityFuture;
   late final bool _forceSetPasswordFlow;
+  AuthChangeEvent? _lastAuthEvent;
 
   bool _isPasswordLink() {
     // CRITICAL SECURITY: Hijack routing if an auth token exists in the URL.
@@ -505,9 +534,18 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       return const SetPasswordScreen();
     }
 
-    return StreamBuilder(
+    return StreamBuilder<AuthState>(
       stream: AppSupabase.client.auth.onAuthStateChange,
-      builder: (context, _) {
+      builder: (context, snapshot) {
+        final ev = snapshot.data?.event;
+        if (ev != null && ev != _lastAuthEvent) {
+          _lastAuthEvent = ev;
+          if (ev == AuthChangeEvent.signedOut) {
+            _identityFutureUserId = null;
+            _identityFuture = null;
+            context.read<UserProvider>().clear();
+          }
+        }
         final user = AppSupabase.client.auth.currentUser;
         if (user == null) {
           _identityFutureUserId = null;
