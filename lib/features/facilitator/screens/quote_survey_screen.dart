@@ -27,6 +27,7 @@ class QuoteSurveyScreen extends StatefulWidget {
 
 class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   final NumberFormat _eur = NumberFormat.currency(locale: 'nl_NL', symbol: '€ ');
+  bool _closing = false;
 
   String _text(dynamic v) => (v ?? '').toString().trim();
 
@@ -134,6 +135,35 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _saveAndClose({required String status}) async {
+    if (_closing) return;
+    setState(() => _closing = true);
+    try {
+      // "Save" step: persist the quote row (touch update) so the editor always
+      // exits after a real DB write. Rooms are saved independently.
+      await AppSupabase.client
+          .from('offertes')
+          .update({'status': status})
+          .eq('id', widget.offerteId);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade800,
+          content: Text(
+            'Opslaan mislukt: $e',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _closing = false);
+    }
   }
 
   Widget _buildEmptyState() {
@@ -777,11 +807,50 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                               ],
                             ),
                             const SizedBox(height: 24),
+                            if (isConcept)
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    await Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        settings: const RouteSettings(
+                                          name: '/facilitator/quotes/header/edit',
+                                        ),
+                                        builder: (_) => QuoteCreateHeaderScreen(
+                                          offerteId: widget.offerteId,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(
+                                      color: Colors.white.withValues(alpha: 0.30),
+                                    ),
+                                    minimumSize: const Size.fromHeight(50),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.edit_note_rounded),
+                                  label: Text(
+                                    'Aanpassingen Kaft',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            if (isConcept) const SizedBox(height: 10),
                             Row(
                               children: [
                                 Expanded(
                                   child: OutlinedButton(
-                                    onPressed: () => Navigator.of(context).pop(),
+                                    onPressed: offerte == null
+                                        ? null
+                                        : () => _saveAndClose(status: status),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.white,
                                       side: BorderSide(
@@ -793,7 +862,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                       ),
                                     ),
                                     child: Text(
-                                      'Afsluiten',
+                                      'Opslaan & Sluiten',
                                       style: GoogleFonts.inter(
                                         fontWeight: FontWeight.w800,
                                         fontSize: 15,
@@ -966,11 +1035,50 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                             ),
                           ),
                           const SizedBox(height: 24),
+                          if (isConcept)
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  await Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      settings: const RouteSettings(
+                                        name: '/facilitator/quotes/header/edit',
+                                      ),
+                                      builder: (_) => QuoteCreateHeaderScreen(
+                                        offerteId: widget.offerteId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.white.withValues(alpha: 0.30),
+                                  ),
+                                  minimumSize: const Size.fromHeight(52),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.edit_note_rounded),
+                                label: Text(
+                                  'Aanpassingen Kaft',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (isConcept) const SizedBox(height: 12),
                           Row(
                             children: [
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: () => Navigator.of(context).pop(),
+                                  onPressed: offerte == null
+                                      ? null
+                                      : () => _saveAndClose(status: status),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.white,
                                     side: BorderSide(
@@ -982,7 +1090,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                     ),
                                   ),
                                   child: Text(
-                                    'Afsluiten',
+                                    'Opslaan & Sluiten',
                                     style: GoogleFonts.inter(
                                       fontWeight: FontWeight.w800,
                                       fontSize: 16,

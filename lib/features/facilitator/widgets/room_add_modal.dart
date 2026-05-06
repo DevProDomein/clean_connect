@@ -39,6 +39,91 @@ class _RoomAddModalState extends State<RoomAddModal> {
     'Glasbewassing': 'Glasbewassing',
   };
 
+  String _freqLabelOf(Map<String, dynamic> taak) {
+    final raw = (taak['frequentie_label'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (raw == 'regulier' || raw == 'frequent' || raw == 'periodiek') return raw;
+    return 'regulier';
+  }
+
+  Widget _sectionHeader(
+    BuildContext context, {
+    required String title,
+    required Color color,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? Colors.black.withValues(alpha: 0.12)
+            : Colors.white.withValues(alpha: 0.55),
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+      child: Text(
+        title,
+        style: GoogleFonts.inter(
+          fontWeight: FontWeight.w900,
+          fontSize: 13,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _serviceTile(BuildContext context, Map<String, dynamic> taak) {
+    final cs = Theme.of(context).colorScheme;
+    final checked = _geselecteerdeTakenIds.contains(taak['id'].toString());
+
+    return CheckboxListTile(
+      value: checked,
+      dense: true,
+      controlAffinity: ListTileControlAffinity.leading,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      title: Text(
+        taak['volledige_naam'].toString(),
+        style: GoogleFonts.inter(
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+        ),
+      ),
+      subtitle: Text(
+        taak['eenheid'].toString(),
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          color: cs.onSurface.withValues(alpha: 0.60),
+        ),
+      ),
+      onChanged: _isSaving
+          ? null
+          : (value) {
+              setState(() {
+                if (value == true) {
+                  if (!_geselecteerdeTakenIds.contains(
+                    taak['id'].toString(),
+                  )) {
+                    _geselecteerdeTakenIds.add(
+                      taak['id'].toString(),
+                    );
+                  }
+                } else {
+                  _geselecteerdeTakenIds.remove(
+                    taak['id'].toString(),
+                  );
+                }
+              });
+            },
+    );
+  }
+
   @override
   void dispose() {
     _naamController.dispose();
@@ -155,6 +240,7 @@ class _RoomAddModalState extends State<RoomAddModal> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final sheetBg = isDark ? const Color(0xFF0F0E18) : Colors.white;
+    final isDesktop = MediaQuery.of(context).size.width > 800;
 
     return FractionallySizedBox(
       heightFactor: 0.85,
@@ -162,20 +248,23 @@ class _RoomAddModalState extends State<RoomAddModal> {
         top: false,
         child: Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-          child: Container(
-            decoration: BoxDecoration(
-              color: sheetBg,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 20,
-                  offset: const Offset(0, -4),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: isDesktop ? 1000 : double.infinity),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: sheetBg,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 20,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              children: [
+                child: Column(
+                  children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 14, 14, 8),
                   child: Row(
@@ -323,55 +412,136 @@ class _RoomAddModalState extends State<RoomAddModal> {
                                               ),
                                             ),
                                           )
-                                        : ListView.builder(
-                                            padding: const EdgeInsets.all(10),
-                                            itemCount: _beschikbareTaken.length,
-                                            itemBuilder: (context, index) {
-                                              final taak = _beschikbareTaken[index];
-                                              final checked = _geselecteerdeTakenIds.contains(
-                                                taak['id'].toString(),
-                                              );
+                                        : Builder(
+                                            builder: (context) {
+                                              final regulier = <Map<String, dynamic>>[];
+                                              final frequent = <Map<String, dynamic>>[];
+                                              final periodiek = <Map<String, dynamic>>[];
 
-                                              return CheckboxListTile(
-                                                value: checked,
-                                                dense: true,
-                                                controlAffinity: ListTileControlAffinity.leading,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(14),
-                                                ),
-                                                title: Text(
-                                                  taak['volledige_naam'].toString(),
-                                                  style: GoogleFonts.inter(
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                                subtitle: Text(
-                                                  taak['eenheid'].toString(),
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 12,
-                                                    color: cs.onSurface.withValues(alpha: 0.60),
-                                                  ),
-                                                ),
-                                                onChanged: _isSaving
-                                                    ? null
-                                                    : (value) {
-                                                        setState(() {
-                                                          if (value == true) {
-                                                            if (!_geselecteerdeTakenIds.contains(
-                                                              taak['id'].toString(),
-                                                            )) {
-                                                              _geselecteerdeTakenIds.add(
-                                                                taak['id'].toString(),
-                                                              );
-                                                            }
-                                                          } else {
-                                                            _geselecteerdeTakenIds.remove(
-                                                              taak['id'].toString(),
-                                                            );
-                                                          }
-                                                        });
-                                                      },
+                                              for (final t in _beschikbareTaken) {
+                                                final f = _freqLabelOf(t);
+                                                if (f == 'frequent') {
+                                                  frequent.add(t);
+                                                } else if (f == 'periodiek') {
+                                                  periodiek.add(t);
+                                                } else {
+                                                  regulier.add(t);
+                                                }
+                                              }
+
+                                              final blue = cs.primary;
+                                              final green = const Color(0xFF16A34A);
+                                              final purple = const Color(0xFF7C3AED);
+
+                                              if (MediaQuery.of(context).size.width > 800) {
+                                                Widget col(
+                                                  String title,
+                                                  Color color,
+                                                  List<Map<String, dynamic>> items,
+                                                ) {
+                                                  return Expanded(
+                                                    child: Column(
+                                                      children: [
+                                                        _sectionHeader(
+                                                          context,
+                                                          title: title,
+                                                          color: color,
+                                                        ),
+                                                        Expanded(
+                                                          child: items.isEmpty
+                                                              ? Center(
+                                                                  child: Text(
+                                                                    '—',
+                                                                    style: GoogleFonts.inter(
+                                                                      fontWeight: FontWeight.w700,
+                                                                      color: cs.onSurface.withValues(alpha: 0.45),
+                                                                    ),
+                                                                  ),
+                                                                )
+                                                              : ListView.builder(
+                                                                  padding: const EdgeInsets.all(10),
+                                                                  itemCount: items.length,
+                                                                  itemBuilder: (context, index) =>
+                                                                      _serviceTile(context, items[index]),
+                                                                ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                }
+
+                                                return Row(
+                                                  children: [
+                                                    col('Regulier', blue, regulier),
+                                                    VerticalDivider(
+                                                      width: 1,
+                                                      thickness: 1,
+                                                      color: cs.onSurface.withValues(alpha: 0.06),
+                                                    ),
+                                                    col('Frequent', green, frequent),
+                                                    VerticalDivider(
+                                                      width: 1,
+                                                      thickness: 1,
+                                                      color: cs.onSurface.withValues(alpha: 0.06),
+                                                    ),
+                                                    col('Periodiek', purple, periodiek),
+                                                  ],
+                                                );
+                                              }
+
+                                              Widget sliverSection({
+                                                required String title,
+                                                required Color color,
+                                                required List<Map<String, dynamic>> items,
+                                              }) {
+                                                return SliverMainAxisGroup(
+                                                  slivers: [
+                                                    SliverPersistentHeader(
+                                                      pinned: true,
+                                                      delegate: _StickyHeaderDelegate(
+                                                        minHeight: 40,
+                                                        maxHeight: 40,
+                                                        child: _sectionHeader(
+                                                          context,
+                                                          title: title,
+                                                          color: color,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    if (items.isEmpty)
+                                                      SliverToBoxAdapter(
+                                                        child: Padding(
+                                                          padding: const EdgeInsets.all(14),
+                                                          child: Text(
+                                                            'Geen diensten.',
+                                                            style: GoogleFonts.inter(
+                                                              fontWeight: FontWeight.w600,
+                                                              color: cs.onSurface.withValues(alpha: 0.55),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      )
+                                                    else
+                                                      SliverPadding(
+                                                        padding: const EdgeInsets.all(10),
+                                                        sliver: SliverList(
+                                                          delegate: SliverChildBuilderDelegate(
+                                                            (context, index) =>
+                                                                _serviceTile(context, items[index]),
+                                                            childCount: items.length,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                );
+                                              }
+
+                                              return CustomScrollView(
+                                                slivers: [
+                                                  sliverSection(title: 'Regulier', color: blue, items: regulier),
+                                                  sliverSection(title: 'Frequent', color: green, items: frequent),
+                                                  sliverSection(title: 'Periodiek', color: purple, items: periodiek),
+                                                ],
                                               );
                                             },
                                           ),
@@ -446,11 +616,43 @@ class _RoomAddModalState extends State<RoomAddModal> {
                     ],
                   ),
                 ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _StickyHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _StickyHeaderDelegate({
+    required this.minHeight,
+    required this.maxHeight,
+    required this.child,
+  });
+
+  final double minHeight;
+  final double maxHeight;
+  final Widget child;
+
+  @override
+  double get minExtent => minHeight;
+
+  @override
+  double get maxExtent => maxHeight;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(covariant _StickyHeaderDelegate oldDelegate) {
+    return oldDelegate.minHeight != minHeight ||
+        oldDelegate.maxHeight != maxHeight ||
+        oldDelegate.child != child;
   }
 }
