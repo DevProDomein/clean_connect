@@ -283,6 +283,10 @@ class MyApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
+          routes: {
+            '/set-password': (_) => const SetPasswordScreen(),
+            '/login': (_) => const LoginScreen(),
+          },
           theme: buildTheme(brightness: Brightness.light),
           darkTheme: ThemeData(
             brightness: Brightness.dark,
@@ -364,32 +368,41 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   String? _identityFutureUserId;
   Future<void>? _identityFuture;
+  late final bool _forceSetPasswordFlow;
 
   bool _isPasswordLink() {
-    // Flutter web: deep links can appear in path, query, or fragment.
+    // CRITICAL: Check URL string first, before auth stream/session logic.
+    // This prevents a navigation deadlock when a stale/broken session exists.
+    final url = Uri.base.toString().toLowerCase();
+    return url.contains('access_token') ||
+        url.contains('type=recovery') ||
+        url.contains('type=invite') ||
+        url.contains('set-password');
+  }
+
+  bool _hasRecoveryOrAccessTokenInUrl() {
     final uri = Uri.base;
-    final path = uri.path.toLowerCase();
-    final frag = uri.fragment.toLowerCase();
-    final qpType = (uri.queryParameters['type'] ?? '').toLowerCase();
-    final hasAccessToken =
-        uri.queryParameters.containsKey('access_token') || frag.contains('access_token=');
+    final q = uri.queryParameters;
+    final frag = uri.fragment;
 
-    final fragQuery = Uri.tryParse('https://local/?$frag');
-    final fragType = (fragQuery?.queryParameters['type'] ?? '').toLowerCase();
+    // Supabase on web often puts tokens in the URL fragment, as a query string.
+    final fragQuery = Uri.tryParse('https://local/?$frag')?.queryParameters ?? const {};
 
-    final type = qpType.isNotEmpty ? qpType : fragType;
+    final type = (q['type'] ?? fragQuery['type'] ?? '').toLowerCase();
+    final hasAccessToken = q.containsKey('access_token') || fragQuery.containsKey('access_token');
+    final isRecovery = type == 'recovery' || frag.toLowerCase().contains('recovery');
 
-    final isSetPasswordPath =
-        path == '/set-password' || frag.startsWith('/set-password');
-    final isRecoveryOrInvite = type == 'recovery' || type == 'invite';
-
-    return isSetPasswordPath || isRecoveryOrInvite || hasAccessToken;
+    return hasAccessToken || isRecovery;
   }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // CRITICAL: Lock the app into SetPasswordScreen if we ever started from a
+    // recovery/invite URL. Supabase may later clear the fragment/query, but we
+    // must never auto-navigate to dashboard during this flow.
+    _forceSetPasswordFlow = _hasRecoveryOrAccessTokenInUrl() || _isPasswordLink();
   }
 
   @override
@@ -466,21 +479,21 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // CRITICAL: If opened via invite/recovery/set-password URL, ignore current session
+    // and render the SetPasswordScreen immediately. This avoids an infinite loading
+    // loop caused by stale sessions after user re-creation.
+    if (_forceSetPasswordFlow || _isPasswordLink()) {
+      return const SetPasswordScreen();
+    }
+
     return StreamBuilder(
       stream: AppSupabase.client.auth.onAuthStateChange,
       builder: (context, _) {
-        final wantsSetPassword = _isPasswordLink();
         final user = AppSupabase.client.auth.currentUser;
         if (user == null) {
           _identityFutureUserId = null;
           _identityFuture = null;
           context.read<UserProvider>().clear();
-          if (wantsSetPassword) {
-            // Let Supabase finish processing the recovery/invite deep link.
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
           return const LoginScreen();
         }
 
@@ -532,11 +545,6 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
             }
 
             final userProvider = context.watch<UserProvider>();
-
-            // CRITICAL: If opened via recovery/invite or /set-password, do not auto-route to dashboard.
-            if (wantsSetPassword) {
-              return const SetPasswordScreen();
-            }
 
             if (userProvider.lastError != null) {
               return Scaffold(

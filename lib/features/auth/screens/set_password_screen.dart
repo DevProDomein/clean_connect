@@ -19,6 +19,8 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
   final _confirmController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _isSessionCheckComplete = false;
+  bool _isLinkInvalidOrExpired = false;
 
   Future<void> _logoutToLogin() async {
     try {
@@ -32,6 +34,19 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
 
     if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      final session = _supabase.auth.currentSession;
+      setState(() {
+        _isSessionCheckComplete = true;
+        _isLinkInvalidOrExpired = session == null;
+      });
+    });
   }
 
   @override
@@ -67,7 +82,7 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
       final session = authClient.currentSession;
 
       if (session == null) {
-        _showError('Geen actieve sessie gevonden. Klik opnieuw op de link in uw e-mail.');
+        _showError('Link ongeldig of verlopen');
         return;
       }
 
@@ -78,17 +93,17 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
         UserAttributes(password: password),
       );
 
+      // CRUCIAAL: wipe any stale/broken session immediately.
+      await _supabase.auth.signOut();
+
       if (!mounted) return;
-      // Refresh role/identity before any post-password navigation.
-      await context.read<UserProvider>().refreshIdentity();
+      context.read<UserProvider>().clear();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Wachtwoord succesvol ingesteld! U kunt nu inloggen.'),
           backgroundColor: Colors.green,
         ),
       );
-
-      await _supabase.auth.signOut();
 
       if (!mounted) return;
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
@@ -119,6 +134,69 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isSessionCheckComplete) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF5F5F7),
+        body: Center(child: CupertinoActivityIndicator()),
+      );
+    }
+
+    if (_isLinkInvalidOrExpired) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F7),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.link_off_rounded,
+                      size: 40,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Link ongeldig of verlopen',
+                    style: GoogleFonts.lato(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Vraag een nieuwe link aan via inloggen of gebruik de meest recente e-mail.',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton(
+                      onPressed: _logoutToLogin,
+                      child: const Text('Terug naar inloggen'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: Center(
