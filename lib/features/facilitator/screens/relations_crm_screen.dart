@@ -227,6 +227,22 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
     return (_totalClients / _quotesTotal) * 100.0;
   }
 
+  void _goRelationNew() {
+    Navigator.of(context)
+        .push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const RelationDetailScreen(
+              bedrijfId: null,
+              createAsKlant: true,
+            ),
+          ),
+        )
+        .then((_) {
+      if (!mounted) return;
+      _loadAll();
+    });
+  }
+
   // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
@@ -256,6 +272,14 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
+      ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: mobileNavBuffer),
+        child: FloatingActionButton(
+          onPressed: _goRelationNew,
+          tooltip: 'Nieuwe relatie',
+          child: const Icon(Icons.add_rounded),
+        ),
       ),
       body: SelectionArea(
         child: SafeArea(

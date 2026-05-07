@@ -28,7 +28,9 @@ class _OpnameEditModalState extends State<OpnameEditModal> {
   final _contact = TextEditingController();
   final _email = TextEditingController();
   final _telefoon = TextEditingController();
-  final _adres = TextEditingController();
+  final _straat = TextEditingController();
+  final _postcode = TextEditingController();
+  final _plaats = TextEditingController();
   final _notities = TextEditingController();
 
   String? _werkRegio;
@@ -57,7 +59,9 @@ class _OpnameEditModalState extends State<OpnameEditModal> {
     _contact.dispose();
     _email.dispose();
     _telefoon.dispose();
-    _adres.dispose();
+    _straat.dispose();
+    _postcode.dispose();
+    _plaats.dispose();
     _notities.dispose();
     super.dispose();
   }
@@ -105,6 +109,17 @@ class _OpnameEditModalState extends State<OpnameEditModal> {
 
   String _t(dynamic v) => (v ?? '').toString().trim();
 
+  String _buildAdresVolledig() {
+    final straatTxt = _straat.text.trim();
+    final pcTxt = _postcode.text.trim();
+    final plaatsTxt = _plaats.text.trim();
+
+    final tail = [pcTxt, plaatsTxt].where((s) => s.isNotEmpty).join(' ').trim();
+    if (tail.isEmpty) return straatTxt;
+    if (straatTxt.isEmpty) return tail;
+    return '$straatTxt, $tail'.trim();
+  }
+
   static const _statusOptions = <String>[
     'gepland',
     'voltooid',
@@ -144,7 +159,10 @@ class _OpnameEditModalState extends State<OpnameEditModal> {
         _contact.text = _t(row['contactpersoon']);
         _email.text = _t(row['email']);
         _telefoon.text = _t(row['telefoon']);
-        _adres.text = _t(row['adres_volledig']);
+        // Bij edit vullen we straat met de volledige string; splitsen is te foutgevoelig.
+        _straat.text = _t(row['adres_volledig']);
+        _postcode.text = '';
+        _plaats.text = '';
         _notities.text = _t(row['notities']);
         final r = _t(row['werk_regio']);
         _werkRegio = OpnameAfspraakFormSheet.regioOptions.contains(r)
@@ -192,17 +210,26 @@ class _OpnameEditModalState extends State<OpnameEditModal> {
       );
       return;
     }
+    if (_straat.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Straat & huisnummer is verplicht.', style: GoogleFonts.lato()),
+        ),
+      );
+      return;
+    }
     setState(() {
       _saving = true;
     });
     final messenger = ScaffoldMessenger.of(context);
     try {
+      final adresVolledig = _buildAdresVolledig();
       final payload = <String, dynamic>{
         'bedrijfsnaam': _bed.text.trim(),
         'contactpersoon': _contact.text.trim(),
         'email': _email.text.trim(),
         'telefoon': _telefoon.text.trim(),
-        'adres_volledig': _adres.text.trim(),
+        'adres_volledig': adresVolledig,
         'notities': _notities.text.trim(),
         'werk_regio': _werkRegio ?? OpnameAfspraakFormSheet.regioOptions.first,
         'status': _status ?? 'gepland',
@@ -339,9 +366,26 @@ class _OpnameEditModalState extends State<OpnameEditModal> {
                           ),
                           const SizedBox(height: 12),
                           TextField(
-                            controller: _adres,
-                            maxLines: 2,
-                            decoration: _fieldDec('Adres (volledig)'),
+                            controller: _straat,
+                            decoration: _fieldDec('Straat & Huisnummer'),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _postcode,
+                                  decoration: _fieldDec('Postcode'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  controller: _plaats,
+                                  decoration: _fieldDec('Plaatsnaam'),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                           TextField(

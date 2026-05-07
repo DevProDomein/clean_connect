@@ -799,11 +799,13 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                       TextFormField(
                         controller: _contactTelefoon,
                         decoration:
-                            _fieldDecoration(context, 'Telefoonnummer *', icon: Icons.phone_outlined),
+                            _fieldDecoration(context, 'Telefoonnummer', icon: Icons.phone_outlined),
                         keyboardType: TextInputType.phone,
                         style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Telefoonnummer is verplicht' : null,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return null;
+                          return null;
+                        },
                       ),
                     ],
                   ),

@@ -48,18 +48,33 @@ class OpnameAfspraakFormSheet {
     final contact = TextEditingController();
     final email = TextEditingController();
     final tel = TextEditingController();
-    final adres = TextEditingController();
+    final straat = TextEditingController();
+    final postcode = TextEditingController();
+    final plaats = TextEditingController();
     String? regio = regioOptions.first;
     DateTime? dag = DateTime.now();
     var start = const TimeOfDay(hour: 9, minute: 0);
     var end = const TimeOfDay(hour: 10, minute: 0);
+
+    String buildAdresVolledig() {
+      final straatTxt = straat.text.trim();
+      final pcTxt = postcode.text.trim();
+      final plaatsTxt = plaats.text.trim();
+
+      final tail = [pcTxt, plaatsTxt].where((s) => s.isNotEmpty).join(' ').trim();
+      if (tail.isEmpty) return straatTxt;
+      if (straatTxt.isEmpty) return tail;
+      return '$straatTxt, $tail'.trim();
+    }
 
     void disposeCtrls() {
       bed.dispose();
       contact.dispose();
       email.dispose();
       tel.dispose();
-      adres.dispose();
+      straat.dispose();
+      postcode.dispose();
+      plaats.dispose();
     }
 
     await showModalBottomSheet<void>(
@@ -174,8 +189,26 @@ class OpnameAfspraakFormSheet {
                           ),
                           const SizedBox(height: 12),
                           TextField(
-                            controller: adres,
-                            decoration: _fieldDec(null, label: 'Adres'),
+                            controller: straat,
+                            decoration: _fieldDec(null, label: 'Straat & Huisnummer'),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: postcode,
+                                  decoration: _fieldDec(null, label: 'Postcode'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  controller: plaats,
+                                  decoration: _fieldDec(null, label: 'Plaatsnaam'),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                           DropdownButtonFormField<String>(
@@ -286,6 +319,17 @@ class OpnameAfspraakFormSheet {
                                 );
                                 return;
                               }
+                              if (straat.text.trim().isEmpty) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Straat & huisnummer is verplicht.',
+                                      style: GoogleFonts.lato(),
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
                               if (dag == null) {
                                 messenger.showSnackBar(
                                   SnackBar(
@@ -300,12 +344,13 @@ class OpnameAfspraakFormSheet {
                               String tStr(TimeOfDay t) =>
                                   '${t.hour.toString().padLeft(2, '0')}:'
                                   '${t.minute.toString().padLeft(2, '0')}:00';
+                              final adresVolledig = buildAdresVolledig();
                               final payload = {
                                 'bedrijfsnaam': bed.text.trim(),
                                 'contactpersoon': contact.text.trim(),
                                 'email': email.text.trim(),
                                 'telefoon': tel.text.trim(),
-                                'adres_volledig': adres.text.trim(),
+                                'adres_volledig': adresVolledig,
                                 'werk_regio': regio ?? regioOptions.first,
                                 'geplande_datum': DateFormat('yyyy-MM-dd')
                                     .format(dag!),

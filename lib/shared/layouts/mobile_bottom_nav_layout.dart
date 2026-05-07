@@ -83,6 +83,9 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
           'planbord',
           'crm',
           'offertes',
+          // Sales Center shortcuts (dynamic menu items)
+          'opnames-leads',
+          'calculaties-offertes',
           'projecten',
           'contracts',
           'planning-agenda',
@@ -142,6 +145,18 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
       case 'offertes':
         return (
           label: 'Offertes',
+          icon: Icons.request_quote_outlined,
+          screen: const QuoteOverviewScreen(),
+        );
+      case 'opnames-leads':
+        return (
+          label: 'Opnames & Leads',
+          icon: Icons.groups_2_outlined,
+          screen: const facilitator_crm.RelationsCrmScreen(),
+        );
+      case 'calculaties-offertes':
+        return (
+          label: 'Calculaties & Offertes',
           icon: Icons.request_quote_outlined,
           screen: const QuoteOverviewScreen(),
         );

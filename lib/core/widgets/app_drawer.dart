@@ -383,7 +383,7 @@ class AppDrawerContent extends StatelessWidget {
                             title: 'Klantbeheer',
                             screen: isDesktop
                                 ? const facilitator_crm.RelationsCrmScreen()
-                                : const MobileBottomNavLayout(initialKey: 'crm'),
+                                : const facilitator_crm.RelationsCrmScreen(),
                           ),
                           navTile(
                             name: '/facilitator/projecten',
@@ -391,7 +391,7 @@ class AppDrawerContent extends StatelessWidget {
                             title: 'Projecten',
                             screen: isDesktop
                                 ? const ProjectOverviewScreen()
-                                : const MobileBottomNavLayout(initialKey: 'projecten'),
+                                : const ProjectOverviewScreen(),
                           ),
                           navTile(
                             name: '/facilitator/contracts',
@@ -399,7 +399,7 @@ class AppDrawerContent extends StatelessWidget {
                             title: 'Contractbeheer',
                             screen: isDesktop
                                 ? const ContractManagementScreen()
-                                : const MobileBottomNavLayout(initialKey: 'contracts'),
+                                : const ContractManagementScreen(),
                           ),
                         ],
                       ),
@@ -421,7 +421,7 @@ class AppDrawerContent extends StatelessWidget {
                               title: 'Calculatie & Offertes',
                               screen: isDesktop
                                   ? const QuoteOverviewScreen()
-                                  : const MobileBottomNavLayout(initialKey: 'offertes'),
+                                  : const QuoteOverviewScreen(),
                             ),
                             navTile(
                               name: '/facilitator/sales-centre',
@@ -429,7 +429,7 @@ class AppDrawerContent extends StatelessWidget {
                               title: 'Opnames & Leads',
                               screen: isDesktop
                                   ? const SalesCentreScreen()
-                                  : const MobileBottomNavLayout(initialKey: 'sales-centre'),
+                                  : const SalesCentreScreen(),
                             ),
                           ],
                         )
@@ -440,7 +440,7 @@ class AppDrawerContent extends StatelessWidget {
                           title: 'Calculatie & Offertes',
                           screen: isDesktop
                               ? const QuoteOverviewScreen()
-                              : const MobileBottomNavLayout(initialKey: 'offertes'),
+                              : const QuoteOverviewScreen(),
                         ),
                       navTile(
                         name: '/facilitator/planning',
@@ -456,7 +456,7 @@ class AppDrawerContent extends StatelessWidget {
                         title: 'Planning (Agenda)',
                         screen: isDesktop
                             ? const PlanningAgendaScreen()
-                            : const MobileBottomNavLayout(initialKey: 'planning-agenda'),
+                            : const PlanningAgendaScreen(),
                       ),
                       navTile(
                         name: '/facilitator/dks',
@@ -464,7 +464,7 @@ class AppDrawerContent extends StatelessWidget {
                         title: 'Kwaliteit (DKS)',
                         screen: isDesktop
                             ? const DksDashboardScreen()
-                            : const MobileBottomNavLayout(initialKey: 'dks'),
+                            : const DksDashboardScreen(),
                       ),
                       navTile(
                         name: '/facilitator/tickets',
