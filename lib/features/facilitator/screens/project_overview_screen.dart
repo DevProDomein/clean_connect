@@ -339,13 +339,18 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
     _fetchProjects();
   }
 
-  void _newProject() {
-    Navigator.of(context).push(
+  Future<void> _newProject() async {
+    final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         settings: const RouteSettings(name: '/facilitator/projects/new'),
         builder: (_) => const ProjectCreateHeaderScreen(),
       ),
     );
+
+    if (!mounted) return;
+    if (result == true) {
+      _fetchProjects();
+    }
   }
 
   void _openProjectDetail(String? projectId) {

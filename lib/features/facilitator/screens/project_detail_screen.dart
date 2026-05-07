@@ -77,6 +77,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   String _text(dynamic v) => (v ?? '').toString().trim();
 
+  double _asDouble(dynamic v) {
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    if (v is num) return v.toDouble();
+    final s = _text(v).replaceAll(',', '.');
+    return double.tryParse(s) ?? 0.0;
+  }
+
   void _markDirty() {
     if (_isDirty) return;
     setState(() => _isDirty = true);
@@ -825,6 +833,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final statusLabel =
         _status.isEmpty ? '—' : '${_status[0].toUpperCase()}${_status.substring(1)}';
     final regioLabel = _werkRegio?.isEmpty ?? true ? '—' : _werkRegio!;
+    final isIncidenteel =
+        _text(_project?['frequentie_type']).toLowerCase() == 'incidenteel';
+    final vastePrijs = _asDouble(_project?['vaste_prijs_per_beurt']);
 
     return Form(
       key: _formKey,
@@ -888,6 +899,34 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             onChanged: (_) => _markDirty(),
           ),
           const SizedBox(height: 18),
+          if (isIncidenteel && vastePrijs > 0) ...[
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+              ),
+              child: ListTile(
+                leading: Icon(Icons.euro_rounded, color: _blue.withValues(alpha: 0.9)),
+                title: Text(
+                  'Vaste prijs per beurt',
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w900,
+                    color: _navy,
+                  ),
+                ),
+                trailing: Text(
+                  '€ ${vastePrijs.toStringAsFixed(2)}',
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w900,
+                    color: _navy,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+          ],
           Tooltip(
             message:
                 'Werkdagen zijn vastgezet. Neem contact op met support om dit te wijzigen.',
