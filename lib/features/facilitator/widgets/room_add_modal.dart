@@ -7,10 +7,12 @@ class RoomAddModal extends StatefulWidget {
     super.key,
     required this.offerteId,
     required this.onSaved,
+    this.existingRoom,
   });
 
   final String offerteId;
   final VoidCallback onSaved;
+  final Map<String, dynamic>? existingRoom;
 
   @override
   State<RoomAddModal> createState() => _RoomAddModalState();
@@ -125,12 +127,151 @@ class _RoomAddModalState extends State<RoomAddModal> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybePrefillExistingRoom());
+  }
+
+  @override
   void dispose() {
     _naamController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchTakenVoorCategorie(String dbCategorie) async {
+  String _text(dynamic v) => (v ?? '').toString().trim();
+
+  Future<void> _deleteExistingRoom() async {
+    final room = widget.existingRoom;
+    if (room == null) return;
+    final roomId = room['id'];
+    if (roomId == null) return;
+
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            'Bevestigen',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            'Weet je zeker dat je deze ruimte wilt verwijderen?',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(
+                'Annuleren',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red.shade700,
+              ),
+              child: Text(
+                'Verwijderen',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final client = Supabase.instance.client;
+      await client
+          .from('offerte_ruimte_diensten')
+          .delete()
+          .eq('offerte_ruimte_id', roomId);
+      await client.from('offerte_ruimtes').delete().eq('id', roomId);
+
+      if (!mounted) return;
+      widget.onSaved();
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade800,
+          content: Text(
+            'Verwijderen mislukt: $e',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  String? _uiCategoryForDb(String? dbCategorie) {
+    final needle = (dbCategorie ?? '').trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    for (final e in _categorieMapping.entries) {
+      if (e.value.trim().toLowerCase() == needle) return e.key;
+    }
+    return null;
+  }
+
+  Future<void> _maybePrefillExistingRoom() async {
+    final room = widget.existingRoom;
+    if (room == null) return;
+
+    final roomId = room['id'];
+    if (roomId == null) return;
+
+    final naam = _text(room['naam_in_pand']);
+    final dbCategorie = _text(room['ruimte_categorie']);
+    final uiCategorie = _uiCategoryForDb(dbCategorie);
+    final grootte = _text(room['grootte_label']).isEmpty ? 'A' : _text(room['grootte_label']);
+    final parsedAantal = int.tryParse(_text(room['aantal_identiek'])) ?? 1;
+    final aantal = parsedAantal < 1 ? 1 : parsedAantal;
+
+    setState(() {
+      _naamController.text = naam;
+      _geselecteerdeGrootte = grootte;
+      _aantal = aantal;
+      _geselecteerdeCategorieUi = uiCategorie;
+    });
+
+    if (uiCategorie != null) {
+      // Load available tasks for the category without wiping the selections.
+      await _fetchTakenVoorCategorie(_categorieMapping[uiCategorie]!, clearSelections: false);
+    }
+
+    try {
+      final res = await Supabase.instance.client
+          .from('offerte_ruimte_diensten')
+          .select('taak_id')
+          .eq('offerte_ruimte_id', roomId);
+      final ids = (res as List)
+          .map((r) => (r as Map)['taak_id']?.toString() ?? '')
+          .where((s) => s.trim().isNotEmpty)
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() {
+        _geselecteerdeTakenIds
+          ..clear()
+          ..addAll(ids);
+      });
+    } catch (e) {
+      // Non-fatal: the room can still be edited; selection can be re-done.
+      debugPrint('Error loading room tasks: $e');
+    }
+  }
+
+  Future<void> _fetchTakenVoorCategorie(
+    String dbCategorie, {
+    bool clearSelections = true,
+  }) async {
     setState(() => _isLoadingTaken = true);
     try {
       final response = await Supabase.instance.client
@@ -141,7 +282,9 @@ class _RoomAddModalState extends State<RoomAddModal> {
         
       setState(() {
         _beschikbareTaken = List<Map<String, dynamic>>.from(response);
-        _geselecteerdeTakenIds.clear(); // Always clear selections when changing category
+        if (clearSelections) {
+          _geselecteerdeTakenIds.clear(); // Always clear selections when changing category
+        }
         _isLoadingTaken = false;
       });
     } catch (e) {
@@ -168,39 +311,71 @@ class _RoomAddModalState extends State<RoomAddModal> {
     setState(() => _isSaving = true);
     try {
       final client = Supabase.instance.client;
-      final response = await client
-          .from('offerte_ruimtes')
-          .insert({
-            'offerte_id': widget.offerteId,
-            'naam_in_pand': naam,
-            'ruimte_categorie': _categorieMapping[_geselecteerdeCategorieUi],
-            'grootte_label': _geselecteerdeGrootte,
-            'aantal_identiek': _aantal,
-          })
-          .select('id')
-          .single();
+      final existing = widget.existingRoom;
 
-      final ruimteId = response['id'];
-      if (ruimteId == null) {
-        throw StateError('Ruimte is aangemaakt zonder id.');
+      if (existing == null) {
+        final response = await client
+            .from('offerte_ruimtes')
+            .insert({
+              'offerte_id': widget.offerteId,
+              'naam_in_pand': naam,
+              'ruimte_categorie': _categorieMapping[_geselecteerdeCategorieUi],
+              'grootte_label': _geselecteerdeGrootte,
+              'aantal_identiek': _aantal,
+            })
+            .select('id')
+            .single();
+
+        final ruimteId = response['id'];
+        if (ruimteId == null) {
+          throw StateError('Ruimte is aangemaakt zonder id.');
+        }
+
+        final inserts = _geselecteerdeTakenIds
+            .map(
+              (taakId) => {
+                'offerte_ruimte_id': ruimteId,
+                'taak_id': taakId,
+              },
+            )
+            .toList(growable: false);
+        await client.from('offerte_ruimte_diensten').insert(inserts);
+      } else {
+        final ruimteId = existing['id'];
+        if (ruimteId == null) {
+          throw StateError('Ruimte-ID ontbreekt. Bijwerken is niet mogelijk.');
+        }
+
+        // UPDATE offerte_ruimtes
+        await client.from('offerte_ruimtes').update({
+          'naam_in_pand': naam,
+          'ruimte_categorie': _categorieMapping[_geselecteerdeCategorieUi],
+          'grootte_label': _geselecteerdeGrootte,
+          'aantal_identiek': _aantal,
+        }).eq('id', ruimteId);
+
+        // Clear linked tasks
+        await client
+            .from('offerte_ruimte_diensten')
+            .delete()
+            .eq('offerte_ruimte_id', ruimteId);
+
+        // Re-link via existing RPC
+        await client.rpc(
+          'bulk_voeg_taken_toe',
+          params: {
+            'p_offerte_ruimte_id': ruimteId,
+            'p_taak_ids': _geselecteerdeTakenIds,
+          },
+        );
       }
-
-      final inserts = _geselecteerdeTakenIds
-          .map(
-            (taakId) => {
-              'offerte_ruimte_id': ruimteId,
-              'taak_id': taakId,
-            },
-          )
-          .toList(growable: false);
-      await client.from('offerte_ruimte_diensten').insert(inserts);
 
       if (!mounted) return;
       widget.onSaved();
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      _showError('Ruimte toevoegen mislukt: $e');
+      _showError('Ruimte opslaan mislukt: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -269,9 +444,24 @@ class _RoomAddModalState extends State<RoomAddModal> {
                   padding: const EdgeInsets.fromLTRB(20, 14, 14, 8),
                   child: Row(
                     children: [
+                      if (widget.existingRoom != null)
+                        TextButton.icon(
+                          onPressed: _isSaving ? null : _deleteExistingRoom,
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                          ),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: Text(
+                            'Verwijderen',
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      if (widget.existingRoom != null) const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Nieuwe Ruimte Toevoegen',
+                          widget.existingRoom == null
+                              ? 'Nieuwe Ruimte Toevoegen'
+                              : 'Ruimte Bewerken',
                           style: GoogleFonts.inter(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,

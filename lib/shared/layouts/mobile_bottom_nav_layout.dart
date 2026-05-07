@@ -63,7 +63,6 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
 
   List<String> _keysForRole(UserRole? role) {
     final up = context.read<UserProvider>();
-    final initialKey = (widget.initialKey ?? '').trim().toLowerCase();
 
     switch (role) {
       case UserRole.operator:
@@ -72,12 +71,9 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
             .map((e) => e.trim().toLowerCase())
             .where((k) => allowed.contains(k))
             .toList(growable: false);
-        final out = (prefs.isNotEmpty ? prefs : _operatorFallbackKeys)
-            .toList(growable: true);
-        if (initialKey.isNotEmpty && allowed.contains(initialKey) && !out.contains(initialKey)) {
-          out.add(initialKey);
-        }
-        return out;
+        return (prefs.isNotEmpty ? prefs : _operatorFallbackKeys)
+            .take(3)
+            .toList(growable: false);
       case UserRole.facilitator:
       default:
         final allowed = <String>{
@@ -97,12 +93,9 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
             .map((e) => e.trim().toLowerCase())
             .where((k) => allowed.contains(k))
             .toList(growable: false);
-        final out = (prefs.isNotEmpty ? prefs : _facilitatorFallbackKeys)
-            .toList(growable: true);
-        if (initialKey.isNotEmpty && allowed.contains(initialKey) && !out.contains(initialKey)) {
-          out.add(initialKey);
-        }
-        return out;
+        return (prefs.isNotEmpty ? prefs : _facilitatorFallbackKeys)
+            .take(3)
+            .toList(growable: false);
     }
   }
 
@@ -214,26 +207,10 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
     final isDesktop = MediaQuery.of(context).size.width > 800;
     final role = context.watch<UserProvider>().role;
     final keys = _keysForRole(role);
-    final initialKey = (widget.initialKey ?? '').trim().toLowerCase();
 
-    // Enforce the 3-item limit for the floating mobile pill.
-    // If we were asked to open a specific page (initialKey), keep the pill at 3
-    // but ensure that page is reachable/selected.
-    final displayKeys = keys.take(3).toList(growable: true);
-    if (initialKey.isNotEmpty &&
-        keys.contains(initialKey) &&
-        !displayKeys.contains(initialKey)) {
-      if (displayKeys.length < 3) {
-        displayKeys.add(initialKey);
-      } else {
-        displayKeys[2] = initialKey;
-      }
-    }
-
-    final mapped = displayKeys.map(_mapKey).toList(growable: false);
-    final safeIndex = (_index >= 0 && _index < mapped.length)
-        ? _index
-        : (initialKey.isNotEmpty ? displayKeys.indexOf(initialKey).clamp(0, mapped.length - 1) : 0);
+    // IMPORTANT: Strictly honor the saved preferences (max 3). No smart overrides.
+    final mapped = keys.map(_mapKey).toList(growable: false);
+    final safeIndex = (_index >= 0 && _index < mapped.length) ? _index : 0;
 
     final body = IndexedStack(
       index: safeIndex,

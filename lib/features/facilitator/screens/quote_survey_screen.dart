@@ -96,6 +96,45 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     );
   }
 
+  Future<void> _openRoomModal({
+    required BuildContext context,
+    Map<String, dynamic>? existingRoom,
+  }) async {
+    final didSave = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width > 800
+            ? 1200
+            : MediaQuery.of(context).size.width,
+      ),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      builder: (_) => SelectionArea(
+        child: RoomAddModal(
+          offerteId: widget.offerteId,
+          existingRoom: existingRoom,
+          onSaved: () {
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                behavior: SnackBarBehavior.floating,
+                content: Text(
+                  existingRoom == null ? 'Ruimte toegevoegd.' : 'Ruimte bijgewerkt.',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    if (didSave == true && mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _reviseToConcept(String offerteId) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -346,30 +385,52 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             size: 22,
           ),
         ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                naam,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
-                  letterSpacing: -0.2,
-                ),
+        title: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: AppSupabase.client
+              .from('offertes')
+              .stream(primaryKey: ['id'])
+              .eq('id', widget.offerteId),
+          builder: (context, snapshot) {
+            final offerte = snapshot.hasData ? _extractOfferte(snapshot.data!) : null;
+            final status = _statusOf(offerte);
+            final canEdit = _isConceptStatus(status);
+            return InkWell(
+              onTap: !canEdit
+                  ? null
+                  : () => _openRoomModal(context: context, existingRoom: room),
+              borderRadius: BorderRadius.circular(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      naam,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'x $aantal',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w900,
+                      color: theme.primaryColor,
+                      fontSize: 16,
+                    ),
+                  ),
+                  if (canEdit) ...[
+                    const SizedBox(width: 10),
+                    Icon(Icons.edit_note_rounded,
+                        color: cs.primary.withValues(alpha: 0.9)),
+                  ],
+                ],
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'x $aantal',
-              style: GoogleFonts.inter(
-                fontWeight: FontWeight.w900,
-                color: theme.primaryColor,
-                fontSize: 16,
-              ),
-            ),
-          ],
+            );
+          },
         ),
         subtitle: Text(
           categorie,
@@ -577,38 +638,12 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
           final status = _statusOf(offerte);
           final isConcept = _isConceptStatus(status);
           if (!isConcept) return const SizedBox.shrink();
+          final isMobileCompact = MediaQuery.of(context).size.width < 600;
           return Padding(
-            padding: const EdgeInsets.only(bottom: 260),
+            padding: EdgeInsets.only(bottom: isMobileCompact ? 200 : 260),
             child: FloatingActionButton.extended(
               onPressed: () {
-                showModalBottomSheet<void>(
-                  context: context,
-                  isScrollControlled: true,
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width > 800
-                        ? 1200
-                        : MediaQuery.of(context).size.width,
-                  ),
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  builder: (_) => SelectionArea(
-                    child: RoomAddModal(
-                      offerteId: widget.offerteId,
-                      onSaved: () {
-                        setState(() {});
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            content: Text(
-                              'Ruimte toegevoegd.',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                );
+                _openRoomModal(context: context);
               },
               backgroundColor: cs.primary,
               foregroundColor: Colors.white,
@@ -643,6 +678,17 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             final regulier = _asInt(offerte?['regulier_aantal_beurten']);
             final frequent = _asInt(offerte?['frequent_aantal_beurten']);
             final periodiek = _asInt(offerte?['periodiek_aantal_beurten']);
+            final rUren = _asDouble(offerte?['regulier_uren_per_beurt_afgerond']);
+            final fUren = _asDouble(offerte?['frequent_uren_per_beurt_afgerond']);
+            final pUren = _asDouble(offerte?['periodiek_uren_per_beurt_afgerond']);
+            double roundToQuarter(double v) => (v * 4).roundToDouble() / 4.0;
+            String fmtQuarter(double v) {
+              final q = roundToQuarter(v);
+              // Trim trailing zeros for a compact UI.
+              var s = q.toStringAsFixed(2);
+              s = s.replaceFirst(RegExp(r'\.?0+$'), '');
+              return s;
+            }
 
             return StreamBuilder<List<Map<String, dynamic>>>(
               stream: ruimtesStream,
@@ -661,6 +707,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                 }
 
                 Widget buildFinanceColumn() {
+                  final isCompact = MediaQuery.of(context).size.width < 600;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -669,7 +716,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                         style: GoogleFonts.inter(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
-                          fontSize: 20,
+                          fontSize: isCompact ? 18 : 20,
                           letterSpacing: -0.4,
                         ),
                       ),
@@ -679,7 +726,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                         style: GoogleFonts.inter(
                           color: Colors.white70,
                           fontWeight: FontWeight.w600,
-                          fontSize: 12,
+                          fontSize: isCompact ? 11 : 12,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -688,9 +735,46 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                         style: GoogleFonts.inter(
                           color: Colors.white,
                           fontWeight: FontWeight.w800,
-                          fontSize: 15,
+                          fontSize: isCompact ? 13.5 : 15,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      if (roundToQuarter(rUren) > 0 ||
+                          roundToQuarter(fUren) > 0 ||
+                          roundToQuarter(pUren) > 0)
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 6,
+                          children: [
+                            if (roundToQuarter(rUren) > 0)
+                              Text(
+                                'Regulier: ${fmtQuarter(rUren)} uur',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: isCompact ? 12.5 : 14,
+                                ),
+                              ),
+                            if (roundToQuarter(fUren) > 0)
+                              Text(
+                                'Frequent: ${fmtQuarter(fUren)} uur',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: isCompact ? 12.5 : 14,
+                                ),
+                              ),
+                            if (roundToQuarter(pUren) > 0)
+                              Text(
+                                'Periodiek: ${fmtQuarter(pUren)} uur',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: isCompact ? 12.5 : 14,
+                                ),
+                              ),
+                          ],
+                        ),
                     ],
                   );
                 }
@@ -780,9 +864,10 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                   );
                 }
 
+                final isCompact = MediaQuery.of(context).size.width < 600;
                 return Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(24),
+                  padding: EdgeInsets.all(isCompact ? 12 : 24),
                   decoration: BoxDecoration(
                     color: const Color(0xFF15141F),
                     borderRadius: const BorderRadius.only(
@@ -862,7 +947,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                       side: BorderSide(
                                         color: Colors.white.withValues(alpha: 0.30),
                                       ),
-                                      minimumSize: const Size.fromHeight(54),
+                                      minimumSize: Size.fromHeight(isCompact ? 48 : 54),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(24),
                                       ),
@@ -890,7 +975,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                             backgroundColor: cs.primary,
                                             foregroundColor: Colors.white,
                                             elevation: 0,
-                                            minimumSize: const Size.fromHeight(54),
+                                            minimumSize: Size.fromHeight(isCompact ? 48 : 54),
                                             shape: RoundedRectangleBorder(
                                               borderRadius: BorderRadius.circular(24),
                                             ),
@@ -915,7 +1000,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                                 backgroundColor: cs.primary,
                                                 foregroundColor: Colors.white,
                                                 elevation: 0,
-                                                minimumSize: const Size.fromHeight(54),
+                                                minimumSize: Size.fromHeight(isCompact ? 48 : 54),
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius: BorderRadius.circular(24),
                                                 ),
@@ -941,7 +1026,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                                 backgroundColor: cs.primary,
                                                 foregroundColor: Colors.white,
                                                 elevation: 0,
-                                                minimumSize: const Size.fromHeight(54),
+                                                minimumSize: Size.fromHeight(isCompact ? 48 : 54),
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius: BorderRadius.circular(24),
                                                 ),

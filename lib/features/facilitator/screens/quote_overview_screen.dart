@@ -104,21 +104,33 @@ class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _openNewQuote,
-          backgroundColor: cs.primary,
-          foregroundColor: Colors.white,
-          extendedPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          icon: const Icon(Icons.add_rounded, size: 28),
-          label: Text(
-            'Nieuwe Offerte',
-            style: GoogleFonts.inter(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.2,
-            ),
-          ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: Builder(
+          builder: (context) {
+            final isMobile = MediaQuery.of(context).size.width < 800;
+            final fab = FloatingActionButton.extended(
+              onPressed: _openNewQuote,
+              backgroundColor: cs.primary,
+              foregroundColor: Colors.white,
+              extendedPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              icon: const Icon(Icons.add_rounded, size: 28),
+              label: Text(
+                'Nieuwe Offerte',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            );
+            return isMobile
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: 85),
+                    child: fab,
+                  )
+                : fab;
+          },
         ),
         body: SelectionArea(
           child: _loading

@@ -14,12 +14,14 @@ class UserProvider extends ChangeNotifier {
   final Set<String> _permissions = {};
   Object? _lastError;
 
-  List<String> _mobileMenuPreferences = const [
+  static const int _maxMobileMenuItems = 3;
+  static const List<String> _mobileMenuFallback = [
     'dashboard',
     'agenda',
     'tickets',
-    'crm',
   ];
+
+  List<String> _mobileMenuPreferences = _mobileMenuFallback;
 
   String? get userId => _userId;
   String? get email => _email;
@@ -209,12 +211,11 @@ class UserProvider extends ChangeNotifier {
     _role = null;
     _permissions.clear();
     _lastError = null;
-    _mobileMenuPreferences = const ['dashboard', 'agenda', 'tickets', 'crm'];
+    _mobileMenuPreferences = _mobileMenuFallback;
     notifyListeners();
   }
 
   List<String> _normalizeMobileMenuPrefs(dynamic raw) {
-    const fallback = ['dashboard', 'agenda', 'tickets', 'crm'];
     final out = <String>[];
     if (raw is List) {
       for (final v in raw) {
@@ -230,10 +231,10 @@ class UserProvider extends ChangeNotifier {
       }
     }
 
-    // Enforce 4 items for bottom nav.
-    final trimmed = out.where((e) => e.isNotEmpty).take(4).toList(growable: false);
-    if (trimmed.length == 4) return trimmed;
-    return fallback;
+    // Enforce 3 items for bottom nav.
+    final trimmed = out.where((e) => e.isNotEmpty).take(_maxMobileMenuItems).toList(growable: false);
+    if (trimmed.length == _maxMobileMenuItems) return trimmed;
+    return _mobileMenuFallback;
   }
 
   UserRole? _parseRole(String? raw) {

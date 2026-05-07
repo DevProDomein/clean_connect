@@ -604,6 +604,7 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
               label: '+ Nieuwe Afspraak',
               icon: Icons.add_alert_outlined,
             ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -612,7 +613,8 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
     required String label,
     required IconData icon,
   }) {
-    return FloatingActionButton.extended(
+    final isMobile = MediaQuery.of(context).size.width < 800;
+    final fab = FloatingActionButton.extended(
       onPressed: onPressed,
       backgroundColor: _orange,
       foregroundColor: Colors.white,
@@ -626,6 +628,12 @@ class _SalesCentreScreenState extends State<SalesCentreScreen>
         style: GoogleFonts.lato(fontWeight: FontWeight.w900, fontSize: 15),
       ),
     );
+    return isMobile
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: 85),
+            child: fab,
+          )
+        : fab;
   }
 
   Widget _buildLeadsBody() {
