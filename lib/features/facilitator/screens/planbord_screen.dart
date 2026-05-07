@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -35,6 +37,20 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   int? _selectedResultIndex;
   final TextEditingController _hoursController = TextEditingController();
   double _shiftHours = 0.25;
+
+  // Smart Planner UX extras (ONLY Smart Planner tab)
+  String? _smartActiveOpdrachtId;
+  int _smartNeededOperators = 1;
+  bool _smartLoadingReedsIngepland = false;
+  String? _smartReedsIngeplandStart; // "HH:mm"
+  String? _smartSuggestedTijd; // "HH:mm"
+  String? _handmatigeSmartTijd; // "HH:mm"
+
+  // HARD availability check (DB-backed) for Smart Planner dropdown
+  List<Map<String, dynamic>> _tijdOpties = const <Map<String, dynamic>>[];
+  Map<String, List<Map<String, dynamic>>> _afsprakenPerDatum =
+      const <String, List<Map<String, dynamic>>>{};
+  bool _isTijdenLaden = false;
 
   // Manual planning (table_calendar) state
   DateTime _focusedDay = DateTime.now();
@@ -91,6 +107,274 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final minute = parts.length > 1 ? int.tryParse(parts[1]) : null;
     if (hour == null || minute == null) return null;
     return TimeOfDay(hour: hour.clamp(0, 23), minute: minute.clamp(0, 59));
+  }
+
+  TimeOfDay _timeFromMinutes(int totalMinutes) {
+    final m = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+    return TimeOfDay(hour: m ~/ 60, minute: m % 60);
+  }
+
+  String _timeToHuman(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  int _timeToMinutes(String t) {
+    final raw = t.trim();
+    if (raw.isEmpty) return 0;
+    final hhmm = raw.length >= 5 ? raw.substring(0, 5) : raw;
+    final parts = hhmm.split(':');
+    final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return (h * 60) + m;
+  }
+
+  bool _heeftOverlapVoorDag({
+    required String datumDb,
+    required int startMin,
+    required int eindMin,
+  }) {
+    final afspraken = _afsprakenPerDatum[datumDb] ?? const <Map<String, dynamic>>[];
+    for (final a in afspraken) {
+      final stRaw = _text(a['starttijd']);
+      final etRaw = _text(a['eindtijd']);
+      if (stRaw.isEmpty || etRaw.isEmpty) continue;
+      final aStart = _timeToMinutes(stRaw);
+      final aEnd = _timeToMinutes(etRaw);
+      if (startMin < aEnd && eindMin > aStart) return true;
+    }
+    return false;
+  }
+
+  String? _zoekEersteVrijeTijdVoorDag({
+    required String datumDb,
+    required int vensterStartMin,
+    required int vensterEindMin,
+    required int duurMin,
+  }) {
+    for (int actuele = vensterStartMin;
+        (actuele + duurMin) <= vensterEindMin;
+        actuele += 15) {
+      if (!_heeftOverlapVoorDag(
+        datumDb: datumDb,
+        startMin: actuele,
+        eindMin: actuele + duurMin,
+      )) {
+        final h = actuele ~/ 60;
+        final m = actuele % 60;
+        return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+      }
+    }
+    return null;
+  }
+
+  Future<void> _berekenVeiligeTijden({
+    required String operatorId,
+    required List<String> datumsDb, // yyyy-MM-dd
+    required double benodigdeUren,
+    required String vensterStart, // "HH:mm"
+    required String vensterEind, // "HH:mm"
+  }) async {
+    if (_isTijdenLaden) return;
+    setState(() => _isTijdenLaden = true);
+    try {
+      final bestaandeAfspraken = await AppSupabase.client
+          .from('opdracht_planning')
+          .select('starttijd, eindtijd, geplande_datum')
+          .eq('operator_id', operatorId)
+          .inFilter('geplande_datum', datumsDb);
+
+      final afsprakenByDate = <String, List<Map<String, dynamic>>>{};
+      for (final raw in (bestaandeAfspraken as List)) {
+        if (raw is! Map) continue;
+        final m = Map<String, dynamic>.from(raw);
+        final d = _text(m['geplande_datum']);
+        if (d.isEmpty) continue;
+        afsprakenByDate.putIfAbsent(d, () => <Map<String, dynamic>>[]).add(m);
+      }
+
+      final int opdrachtMinuten = (benodigdeUren * 60).round();
+      final int startVensterMin = _timeToMinutes(vensterStart);
+      final int eindVensterMin = _timeToMinutes(vensterEind);
+
+      final opties = <Map<String, dynamic>>[];
+      final totaalDagen = datumsDb.length;
+
+      for (int actueleMinuten = startVensterMin;
+          (actueleMinuten + opdrachtMinuten) <= eindVensterMin;
+          actueleMinuten += 15) {
+        final potentieelEindMinuten = actueleMinuten + opdrachtMinuten;
+        var vrij = 0;
+        for (final d in datumsDb) {
+          final afspraken = afsprakenByDate[d] ?? const <Map<String, dynamic>>[];
+          var overlap = false;
+          for (final a in afspraken) {
+            final stRaw = _text(a['starttijd']);
+            final etRaw = _text(a['eindtijd']);
+            if (stRaw.isEmpty || etRaw.isEmpty) continue;
+            final aStart = _timeToMinutes(stRaw);
+            final aEnd = _timeToMinutes(etRaw);
+            if (actueleMinuten < aEnd && potentieelEindMinuten > aStart) {
+              overlap = true;
+              break;
+            }
+          }
+          if (!overlap) vrij++;
+        }
+
+        if (vrij == 0) continue;
+
+        final uren = actueleMinuten ~/ 60;
+        final minuten = actueleMinuten % 60;
+        final tijd = '${uren.toString().padLeft(2, '0')}:${minuten.toString().padLeft(2, '0')}';
+        final status = vrij == totaalDagen ? 'volledig' : 'beperkt';
+        opties.add({
+          'tijd': tijd,
+          'vrijeDagen': vrij,
+          'totaalDagen': totaalDagen,
+          'status': status,
+        });
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _afsprakenPerDatum = afsprakenByDate;
+        _tijdOpties = opties;
+        final cur = (_handmatigeSmartTijd ?? '').trim();
+        final tijden = opties.map((e) => _text(e['tijd'])).where((t) => t.isNotEmpty).toList();
+        if (tijden.isNotEmpty) {
+          if (cur.isEmpty || !tijden.contains(cur)) {
+            _handmatigeSmartTijd = tijden.first;
+          }
+        } else {
+          _handmatigeSmartTijd = null;
+        }
+      });
+    } catch (e) {
+      debugPrint('Fout bij berekenen veilige tijden: $e');
+      if (!mounted) return;
+      setState(() {
+        _tijdOpties = const <Map<String, dynamic>>[];
+        _afsprakenPerDatum = const <String, List<Map<String, dynamic>>>{};
+      });
+    } finally {
+      if (mounted) setState(() => _isTijdenLaden = false);
+    }
+  }
+
+  List<dynamic> _asPlanningList(dynamic raw) {
+    if (raw == null) return const <dynamic>[];
+    if (raw is List) return raw;
+    if (raw is String) {
+      try {
+        final decoded = jsonDecode(raw);
+        return decoded is List ? decoded : const <dynamic>[];
+      } catch (_) {
+        return const <dynamic>[];
+      }
+    }
+    return const <dynamic>[];
+  }
+
+  Future<void> _loadSmartReedsIngepland(String opdrachtId) async {
+    if (_smartLoadingReedsIngepland) return;
+    setState(() {
+      _smartLoadingReedsIngepland = true;
+      _smartReedsIngeplandStart = null;
+    });
+    try {
+      final res = await AppSupabase.client
+          .from('opdracht_planning')
+          .select('starttijd')
+          .eq('opdracht_id', opdrachtId)
+          .order('starttijd', ascending: true)
+          .limit(1)
+          .maybeSingle();
+      if (!mounted) return;
+      final raw = _text(res?['starttijd']);
+      setState(() {
+        _smartReedsIngeplandStart = raw.isEmpty ? null : (raw.length >= 5 ? raw.substring(0, 5) : raw);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _smartReedsIngeplandStart = null);
+    } finally {
+      if (mounted) setState(() => _smartLoadingReedsIngepland = false);
+    }
+  }
+
+  Future<void> _onSmartOperatorSelected(Map<String, dynamic> result) async {
+    setState(() {
+      _smartActiveOpdrachtId = null;
+      _smartNeededOperators = 1;
+      _smartReedsIngeplandStart = null;
+      _smartSuggestedTijd = null;
+      _handmatigeSmartTijd = null;
+      _tijdOpties = const <Map<String, dynamic>>[];
+      _afsprakenPerDatum = const <String, List<Map<String, dynamic>>>{};
+    });
+
+    final planning = _asPlanningList(result['voorgestelde_planning']);
+    if (planning.isEmpty) return;
+    final first = planning.first;
+    if (first is! Map) return;
+    final firstMap = Map<String, dynamic>.from(first);
+    final opdrachtId = _text(firstMap['opdracht_id'] ?? firstMap['id']);
+    if (opdrachtId.isEmpty) return;
+
+    final needed = _asInt(firstMap['benodigde_operators'], fallback: 0);
+    final neededFallback = needed > 0
+        ? needed
+        : _asInt(
+            _selectedProject?['standaard_aantal_operators'] ??
+                _selectedProject?['benodigde_operators'],
+            fallback: 1,
+          );
+
+    final suggested = _timeFromRaw(firstMap['starttijd'] ?? firstMap['tijdslot_start']) ??
+        _timeFromRaw(_selectedProject?['tijdslot_start']) ??
+        const TimeOfDay(hour: 8, minute: 0);
+
+    final windowStart =
+        _timeFromRaw(_selectedProject?['tijdslot_start']) ?? const TimeOfDay(hour: 8, minute: 0);
+    final windowEnd =
+        _timeFromRaw(_selectedProject?['tijdslot_eind']) ?? const TimeOfDay(hour: 17, minute: 0);
+
+    final urenPerShift =
+        double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
+            _shiftHours;
+
+    if (!mounted) return;
+    setState(() {
+      _smartActiveOpdrachtId = opdrachtId;
+      _smartNeededOperators = neededFallback;
+      _smartSuggestedTijd = _timeToHuman(suggested);
+      _handmatigeSmartTijd = _smartSuggestedTijd;
+    });
+
+    await _loadSmartReedsIngepland(opdrachtId);
+
+    final datumsDb = planning
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .map((m) => _text(m['geplande_datum']))
+        .where((d) => d.isNotEmpty)
+        .map((d) => d.contains('T') ? d.split('T').first : d)
+        .toSet()
+        .toList()
+      ..sort();
+
+    if (datumsDb.isNotEmpty && _text(result['operator_id']).isNotEmpty) {
+      await _berekenVeiligeTijden(
+        operatorId: _text(result['operator_id']),
+        datumsDb: datumsDb,
+        benodigdeUren: urenPerShift,
+        vensterStart: _text(_selectedProject?['tijdslot_start']).isEmpty
+            ? _timeToHuman(windowStart)
+            : _text(_selectedProject?['tijdslot_start']).substring(0, 5),
+        vensterEind: _text(_selectedProject?['tijdslot_eind']).isEmpty
+            ? _timeToHuman(windowEnd)
+            : _text(_selectedProject?['tijdslot_eind']).substring(0, 5),
+      );
+    }
   }
 
   double _availableWindowHours(Map<String, dynamic>? project) {
@@ -601,8 +885,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     }
   }
 
-  Border _resultBorder(String matchType, {bool selected = false}) {
+  Border _resultBorder(
+    String matchType, {
+    bool selected = false,
+    bool hasAnyFreeSlot = false,
+  }) {
     if (selected) return Border.all(color: const Color(0xFF0C66FF), width: 2.8);
+    if (hasAnyFreeSlot) return Border.all(color: Colors.green, width: 3);
     switch (matchType) {
       case 'varied_green':
         return Border.all(color: Colors.green, width: 3);
@@ -645,6 +934,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final name = _text(result['naam']).isEmpty ? 'Onbekende operator' : _text(result['naam']);
     final selected = _selectedResultIndex == index;
 
+    final hasAnyFreeSlot = _tijdOpties.isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -655,12 +946,17 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
               ? null
               : () {
                   setState(() => _selectedResultIndex = index);
+                  _onSmartOperatorSelected(result);
                 },
           child: Container(
             decoration: BoxDecoration(
               color: _resultBackground(matchType),
               borderRadius: BorderRadius.circular(24),
-              border: _resultBorder(matchType, selected: selected),
+              border: _resultBorder(
+                matchType,
+                selected: selected,
+                hasAnyFreeSlot: hasAnyFreeSlot,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.04),
@@ -749,6 +1045,94 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       ),
                     ),
                   ],
+                  if (selected) ...[
+                    const SizedBox(height: 12),
+                    if (_isTijdenLaden)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: LinearProgressIndicator(minHeight: 3),
+                      )
+                    else
+                      Builder(
+                        builder: (context) {
+                          final opties = _tijdOpties;
+                          final tijden = opties
+                              .map((e) => _text(e['tijd']))
+                              .where((t) => t.isNotEmpty)
+                              .toList(growable: false);
+
+                          return DropdownButtonFormField<String>(
+                        initialValue: (_handmatigeSmartTijd ?? '').trim().isEmpty
+                            ? null
+                            : _handmatigeSmartTijd,
+                        dropdownColor: const Color(0xFFF2F2F7),
+                        items: opties.map((opt) {
+                          final tijd = _text(opt['tijd']);
+                          final status = _text(opt['status']);
+                          final vrije = _asInt(opt['vrijeDagen']);
+                          final totaal = _asInt(opt['totaalDagen']);
+                          final isBeperkt = status == 'beperkt';
+                          final label = isBeperkt
+                              ? '$tijd (Beperkt beschikbaar: $vrije/$totaal dagen)'
+                              : '$tijd (Volledig beschikbaar)';
+                          return DropdownMenuItem<String>(
+                            value: tijd,
+                            child: isBeperkt
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.orange.withValues(alpha: 0.55),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      label,
+                                      style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                                    ),
+                                  )
+                                : Text(
+                                    label,
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                                  ),
+                          );
+                        }).toList(growable: false),
+                        onChanged: tijden.isEmpty
+                            ? null
+                            : (v) {
+                                final next = (v ?? '').trim();
+                                if (next.isEmpty) return;
+                                setState(() => _handmatigeSmartTijd = next);
+                              },
+                        decoration: InputDecoration(
+                          labelText: 'Kies definitieve starttijd',
+                          hintText: tijden.isEmpty
+                              ? 'Geen tijden beschikbaar voor deze operator'
+                              : null,
+                          filled: true,
+                          fillColor: const Color(0xFFF2F2F7),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.0),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.0),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.0),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                        ),
+                          );
+                        },
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -779,6 +1163,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             _selectedResultIndex! < filteredResults.length)
         ? filteredResults[_selectedResultIndex!]
         : null;
+
+    final showMultiOperatorWarning = _smartNeededOperators > 1 &&
+        (_smartReedsIngeplandStart != null && _smartReedsIngeplandStart!.isNotEmpty);
 
     final selectedProjectId = _text(_selectedProject?['project_id']).isNotEmpty
         ? _text(_selectedProject?['project_id'])
@@ -939,6 +1326,39 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (showMultiOperatorWarning) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: isDark ? 0.18 : 0.14),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: isDark ? 0.35 : 0.30),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              color: Colors.orange.shade700),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Let op: Er is al een operator ingepland voor deze opdracht '
+                              '(Starttijd: ${_smartReedsIngeplandStart!}). '
+                              'Probeer de nieuwe operator op dezelfde tijd te laten starten.',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface.withValues(alpha: 0.86),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Text(
                     'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
                     style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900),
@@ -1257,7 +1677,93 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: selectedResult == null ? null : () => _confirmBooking(selectedResult),
+                      onPressed: selectedResult == null
+                          ? null
+                          : () {
+                              // HARD BLOCK: only allow save when we have safe times
+                              if (_handmatigeSmartTijd == null ||
+                                  _tijdOpties.isEmpty) {
+                                return;
+                              }
+                              final suggested = (_smartSuggestedTijd ?? '').trim();
+                              final chosen = (_handmatigeSmartTijd ?? suggested).trim();
+                              final rawPlanning = selectedResult['voorgestelde_planning'];
+                              final planning = _asPlanningList(rawPlanning);
+                              if (chosen.isEmpty || planning.isEmpty || _smartActiveOpdrachtId == null) {
+                                _confirmBooking(selectedResult);
+                                return;
+                              }
+
+                              final hours =
+                                  double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
+                                      _shiftHours;
+                              final defaultDurMin = (hours * 60).round();
+
+                              final vensterStartMin = _timeToMinutes(
+                                _text(_selectedProject?['tijdslot_start']).isEmpty
+                                    ? '08:00'
+                                    : _text(_selectedProject?['tijdslot_start']).substring(0, 5),
+                              );
+                              final vensterEindMin = _timeToMinutes(
+                                _text(_selectedProject?['tijdslot_eind']).isEmpty
+                                    ? '17:00'
+                                    : _text(_selectedProject?['tijdslot_eind']).substring(0, 5),
+                              );
+
+                              final updatedList = planning.map((raw) {
+                                if (raw is! Map) return raw;
+                                final m = Map<String, dynamic>.from(raw);
+                                // Apply chosen time to ALL items in the series.
+                                final itemHours = _asDouble(
+                                  m['toegewezen_uren'] ??
+                                      m['uren_per_shift'] ??
+                                      m['duur_uren'] ??
+                                      m['uren'],
+                                  fallback: hours,
+                                );
+                                final durMin =
+                                    itemHours > 0 ? (itemHours * 60).round() : defaultDurMin;
+
+                                final rawDate = _text(m['geplande_datum']);
+                                final datumDb = rawDate.contains('T') ? rawDate.split('T').first : rawDate;
+                                if (datumDb.isEmpty) return null;
+
+                                // 1) Try chosen time on this day
+                                final chosenMin = _timeToMinutes(chosen);
+                                final chosenEnd = chosenMin + durMin;
+                                var definitiveMin = chosenMin;
+
+                                final hasOverlap = _heeftOverlapVoorDag(
+                                  datumDb: datumDb,
+                                  startMin: chosenMin,
+                                  eindMin: chosenEnd,
+                                );
+
+                                // 2) If overlap, find first available time in window for this day
+                                if (hasOverlap) {
+                                  final found = _zoekEersteVrijeTijdVoorDag(
+                                    datumDb: datumDb,
+                                    vensterStartMin: vensterStartMin,
+                                    vensterEindMin: vensterEindMin,
+                                    duurMin: durMin,
+                                  );
+                                  if (found == null) return null; // skip this day entirely
+                                  definitiveMin = _timeToMinutes(found);
+                                }
+
+                                final start = _timeFromMinutes(definitiveMin);
+                                final end = _timeFromMinutes(definitiveMin + durMin);
+                                m['starttijd'] = '${_timeToHuman(start)}:00';
+                                m['eindtijd'] = '${_timeToHuman(end)}:00';
+                                return m;
+                              }).whereType<Map>().toList(growable: false);
+
+                              final patched = Map<String, dynamic>.from(selectedResult);
+                              // Keep the same type as backend expects (string JSON vs list).
+                              patched['voorgestelde_planning'] =
+                                  rawPlanning is String ? jsonEncode(updatedList) : updatedList;
+                              _confirmBooking(patched);
+                            },
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(50),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
