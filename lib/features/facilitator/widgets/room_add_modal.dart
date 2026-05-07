@@ -364,8 +364,9 @@ class _RoomAddModalState extends State<RoomAddModal> {
         await client.rpc(
           'bulk_voeg_taken_toe',
           params: {
-            'p_offerte_ruimte_id': ruimteId,
-            'p_taak_ids': _geselecteerdeTakenIds,
+            'p_offerte_id': widget.offerteId,
+            'p_ruimte_id': ruimteId,
+            'p_taken_lijst': _geselecteerdeTakenIds,
           },
         );
       }
@@ -795,7 +796,7 @@ class _RoomAddModalState extends State<RoomAddModal> {
                                   ),
                                 )
                               : Text(
-                                  'Ruimte Toevoegen',
+                                  'Ruimte opslaan',
                                   style: GoogleFonts.inter(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 16,
