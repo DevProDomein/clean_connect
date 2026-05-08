@@ -6,6 +6,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/cupertino.dart';
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'core/supabase_client.dart';
 import 'core/models/user_role.dart';
@@ -26,6 +28,17 @@ import 'providers/theme_mode_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: "AIzaSyA2moE0PBhjK2CNAswryCIYT4IFmBrs2Rs",
+      appId: "1:893774085991:web:c54c505f5bc2f4d05c39c2",
+      messagingSenderId: "893774085991",
+      projectId: "cleanconnect-erp",
+    ),
+  );
+  // Keep messaging package linked/initialized for PWA.
+  FirebaseMessaging.instance;
 
   // Load environment variables.
   // Note: If you renamed it for Netlify earlier, make sure this says "env.txt" instead of ".env".
@@ -401,6 +414,37 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   Future<void>? _identityFuture;
   late final bool _forceSetPasswordFlow;
   AuthChangeEvent? _lastAuthEvent;
+  bool _pushInitDone = false;
+
+  Future<void> _initPushNotifications() async {
+    final userId = AppSupabase.client.auth.currentUser?.id;
+    if (userId == null || userId.isEmpty) return;
+
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission();
+      if (settings.authorizationStatus != AuthorizationStatus.authorized) {
+        return;
+      }
+
+      final token = await FirebaseMessaging.instance.getToken(
+        vapidKey:
+            "BFHWgSDPbxe_pYW9HqGz3lhQmYS8Bug2wLbU2vIW_9WAeHBmEM_mDxNOZAr84lIYD71hS793mq_hYqYzaobKPOw",
+      );
+      if (token == null || token.trim().isEmpty) return;
+
+      await AppSupabase.client.from('gebruiker_fcm_tokens').upsert(
+        {
+          'user_id': userId,
+          'fcm_token': token,
+          'platform': 'web',
+        },
+        onConflict: 'user_id,platform',
+      );
+    } catch (e) {
+      // Never crash app on token storage failure.
+      debugPrint('FCM init/save failed: $e');
+    }
+  }
 
   bool _isPasswordLink() {
     // CRITICAL SECURITY: Hijack routing if an auth token exists in the URL.
@@ -561,6 +605,16 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );
+            }
+
+            if (!_pushInitDone) {
+              _pushInitDone = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final u = AppSupabase.client.auth.currentUser;
+                if (u == null) return;
+                _initPushNotifications();
+              });
             }
 
             if (snapshot.hasError) {
