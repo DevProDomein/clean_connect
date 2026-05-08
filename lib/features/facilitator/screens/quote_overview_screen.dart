@@ -6,6 +6,7 @@ import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import 'quote_create_header_screen.dart';
 import 'quote_survey_screen.dart';
+import '../widgets/quote_detail_modal.dart';
 
 /// Offertes dashboard for the Facilitator Portal (Quote Engine).
 ///
@@ -43,7 +44,9 @@ class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
     try {
       final res = await AppSupabase.client
           .from('offertes')
-          .select('id, offerte_nummer, bedrijfsnaam_klant, totaal_prijs_ex_btw, status, aangemaakt_op')
+          .select(
+            'id, offerte_nummer, bedrijfsnaam_klant, totaal_prijs_ex_btw, status, aangemaakt_op, verzonden_op',
+          )
           .order('aangemaakt_op', ascending: false);
       _rows = (res as List).cast<Map<String, dynamic>>();
     } catch (e) {
@@ -142,14 +145,20 @@ class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
                         _QuoteList(
                           rows: _filter(_conceptStatuses),
                           emptyLabel: 'Geen concept-offertes.',
+                          mode: _QuoteListMode.concept,
+                          onChanged: _load,
                         ),
                         _QuoteList(
                           rows: _filter(_verzondenStatuses),
                           emptyLabel: 'Nog geen verzonden offertes.',
+                          mode: _QuoteListMode.verzonden,
+                          onChanged: _load,
                         ),
                         _QuoteList(
                           rows: _filter(_getekendStatuses),
                           emptyLabel: 'Nog geen getekende offertes.',
+                          mode: _QuoteListMode.getekend,
+                          onChanged: _load,
                         ),
                       ],
                     ),
@@ -159,11 +168,20 @@ class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
   }
 }
 
+enum _QuoteListMode { concept, verzonden, getekend }
+
 class _QuoteList extends StatelessWidget {
-  const _QuoteList({required this.rows, required this.emptyLabel});
+  const _QuoteList({
+    required this.rows,
+    required this.emptyLabel,
+    required this.mode,
+    required this.onChanged,
+  });
 
   final List<Map<String, dynamic>> rows;
   final String emptyLabel;
+  final _QuoteListMode mode;
+  final Future<void> Function() onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -187,15 +205,25 @@ class _QuoteList extends StatelessWidget {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
       itemCount: rows.length,
-      itemBuilder: (context, i) => _QuoteTile(row: rows[i]),
+      itemBuilder: (context, i) => _QuoteTile(
+        row: rows[i],
+        mode: mode,
+        onChanged: onChanged,
+      ),
     );
   }
 }
 
 class _QuoteTile extends StatelessWidget {
-  const _QuoteTile({required this.row});
+  const _QuoteTile({
+    required this.row,
+    required this.mode,
+    required this.onChanged,
+  });
 
   final Map<String, dynamic> row;
+  final _QuoteListMode mode;
+  final Future<void> Function() onChanged;
 
   String _text(dynamic v) => (v ?? '').toString().trim();
   double _asDouble(dynamic v) {
@@ -219,21 +247,62 @@ class _QuoteTile extends StatelessWidget {
     final aangemaaktOp = DateTime.tryParse(_text(row['aangemaakt_op']))?.toLocal();
     final dateLabel = aangemaaktOp == null ? '—' : df.format(aangemaaktOp);
 
+    // Verzonden analytics (null-safe, dedicated verzonden_op column)
+    final String? verzondenOpString = row['verzonden_op']?.toString();
+    String verzondenTekst = 'Verzonden: Datum onbekend';
+    Color verzondenKleur = Colors.grey;
+    if (verzondenOpString != null) {
+      final parsed = DateTime.tryParse(verzondenOpString);
+      if (parsed != null) {
+        final int dagenGeleden =
+            DateTime.now().difference(parsed.toLocal()).inDays;
+        if (dagenGeleden == 0) {
+          verzondenTekst = 'Vandaag verzonden';
+          verzondenKleur = Colors.green;
+        } else if (dagenGeleden == 1) {
+          verzondenTekst = 'Gisteren verzonden';
+          verzondenKleur = Colors.green;
+        } else {
+          verzondenTekst = 'Verzonden: $dagenGeleden dagen geleden';
+          verzondenKleur = dagenGeleden > 14 ? Colors.orange : Colors.grey;
+        }
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
-          onTap: () {
+          onTap: () async {
             final offerteId = _text(row['id']);
             if (offerteId.isEmpty) return;
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                settings: const RouteSettings(name: '/facilitator/quotes/survey'),
-                builder: (_) => QuoteSurveyScreen(offerteId: offerteId),
+
+            if (mode == _QuoteListMode.concept) {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: '/facilitator/quotes/survey'),
+                  builder: (_) => QuoteSurveyScreen(offerteId: offerteId),
+                ),
+              );
+              if (!context.mounted) return;
+              await onChanged();
+              return;
+            }
+
+            final result = await showModalBottomSheet<bool>(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => SelectionArea(
+                child: QuoteDetailModal(offerte: row),
               ),
             );
+            if (!context.mounted) return;
+            if (result == true) {
+              await onChanged();
+            }
           },
           child: Container(
             padding: const EdgeInsets.all(18),
@@ -287,10 +356,14 @@ class _QuoteTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Aangemaakt: $dateLabel',
+                        mode == _QuoteListMode.verzonden
+                            ? verzondenTekst
+                            : 'Aangemaakt: $dateLabel',
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w600,
-                          color: cs.onSurface.withValues(alpha: 0.60),
+                          color: mode == _QuoteListMode.verzonden
+                              ? verzondenKleur
+                              : cs.onSurface.withValues(alpha: 0.60),
                         ),
                       ),
                     ],

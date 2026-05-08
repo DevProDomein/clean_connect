@@ -117,6 +117,38 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
         if (row is Map) clients.add(Map<String, dynamic>.from(row));
       }
 
+      // Include bedrijven that exist in [bedrijven] but are missing from the CRM view
+      // (e.g. auto-generated after signing an offerte). RLS determines visibility.
+      try {
+        final bedrijvenRes = await AppSupabase.client
+            .from('bedrijven')
+            .select('id, bedrijfsnaam, logo_url, aangemaakt_op')
+            .order('bedrijfsnaam', ascending: true);
+        final existingIds = clients
+            .map((c) => _text(c['id']))
+            .where((id) => id.isNotEmpty)
+            .toSet();
+
+        for (final row in (bedrijvenRes as List)) {
+          if (row is! Map) continue;
+          final m = Map<String, dynamic>.from(row);
+          final id = _text(m['id']);
+          if (id.isEmpty || existingIds.contains(id)) continue;
+          clients.add({
+            'id': m['id'],
+            'bedrijfsnaam': m['bedrijfsnaam'],
+            'logo_url': m['logo_url'],
+            'aangemaakt_op': m['aangemaakt_op'],
+            // Fields that exist in the view; keep safe defaults for UI.
+            'debiteur_nummer': null,
+            'laatste_offerte_nummer': null,
+            'aantal_projecten': 0,
+          });
+        }
+      } catch (_) {
+        // Non-fatal: keep view-only results.
+      }
+
       // Enrich logo_url from [bedrijven] when the CRM view omits it.
       if (clients.isNotEmpty) {
         final ids = clients

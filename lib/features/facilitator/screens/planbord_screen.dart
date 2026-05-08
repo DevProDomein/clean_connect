@@ -139,7 +139,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       if (stRaw.isEmpty || etRaw.isEmpty) continue;
       final aStart = _timeToMinutes(stRaw);
       final aEnd = _timeToMinutes(etRaw);
-      if (startMin < aEnd && eindMin > aStart) return true;
+      // 15 min travel buffer around existing appointments.
+      final geblokkeerdStart = aStart - 15;
+      final geblokkeerdEind = aEnd + 15;
+      if (startMin < geblokkeerdEind && eindMin > geblokkeerdStart) return true;
     }
     return false;
   }
@@ -212,7 +215,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             if (stRaw.isEmpty || etRaw.isEmpty) continue;
             final aStart = _timeToMinutes(stRaw);
             final aEnd = _timeToMinutes(etRaw);
-            if (actueleMinuten < aEnd && potentieelEindMinuten > aStart) {
+            // 15 min travel buffer around existing appointments.
+            final geblokkeerdStart = aStart - 15;
+            final geblokkeerdEind = aEnd + 15;
+            if (actueleMinuten < geblokkeerdEind &&
+                potentieelEindMinuten > geblokkeerdStart) {
               overlap = true;
               break;
             }
@@ -940,6 +947,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: Colors.transparent,
+        clipBehavior: Clip.none,
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
           onTap: total <= 0
@@ -968,6 +976,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
@@ -1061,12 +1070,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               .where((t) => t.isNotEmpty)
                               .toList(growable: false);
 
-                          return DropdownButtonFormField<String>(
-                        initialValue: (_handmatigeSmartTijd ?? '').trim().isEmpty
-                            ? null
-                            : _handmatigeSmartTijd,
-                        dropdownColor: const Color(0xFFF2F2F7),
-                        items: opties.map((opt) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 16.0, bottom: 24.0),
+                            child: DropdownButtonFormField<String>(
+                              initialValue: (_handmatigeSmartTijd ?? '').trim().isEmpty
+                                  ? null
+                                  : _handmatigeSmartTijd,
+                              dropdownColor: const Color(0xFFF2F2F7),
+                              items: opties.map((opt) {
                           final tijd = _text(opt['tijd']);
                           final status = _text(opt['status']);
                           final vrije = _asInt(opt['vrijeDagen']);
@@ -1097,38 +1108,39 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                     style: GoogleFonts.inter(fontWeight: FontWeight.w800),
                                   ),
                           );
-                        }).toList(growable: false),
-                        onChanged: tijden.isEmpty
-                            ? null
-                            : (v) {
-                                final next = (v ?? '').trim();
-                                if (next.isEmpty) return;
-                                setState(() => _handmatigeSmartTijd = next);
-                              },
-                        decoration: InputDecoration(
-                          labelText: 'Kies definitieve starttijd',
-                          hintText: tijden.isEmpty
-                              ? 'Geen tijden beschikbaar voor deze operator'
-                              : null,
-                          filled: true,
-                          fillColor: const Color(0xFFF2F2F7),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8.0),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8.0),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8.0),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                        ),
+                              }).toList(growable: false),
+                              onChanged: tijden.isEmpty
+                                  ? null
+                                  : (v) {
+                                      final next = (v ?? '').trim();
+                                      if (next.isEmpty) return;
+                                      setState(() => _handmatigeSmartTijd = next);
+                                    },
+                              decoration: InputDecoration(
+                                labelText: 'Kies definitieve starttijd',
+                                hintText: tijden.isEmpty
+                                    ? 'Geen tijden beschikbaar voor deze operator'
+                                    : null,
+                                filled: true,
+                                fillColor: const Color(0xFFF2F2F7),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8.0),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8.0),
+                                  borderSide: BorderSide.none,
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8.0),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
                           );
                         },
                       ),
