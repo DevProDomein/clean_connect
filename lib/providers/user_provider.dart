@@ -212,7 +212,9 @@ class UserProvider extends ChangeNotifier {
     _permissions.clear();
     _lastError = null;
     _mobileMenuPreferences = _mobileMenuFallback;
-    notifyListeners();
+    Future.microtask(() {
+      notifyListeners();
+    });
   }
 
   List<String> _normalizeMobileMenuPrefs(dynamic raw) {

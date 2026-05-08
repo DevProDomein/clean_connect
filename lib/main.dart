@@ -29,14 +29,19 @@ import 'providers/theme_mode_provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: "AIzaSyA2moE0PBhjK2CNAswryCIYT4IFmBrs2Rs",
-      appId: "1:893774085991:web:c54c505f5bc2f4d05c39c2",
-      messagingSenderId: "893774085991",
-      projectId: "cleanconnect-erp",
-    ),
-  );
+  try {
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: "AIzaSyA2moE0PBhjK2CNAswryCIYT4IFmBrs2Rs",
+        appId: "1:893774085991:web:c54c505f5bc2f4d05c39c2",
+        messagingSenderId: "893774085991",
+        projectId: "cleanconnect-erp",
+      ),
+    );
+  } catch (e) {
+    // ignore: avoid_print
+    print('Firebase Init Error (Genegeerd voor app-doorstart): $e');
+  }
   // Keep messaging package linked/initialized for PWA.
   FirebaseMessaging.instance;
 
@@ -438,7 +443,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
           'fcm_token': token,
           'platform': 'web',
         },
-        onConflict: 'user_id,platform',
+        onConflict: 'user_id',
       );
     } catch (e) {
       // Never crash app on token storage failure.

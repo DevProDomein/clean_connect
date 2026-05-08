@@ -1100,12 +1100,18 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                     ),
                                     child: Text(
                                       label,
-                                      style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.normal,
+                                        fontSize: 14.0,
+                                      ),
                                     ),
                                   )
                                 : Text(
                                     label,
-                                    style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.normal,
+                                      fontSize: 14.0,
+                                    ),
                                   ),
                           );
                               }).toList(growable: false),

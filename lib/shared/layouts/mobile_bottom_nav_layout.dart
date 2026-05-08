@@ -249,41 +249,49 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
       );
     }
 
-    return Scaffold(
-      extendBody: true,
-      extendBodyBehindAppBar: true,
-      drawer: const AppDrawer(),
-      body: body,
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.only(left: 24, right: 24, bottom: 30),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(30),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              color: Theme.of(context).cardColor.withValues(alpha: 0.6),
-              child: BottomNavigationBar(
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                type: BottomNavigationBarType.fixed,
-                selectedItemColor: Theme.of(context).colorScheme.primary,
-                unselectedItemColor: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 140),
-                currentIndex: safeIndex,
-                onTap: (i) => setState(() => _index = i),
-                items: [
-                  for (final it in mapped)
-                    BottomNavigationBarItem(
-                      icon: Icon(it.icon),
-                      label: it.label,
-                    ),
-                ],
-              ),
+    final bottomBar = Padding(
+      padding: const EdgeInsets.only(left: 24, right: 24, bottom: 30),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            color: Theme.of(context).cardColor.withValues(alpha: 0.6),
+            child: BottomNavigationBar(
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: Theme.of(context).colorScheme.primary,
+              unselectedItemColor:
+                  Theme.of(context).colorScheme.onSurface.withValues(alpha: 140),
+              currentIndex: safeIndex,
+              onTap: (i) => setState(() => _index = i),
+              items: [
+                for (final it in mapped)
+                  BottomNavigationBarItem(
+                    icon: Icon(it.icon),
+                    label: it.label,
+                  ),
+              ],
             ),
           ),
         ),
+      ),
+    );
+
+    return Scaffold(
+      extendBody: true,
+      drawer: const AppDrawer(),
+      body: Stack(
+        children: [
+          body,
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: bottomBar,
+          ),
+        ],
       ),
     );
   }
