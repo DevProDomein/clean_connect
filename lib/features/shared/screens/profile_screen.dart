@@ -36,7 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _achternaam = '';
   String _email = '';
 
-  static const List<String> _menuKeyOrder = [
+  static const List<String> _facilitatorMenuKeyOrder = [
     'dashboard',
     'agenda',
     'tickets',
@@ -45,7 +45,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     'offertes',
   ];
 
-  static const Map<String, String> _menuLabels = {
+  static const Map<String, String> _facilitatorMenuLabels = {
     'dashboard': 'Dashboard',
     'agenda': 'Agenda',
     'tickets': 'Tickets',
@@ -54,8 +54,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     'offertes': 'Offertes',
   };
 
+  // Operator: uitsluitend operator-specifieke keuzes.
+  static const List<String> _operatorMenuKeyOrder = [
+    'dashboard',
+    'agenda',
+    'rooster',
+    'meldingen',
+    'voorraad',
+    'uren',
+  ];
+
+  static const Map<String, String> _operatorMenuLabels = {
+    'dashboard': 'Operator Dashboard',
+    'agenda': 'Mijn agenda',
+    'rooster': 'Mijn rooster',
+    'meldingen': 'Mijn meldingen',
+    'voorraad': 'Voorraad tellen',
+    'uren': 'Mijn uren',
+  };
+
   static const int _maxMobileMenuItems = 3;
   List<String> _mobileMenuPrefs = const ['dashboard', 'agenda', 'tickets'];
+
+  bool get _isOperator =>
+      context.read<UserProvider>().roleString?.toLowerCase() == 'operator';
+
+  List<String> get _menuKeyOrderForRole =>
+      _isOperator ? _operatorMenuKeyOrder : _facilitatorMenuKeyOrder;
+
+  Map<String, String> get _menuLabelsForRole =>
+      _isOperator ? _operatorMenuLabels : _facilitatorMenuLabels;
+
+  List<String> get _defaultPrefsForRole => _isOperator
+      ? const ['dashboard', 'agenda', 'rooster']
+      : const ['dashboard', 'agenda', 'tickets'];
 
   @override
   void initState() {
@@ -600,23 +632,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   List<String> _normalizeMobileMenuPrefs(dynamic raw) {
+    final allowed = _menuKeyOrderForRole.toSet();
     final out = <String>[];
     if (raw is List) {
       for (final v in raw) {
         final s = _t(v).toLowerCase();
         if (s.isEmpty) continue;
-        if (!_menuKeyOrder.contains(s)) continue;
+        if (!allowed.contains(s)) continue;
         if (!out.contains(s)) out.add(s);
       }
     }
     final trimmed = out.take(_maxMobileMenuItems).toList(growable: false);
     if (trimmed.length == _maxMobileMenuItems) return trimmed;
-    return const ['dashboard', 'agenda', 'tickets'];
+    return _defaultPrefsForRole;
   }
 
   Widget _mobileMenuCard() {
     final selected = _mobileMenuPrefs.toSet();
     final remaining = _maxMobileMenuItems - selected.length;
+    final keyOrder = _menuKeyOrderForRole;
+    final labels = _menuLabelsForRole;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -681,7 +716,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(
-                    _menuLabels[key] ?? key,
+                    labels[key] ?? key,
                     style: GoogleFonts.lato(fontWeight: FontWeight.w800),
                   ),
                   trailing: IconButton(
@@ -710,7 +745,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          ..._menuKeyOrder.map((key) {
+          ...keyOrder.map((key) {
             final isChecked = selected.contains(key);
             final isDisabled = !isChecked && selected.length >= _maxMobileMenuItems;
             return CheckboxListTile(
@@ -719,7 +754,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: EdgeInsets.zero,
               title: Text(
-                _menuLabels[key] ?? key,
+                labels[key] ?? key,
                 style: GoogleFonts.lato(
                   fontWeight: FontWeight.w800,
                   color: isDisabled ? _muted : _navy,

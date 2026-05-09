@@ -135,7 +135,17 @@ class AppDrawerContent extends StatelessWidget {
         selectedTileColor: Theme.of(context).colorScheme.primary.withValues(alpha: isDark ? 0.18 : 0.10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         title: Text(title, style: const TextStyle(fontSize: _fontSize, fontWeight: FontWeight.w600)),
-        onTap: () => go(name, screen),
+        onTap: () {
+          // Operator portal navigation must stay in the same mobile shell so the
+          // bottom nav doesn't disappear (use named routes instead of pushing
+          // the raw screen on top).
+          if (!isDesktop && name.startsWith('/operator/')) {
+            Navigator.of(context).maybePop();
+            Navigator.of(context).pushReplacementNamed(name);
+            return;
+          }
+          go(name, screen);
+        },
       );
     }
 

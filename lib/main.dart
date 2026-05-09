@@ -379,6 +379,40 @@ class _MyAppState extends State<MyApp> {
           ),
           themeMode: themeMode,
           onGenerateRoute: (settings) {
+            // Operator pages must stay inside the mobile shell so the bottom nav is visible.
+            // Keep names/pads identical to the existing AppDrawer route names.
+            switch (settings.name) {
+              case '/operator/dashboard':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const MobileBottomNavLayout(initialKey: 'dashboard'),
+                );
+              case '/operator/agenda':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const MobileBottomNavLayout(initialKey: 'agenda'),
+                );
+              case '/operator/rooster':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const MobileBottomNavLayout(initialKey: 'rooster'),
+                );
+              case '/operator/meldingen':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const MobileBottomNavLayout(initialKey: 'meldingen'),
+                );
+              case '/operator/voorraad':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const MobileBottomNavLayout(initialKey: 'voorraad'),
+                );
+              case '/operator/uren':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const MobileBottomNavLayout(initialKey: 'uren'),
+                );
+            }
             if (settings.name == '/set-password') {
               return MaterialPageRoute(
                 settings: settings,

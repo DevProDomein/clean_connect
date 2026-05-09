@@ -19,9 +19,12 @@ import '../../features/facilitator/screens/relations_crm_screen.dart'
     as facilitator_crm;
 import '../../features/facilitator/screens/ticket_overview_screen.dart';
 import '../../features/operator/screens/operator_dashboard_screen.dart';
+import '../../features/operator/screens/operator_agenda_screen.dart';
 import '../../features/operator/screens/operator_rooster_screen.dart';
 import '../../features/operator/screens/operator_uren_screen.dart';
 import '../../features/operator/screens/operator_meldingen_screen.dart';
+import '../../features/operator/screens/operator_voorraad_screen.dart';
+import '../../features/shared/screens/profile_screen.dart';
 
 class MobileBottomNavLayout extends StatefulWidget {
   const MobileBottomNavLayout({super.key, this.initialKey});
@@ -43,9 +46,8 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
 
   static const _operatorFallbackKeys = <String>[
     'dashboard',
+    'agenda',
     'rooster',
-    'uren',
-    'meldingen',
   ];
 
   @override
@@ -61,12 +63,40 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
     }
   }
 
+  String? _routeForKey(String key, UserRole? role) {
+    final k = key.trim().toLowerCase();
+    if (k.isEmpty) return null;
+    if (role == UserRole.operator) {
+      switch (k) {
+        case 'dashboard':
+          return '/operator/dashboard';
+        case 'agenda':
+          return '/operator/agenda';
+        case 'rooster':
+          return '/operator/rooster';
+        case 'meldingen':
+          return '/operator/meldingen';
+        case 'voorraad':
+          return '/operator/voorraad';
+        case 'uren':
+          return '/operator/uren';
+      }
+    }
+    // Facilitator/admin/other: leave untouched (existing navigation patterns).
+    return null;
+  }
+
   List<String> _keysForRole(UserRole? role) {
     final up = context.read<UserProvider>();
 
     switch (role) {
       case UserRole.operator:
-        final allowed = <String>{..._operatorFallbackKeys};
+        final allowed = <String>{
+          ..._operatorFallbackKeys,
+          'meldingen',
+          'uren',
+          'voorraad',
+        };
         final prefs = up.mobileMenuPreferences
             .map((e) => e.trim().toLowerCase())
             .where((k) => allowed.contains(k))
@@ -119,6 +149,14 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
           screen: const FacilitatorDashboard(),
         );
       case 'agenda':
+        final role = context.read<UserProvider>().role;
+        if (role == UserRole.operator) {
+          return (
+            label: 'Mijn Agenda',
+            icon: Icons.event_outlined,
+            screen: const OperatorAgendaScreen(),
+          );
+        }
         return (
           label: 'Mijn Agenda',
           icon: Icons.event_outlined,
@@ -208,6 +246,12 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
           icon: Icons.notifications_none_outlined,
           screen: const OperatorMeldingenScreen(),
         );
+      case 'voorraad':
+        return (
+          label: 'Voorraad',
+          icon: Icons.inventory_2_outlined,
+          screen: const OperatorVoorraadScreen(),
+        );
       default:
         return (
           label: 'Dashboard',
@@ -224,13 +268,30 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
     final keys = _keysForRole(role);
 
     // IMPORTANT: Strictly honor the saved preferences (max 3). No smart overrides.
-    final mapped = keys.map(_mapKey).toList(growable: false);
-    final safeIndex = (_index >= 0 && _index < mapped.length) ? _index : 0;
+    var navKeys = keys.toList(growable: false);
+    var navMapped = navKeys.map(_mapKey).toList(growable: false);
+    if (navMapped.length < 2) {
+      navKeys = const ['dashboard', 'profile'];
+      navMapped = [
+        _mapKey('dashboard'),
+        (label: 'Profiel', icon: Icons.person, screen: const ProfileScreen()),
+      ];
+    }
 
-    final body = IndexedStack(
-      index: safeIndex,
-      children: mapped.map((m) => m.screen).toList(growable: false),
-    );
+    final currentKey =
+        (widget.initialKey ?? '').trim().toLowerCase().isNotEmpty
+            ? (widget.initialKey ?? '').trim().toLowerCase()
+            : navKeys.first;
+
+    // If current route isn't part of the 3 chosen menu items, keep the bar alive
+    // and just fall back to a safe active index.
+    final activeIndexFromRoute = navKeys.indexOf(currentKey);
+    final safeIndex = (activeIndexFromRoute >= 0) ? activeIndexFromRoute : 0;
+
+    // Always render the requested screen (even if it's not in the 3 nav items).
+    final currentScreen = _mapKey(currentKey).screen;
+
+    final body = currentScreen;
 
     if (isDesktop) {
       return Scaffold(
@@ -265,9 +326,17 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
               unselectedItemColor:
                   Theme.of(context).colorScheme.onSurface.withValues(alpha: 140),
               currentIndex: safeIndex,
-              onTap: (i) => setState(() => _index = i),
+              onTap: (i) {
+                setState(() => _index = i);
+                final pickedKey =
+                    (i >= 0 && i < navKeys.length) ? navKeys[i] : navKeys.first;
+                final route = _routeForKey(pickedKey, role);
+                if (route != null) {
+                  Navigator.of(context).pushReplacementNamed(route);
+                }
+              },
               items: [
-                for (final it in mapped)
+                for (final it in navMapped)
                   BottomNavigationBarItem(
                     icon: Icon(it.icon),
                     label: it.label,
