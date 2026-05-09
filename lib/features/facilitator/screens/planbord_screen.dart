@@ -48,8 +48,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
   // HARD availability check (DB-backed) for Smart Planner dropdown
   List<Map<String, dynamic>> _tijdOpties = const <Map<String, dynamic>>[];
-  Map<String, List<Map<String, dynamic>>> _afsprakenPerDatum =
-      const <String, List<Map<String, dynamic>>>{};
   bool _isTijdenLaden = false;
 
   // Manual planning (table_calendar) state
@@ -127,48 +125,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return (h * 60) + m;
   }
 
-  bool _heeftOverlapVoorDag({
-    required String datumDb,
-    required int startMin,
-    required int eindMin,
-  }) {
-    final afspraken = _afsprakenPerDatum[datumDb] ?? const <Map<String, dynamic>>[];
-    for (final a in afspraken) {
-      final stRaw = _text(a['starttijd']);
-      final etRaw = _text(a['eindtijd']);
-      if (stRaw.isEmpty || etRaw.isEmpty) continue;
-      final aStart = _timeToMinutes(stRaw);
-      final aEnd = _timeToMinutes(etRaw);
-      // 15 min travel buffer around existing appointments.
-      final geblokkeerdStart = aStart - 15;
-      final geblokkeerdEind = aEnd + 15;
-      if (startMin < geblokkeerdEind && eindMin > geblokkeerdStart) return true;
-    }
-    return false;
-  }
-
-  String? _zoekEersteVrijeTijdVoorDag({
-    required String datumDb,
-    required int vensterStartMin,
-    required int vensterEindMin,
-    required int duurMin,
-  }) {
-    for (int actuele = vensterStartMin;
-        (actuele + duurMin) <= vensterEindMin;
-        actuele += 15) {
-      if (!_heeftOverlapVoorDag(
-        datumDb: datumDb,
-        startMin: actuele,
-        eindMin: actuele + duurMin,
-      )) {
-        final h = actuele ~/ 60;
-        final m = actuele % 60;
-        return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
-      }
-    }
-    return null;
-  }
-
   Future<void> _berekenVeiligeTijden({
     required String operatorId,
     required List<String> datumsDb, // yyyy-MM-dd
@@ -243,7 +199,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
       if (!mounted) return;
       setState(() {
-        _afsprakenPerDatum = afsprakenByDate;
         _tijdOpties = opties;
         final cur = (_handmatigeSmartTijd ?? '').trim();
         final tijden = opties.map((e) => _text(e['tijd'])).where((t) => t.isNotEmpty).toList();
@@ -260,7 +215,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       if (!mounted) return;
       setState(() {
         _tijdOpties = const <Map<String, dynamic>>[];
-        _afsprakenPerDatum = const <String, List<Map<String, dynamic>>>{};
       });
     } finally {
       if (mounted) setState(() => _isTijdenLaden = false);
@@ -316,7 +270,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       _smartSuggestedTijd = null;
       _handmatigeSmartTijd = null;
       _tijdOpties = const <Map<String, dynamic>>[];
-      _afsprakenPerDatum = const <String, List<Map<String, dynamic>>>{};
     });
 
     final planning = _asPlanningList(result['voorgestelde_planning']);
@@ -746,6 +699,73 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         ),
       );
     }
+  }
+
+  /// Eindtijd-string (HH:mm:ss) voor Supabase, uit start HH:mm + duur in minuten.
+  String _berekenEindTijd(String definitieveStartTijd, int durationMinutes) {
+    final startMin = _timeToMinutes(definitieveStartTijd);
+    final end = _timeFromMinutes(startMin + durationMinutes);
+    return '${_timeToHuman(end)}:00';
+  }
+
+  /// Bouwt `voorgestelde_planning` voor RPC [bevestig_slimme_planning]: dropdown
+  /// [\_handmatigeSmartTijd] gaat vóór de engine-suggestie; geen overlap-correctie.
+  void _submitSmartPlannerBooking(Map<String, dynamic> selectedResult) {
+    if (_handmatigeSmartTijd == null || _tijdOpties.isEmpty) {
+      return;
+    }
+    final voorgesteldeTijdVanEngine = (_smartSuggestedTijd ?? '').trim();
+    final manual = (_handmatigeSmartTijd ?? '').trim();
+    final definitieveStartTijd = manual.isNotEmpty
+        ? manual
+        : voorgesteldeTijdVanEngine;
+
+    final rawPlanning = selectedResult['voorgestelde_planning'];
+    final planning = _asPlanningList(rawPlanning);
+
+    if (definitieveStartTijd.isEmpty ||
+        planning.isEmpty ||
+        _smartActiveOpdrachtId == null) {
+      _confirmBooking(selectedResult);
+      return;
+    }
+
+    final hours =
+        double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
+            _shiftHours;
+    final defaultDurMin = (hours * 60).round();
+
+    final startHuman = definitieveStartTijd.length >= 5
+        ? definitieveStartTijd.substring(0, 5)
+        : definitieveStartTijd;
+
+    final updatedList = planning.map((raw) {
+      if (raw is! Map) return raw;
+      final m = Map<String, dynamic>.from(raw);
+      final itemHours = _asDouble(
+        m['toegewezen_uren'] ??
+            m['uren_per_shift'] ??
+            m['duur_uren'] ??
+            m['uren'],
+        fallback: hours,
+      );
+      final durMin =
+          itemHours > 0 ? (itemHours * 60).round() : defaultDurMin;
+
+      final rawDate = _text(m['geplande_datum']);
+      final datumDb =
+          rawDate.contains('T') ? rawDate.split('T').first : rawDate;
+      if (datumDb.isEmpty) return null;
+
+      m['starttijd'] = '$startHuman:00';
+      m['eindtijd'] = _berekenEindTijd(startHuman, durMin);
+      return m;
+    }).whereType<Map>().toList(growable: false);
+
+    final patched = Map<String, dynamic>.from(selectedResult);
+    patched['voorgestelde_planning'] =
+        rawPlanning is String ? jsonEncode(updatedList) : updatedList;
+    _confirmBooking(patched);
   }
 
   String _timeLabel(dynamic value, {String fallback = '--:--'}) {
@@ -1720,91 +1740,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     child: FilledButton(
                       onPressed: selectedResult == null
                           ? null
-                          : () {
-                              // HARD BLOCK: only allow save when we have safe times
-                              if (_handmatigeSmartTijd == null ||
-                                  _tijdOpties.isEmpty) {
-                                return;
-                              }
-                              final suggested = (_smartSuggestedTijd ?? '').trim();
-                              final chosen = (_handmatigeSmartTijd ?? suggested).trim();
-                              final rawPlanning = selectedResult['voorgestelde_planning'];
-                              final planning = _asPlanningList(rawPlanning);
-                              if (chosen.isEmpty || planning.isEmpty || _smartActiveOpdrachtId == null) {
-                                _confirmBooking(selectedResult);
-                                return;
-                              }
-
-                              final hours =
-                                  double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
-                                      _shiftHours;
-                              final defaultDurMin = (hours * 60).round();
-
-                              final vensterStartMin = _timeToMinutes(
-                                _text(_selectedProject?['tijdslot_start']).isEmpty
-                                    ? '08:00'
-                                    : _text(_selectedProject?['tijdslot_start']).substring(0, 5),
-                              );
-                              final vensterEindMin = _timeToMinutes(
-                                _text(_selectedProject?['tijdslot_eind']).isEmpty
-                                    ? '17:00'
-                                    : _text(_selectedProject?['tijdslot_eind']).substring(0, 5),
-                              );
-
-                              final updatedList = planning.map((raw) {
-                                if (raw is! Map) return raw;
-                                final m = Map<String, dynamic>.from(raw);
-                                // Apply chosen time to ALL items in the series.
-                                final itemHours = _asDouble(
-                                  m['toegewezen_uren'] ??
-                                      m['uren_per_shift'] ??
-                                      m['duur_uren'] ??
-                                      m['uren'],
-                                  fallback: hours,
-                                );
-                                final durMin =
-                                    itemHours > 0 ? (itemHours * 60).round() : defaultDurMin;
-
-                                final rawDate = _text(m['geplande_datum']);
-                                final datumDb = rawDate.contains('T') ? rawDate.split('T').first : rawDate;
-                                if (datumDb.isEmpty) return null;
-
-                                // 1) Try chosen time on this day
-                                final chosenMin = _timeToMinutes(chosen);
-                                final chosenEnd = chosenMin + durMin;
-                                var definitiveMin = chosenMin;
-
-                                final hasOverlap = _heeftOverlapVoorDag(
-                                  datumDb: datumDb,
-                                  startMin: chosenMin,
-                                  eindMin: chosenEnd,
-                                );
-
-                                // 2) If overlap, find first available time in window for this day
-                                if (hasOverlap) {
-                                  final found = _zoekEersteVrijeTijdVoorDag(
-                                    datumDb: datumDb,
-                                    vensterStartMin: vensterStartMin,
-                                    vensterEindMin: vensterEindMin,
-                                    duurMin: durMin,
-                                  );
-                                  if (found == null) return null; // skip this day entirely
-                                  definitiveMin = _timeToMinutes(found);
-                                }
-
-                                final start = _timeFromMinutes(definitiveMin);
-                                final end = _timeFromMinutes(definitiveMin + durMin);
-                                m['starttijd'] = '${_timeToHuman(start)}:00';
-                                m['eindtijd'] = '${_timeToHuman(end)}:00';
-                                return m;
-                              }).whereType<Map>().toList(growable: false);
-
-                              final patched = Map<String, dynamic>.from(selectedResult);
-                              // Keep the same type as backend expects (string JSON vs list).
-                              patched['voorgestelde_planning'] =
-                                  rawPlanning is String ? jsonEncode(updatedList) : updatedList;
-                              _confirmBooking(patched);
-                            },
+                          : () => _submitSmartPlannerBooking(selectedResult),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(50),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -2165,8 +2101,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
-                        onPressed:
-                            selectedResult == null ? null : () => _confirmBooking(selectedResult),
+                        onPressed: selectedResult == null
+                            ? null
+                            : () => _submitSmartPlannerBooking(selectedResult),
                         style: FilledButton.styleFrom(
                           minimumSize: const Size.fromHeight(50),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
