@@ -207,6 +207,8 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
       );
     }
 
+    final activeEmail = _supabase.auth.currentUser?.email ?? 'Onbekend account';
+
     return _shell(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -221,6 +223,27 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 26),
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.security, color: Colors.orange),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Je stelt nu een nieuw wachtwoord in voor:\n$activeEmail',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Text('Nieuw Wachtwoord', style: GoogleFonts.lato(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           TextField(

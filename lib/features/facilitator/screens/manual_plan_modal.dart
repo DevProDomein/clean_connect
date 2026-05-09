@@ -18,6 +18,11 @@ class ManualPlanModal extends StatefulWidget {
 class _ManualPlanModalState extends State<ManualPlanModal> {
   final TextEditingController _startTimeController = TextEditingController();
 
+  // State variabelen voor de handmatige planner
+  List<Map<String, dynamic>> handmatigeStarttijden = [];
+  bool isHandmatigeTijdenLaden = false;
+  String? geselecteerdeHandmatigeTijd;
+
   bool _loading = true;
   bool _saving = false;
   bool _isSearching = false;
@@ -70,21 +75,30 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     return TimeOfDay(hour: h.clamp(0, 23), minute: m.clamp(0, 59));
   }
 
-  String _timeToDb(TimeOfDay time) {
-    final h = time.hour.toString().padLeft(2, '0');
-    final m = time.minute.toString().padLeft(2, '0');
-    return '$h:$m:00';
-  }
-
   String _timeToHuman(TimeOfDay time) {
     final h = time.hour.toString().padLeft(2, '0');
     final m = time.minute.toString().padLeft(2, '0');
     return '$h:$m';
   }
 
-  DateTime _combine(DateTime date, TimeOfDay time) {
-    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  int _timeStringToMinutes(String t) {
+    final raw = _text(t);
+    if (raw.isEmpty) return 0;
+    final hhmm = raw.length >= 5 ? raw.substring(0, 5) : raw;
+    final parts = hhmm.split(':');
+    final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return (h.clamp(0, 23) * 60) + m.clamp(0, 59);
   }
+
+  String _minutesToHuman(int minutes) {
+    final mm = minutes.clamp(0, 24 * 60);
+    final h = (mm ~/ 60).toString().padLeft(2, '0');
+    final m = (mm % 60).toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  String _minutesToDb(int minutes) => '${_minutesToHuman(minutes)}:00';
 
   Map<String, dynamic>? _projectJoin() {
     final row = _opdracht;
@@ -125,15 +139,6 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     final value = _text(_startTimeController.text);
     if (value.isEmpty) return null;
     return _timeFromValue(value);
-  }
-
-  TimeOfDay get _defaultWindowStartTime {
-    final raw = _text(_opdracht?['tijdslot_start']);
-    if (raw.isEmpty) return const TimeOfDay(hour: 8, minute: 0);
-    final timeParts = raw.split(':');
-    final hour = timeParts.isNotEmpty ? int.tryParse(timeParts[0]) ?? 8 : 8;
-    final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
-    return TimeOfDay(hour: hour.clamp(0, 23), minute: minute.clamp(0, 59));
   }
 
   String get _plannedDateDb {
@@ -183,9 +188,13 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       final slotStartRaw = _text(map['tijdslot_start']);
       final slotStart = slotStartRaw.isEmpty ? const TimeOfDay(hour: 8, minute: 0) : _timeFromValue(slotStartRaw);
       _startTimeController.text = _timeToHuman(slotStart);
+      geselecteerdeHandmatigeTijd = _timeToHuman(slotStart);
 
       if (!mounted) return;
       setState(() => _opdracht = map);
+
+      // Handmatige tijden initialiseren (zonder operator: toon alles zonder warnings).
+      await _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -194,55 +203,99 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     }
   }
 
-  Future<void> _pickStartTime() async {
-    final previousValue = _startTimeController.text;
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _selectedStartTime ?? _defaultWindowStartTime,
-    );
-    if (picked == null || !mounted) return;
+  Future<void> _berekenHandmatigeTijden(
+    String operatorId,
+    DateTime datum,
+    double benodigdeUren,
+  ) async {
+    setState(() => isHandmatigeTijdenLaden = true);
+    try {
+      final opId = _text(operatorId);
+      final dateString = DateFormat('yyyy-MM-dd').format(datum);
 
-    final hours = _shiftHours;
-    if (hours <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            'Vul eerst geldige uren per shift in.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
-        ),
-      );
-      return;
-    }
+      // 1. Haal afspraken op voor deze dag (als operator onbekend is: geen blokkades/warnings).
+      final List<dynamic> bestaandeAfspraken = opId.isEmpty
+          ? const <dynamic>[]
+          : List<dynamic>.from(
+              await Supabase.instance.client
+                  .from('opdracht_planning')
+                  .select('starttijd, eindtijd')
+                  .eq('operator_id', opId)
+                  .eq('geplande_datum', dateString),
+            );
 
-    final slotStartMinutes = (_windowStart.hour * 60) + _windowStart.minute;
-    final slotEndMinutes = (_windowEnd.hour * 60) + _windowEnd.minute;
-    final selectedStartMinutes = (picked.hour * 60) + picked.minute;
-    final selectedEndMinutes = selectedStartMinutes + (hours * 60).round();
-    if (selectedStartMinutes < slotStartMinutes || selectedEndMinutes > slotEndMinutes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFFCC2F2F),
-          content: Text(
-            'Gekozen tijd + duur valt buiten het afgesproken tijdsvenster van de klant.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
-        ),
-      );
-      if (previousValue.isNotEmpty) {
-        _startTimeController.text = previousValue;
+      /// Minuten sedert middernacht uit DB-tijd-string (HH:MM of HH:MM:SS). Geen buffers.
+      int timeToMinutes(String t) {
+        final s = _text(t);
+        if (s.isEmpty) return 0;
+        final hhmm = s.contains('T') ? s.substring(s.indexOf('T') + 1).split('+').first.split('-').first : s;
+        final head = hhmm.length >= 8 ? hhmm.substring(0, 8).trim() : hhmm.split('.').first.trim();
+        final parts = head.split(':');
+        if (parts.length < 2) return 0;
+        final uren = int.tryParse(parts[0]) ?? 0;
+        final minuten = int.tryParse(parts[1]) ?? 0;
+        return uren * 60 + minuten.clamp(0, 59);
       }
-      return;
-    }
 
-    _startTimeController.text = _timeToHuman(picked);
-    _selectedOperatorId = null;
-    setState(() {
-      _availableOperators = <dynamic>[];
-      _hasSearchedOperators = false;
-    });
+      final int opdrachtMinuten = (benodigdeUren * 60).round();
+      final List<Map<String, dynamic>> beschikbareTijden = [];
+
+      // Loop van 06:00 tot 22:00 — uitsluitend harde tijdoverlap (0 minuten marge).
+      for (int actueleMinuten = 360;
+          (actueleMinuten + opdrachtMinuten) <= 1320;
+          actueleMinuten += 15) {
+        final int potentieelEind = actueleMinuten + opdrachtMinuten;
+        var heeftHardeOverlap = false;
+
+        for (final raw in bestaandeAfspraken) {
+          if (raw is! Map) continue;
+          final afspraak = Map<String, dynamic>.from(raw);
+          if (afspraak['starttijd'] == null || afspraak['eindtijd'] == null) continue;
+
+          final int afspraakStart =
+              timeToMinutes(afspraak['starttijd'].toString());
+          final int afspraakEind =
+              timeToMinutes(afspraak['eindtijd'].toString());
+
+          // Exacte 0‑min overlap: blokkeert o.a. 10:30 start bij 10:00–11:00; laat toe 11:00 na 11:00 einde.
+          if (actueleMinuten < afspraakEind && potentieelEind > afspraakStart) {
+            heeftHardeOverlap = true;
+            break;
+          }
+        }
+
+        if (!heeftHardeOverlap) {
+          final int uren = actueleMinuten ~/ 60;
+          final int minuten = actueleMinuten % 60;
+          final String tijdString =
+              '${uren.toString().padLeft(2, '0')}:${minuten.toString().padLeft(2, '0')}';
+
+          beschikbareTijden.add({
+            'tijd': tijdString,
+          });
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        handmatigeStarttijden = beschikbareTijden;
+        if (geselecteerdeHandmatigeTijd == null ||
+            !handmatigeStarttijden.any(
+              (t) => _text(t['tijd']) == geselecteerdeHandmatigeTijd,
+            )) {
+          geselecteerdeHandmatigeTijd =
+              handmatigeStarttijden.isNotEmpty ? _text(handmatigeStarttijden.first['tijd']) : null;
+        }
+        if (geselecteerdeHandmatigeTijd != null) {
+          _startTimeController.text = geselecteerdeHandmatigeTijd!;
+        }
+      });
+    } catch (e) {
+      // ignore: avoid_print
+      print('Fout handmatige tijden: $e');
+    } finally {
+      if (mounted) setState(() => isHandmatigeTijdenLaden = false);
+    }
   }
 
   Future<void> _loadAvailableOperators() async {
@@ -289,6 +342,8 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           'p_duur_uren': hours,
           'p_regio': regio,
           'p_opdracht_id': opdrachtIdParam,
+          // Handmatige planner: geen reistijd-buffer in RPC (past SQL‑functie migratie hieronder aan).
+          'p_negeer_reistijd': true,
         },
       );
 
@@ -332,19 +387,13 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     }
   }
 
-  DateTime? _selectedEndTime() {
-    final start = _selectedStartTime;
-    final hours = _shiftHours;
-    if (start == null || hours <= 0) return null;
-    return _combine(_plannedDate, start).add(Duration(minutes: (hours * 60).round()));
-  }
-
   Future<void> _submitPlan() async {
     if (_saving || _selectedOperatorId == null) return;
-    final start = _selectedStartTime;
-    final end = _selectedEndTime();
     final hours = _shiftHours;
-    if (start == null || end == null || hours <= 0) return;
+    final startHuman = _text(geselecteerdeHandmatigeTijd);
+    if (startHuman.isEmpty || hours <= 0) return;
+    final startMinutes = _timeStringToMinutes(startHuman);
+    final endMinutes = startMinutes + (hours * 60).round();
 
     setState(() => _saving = true);
     try {
@@ -352,11 +401,30 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
         'opdracht_id': widget.opdrachtId,
         'operator_id': _selectedOperatorId,
         'geplande_datum': _plannedDateDb,
-        'starttijd': _timeToDb(start),
-        'eindtijd': _timeToDb(TimeOfDay(hour: end.hour, minute: end.minute)),
+        'starttijd': _minutesToDb(startMinutes),
+        'eindtijd': _minutesToDb(endMinutes),
         'toegewezen_uren': hours,
         'status': 'gepland',
       });
+
+      try {
+        final gekozenOperatorId = _text(_selectedOperatorId);
+        final rawDatum = _plannedDateDb;
+        final datumString = rawDatum.contains('T')
+            ? rawDatum.split('T').first
+            : (rawDatum.isNotEmpty ? rawDatum : 'binnenkort');
+        await AppSupabase.client.functions.invoke(
+          'send-push-notification',
+          body: {
+            'operator_id': gekozenOperatorId,
+            'aantal': 1,
+            'datum_string': datumString,
+          },
+        );
+      } catch (e) {
+        // ignore: avoid_print
+        print('Kon pushmelding niet versturen: $e');
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -685,6 +753,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                   _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
                   _selectedOperatorId = null;
                 });
+                _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
               },
             ),
             Expanded(
@@ -701,28 +770,71 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                   _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
                   _selectedOperatorId = null;
                 });
+                _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
               },
             ),
           ],
         ),
         const SizedBox(height: 12),
-        TextFormField(
-          controller: _startTimeController,
-          readOnly: true,
-          onTap: _pickStartTime,
-          decoration: _fieldDecoration(
-            isDark,
-            cs,
-            'Starttijd',
-            Icons.schedule_rounded,
-          ).copyWith(
-            suffixIcon: IconButton(
-              onPressed: _pickStartTime,
-              icon: const Icon(Icons.access_time_rounded),
+        DropdownButtonFormField<String>(
+          key: ValueKey('handmatige_tijd_${geselecteerdeHandmatigeTijd ?? ''}_${handmatigeStarttijden.length}'),
+          initialValue: geselecteerdeHandmatigeTijd,
+          decoration: InputDecoration(
+            labelText: 'Kies starttijd',
+            labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
+            prefixIcon: const Icon(Icons.schedule_rounded),
+            filled: true,
+            fillColor: const Color(0xFFF2F2F7),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8.0),
+              borderSide: BorderSide.none,
             ),
           ),
-          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          items: handmatigeStarttijden.map((item) {
+            final tijd = item['tijd'] as String? ?? '';
+            return DropdownMenuItem<String>(
+              value: tijd,
+              child: Text(
+                tijd,
+                style: const TextStyle(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 14.0,
+                ),
+              ),
+            );
+          }).toList(growable: false),
+          onChanged: isHandmatigeTijdenLaden
+              ? null
+              : (val) {
+                  setState(() {
+                    geselecteerdeHandmatigeTijd = val;
+                    if (val != null) _startTimeController.text = val;
+                    _selectedOperatorId = null;
+                    _availableOperators = <dynamic>[];
+                    _hasSearchedOperators = false;
+                  });
+                },
         ),
+        if (isHandmatigeTijdenLaden) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Tijden laden...',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface.withValues(alpha: 0.72),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 12),
         FilledButton.tonalIcon(
           onPressed: (_isSearching || !canLoadOperators) ? null : _loadAvailableOperators,
@@ -784,7 +896,10 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                 .toList(growable: false),
             onChanged: !canLoadOperators || _isSearching
                 ? null
-                : (value) => setState(() => _selectedOperatorId = value),
+                : (value) {
+                    setState(() => _selectedOperatorId = value);
+                    _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
+                  },
           ),
         const SizedBox(height: 18),
         FilledButton(

@@ -688,6 +688,29 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         },
       );
 
+      try {
+        final opdrachtenLijst = _asPlanningList(result['voorgestelde_planning']);
+        var datumString = 'binnenkort';
+        if (opdrachtenLijst.isNotEmpty && opdrachtenLijst.first is Map) {
+          final eerste = Map<String, dynamic>.from(opdrachtenLijst.first as Map);
+          final raw = _text(eerste['geplande_datum']);
+          if (raw.isNotEmpty) {
+            datumString = raw.contains('T') ? raw.split('T').first : raw;
+          }
+        }
+        await AppSupabase.client.functions.invoke(
+          'send-push-notification',
+          body: {
+            'operator_id': _text(result['operator_id']),
+            'aantal': opdrachtenLijst.length,
+            'datum_string': datumString,
+          },
+        );
+      } catch (e) {
+        // ignore: avoid_print
+        print('Kon pushmelding niet versturen: $e');
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

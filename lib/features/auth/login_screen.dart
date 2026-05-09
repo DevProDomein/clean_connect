@@ -65,6 +65,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
     try {
+      // Forceer log-out om cross-session besmetting te voorkomen
+      try {
+        await AppSupabase.client.auth.signOut();
+      } catch (e) {
+        // Negeer errors als er al geen sessie was
+      }
+
       await AppSupabase.client.auth.resetPasswordForEmail(
         email,
         redirectTo: 'https://cleanconnect-erp.web.app/set-password',

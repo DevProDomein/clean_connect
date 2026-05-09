@@ -1,0 +1,19 @@
+-- Documentatie + veilige placeholder (past niets automatisch toe).
+-- Stap 1: Haal je huidige functiedefinitie op in Supabase SQL Editor:
+--   SELECT pg_get_functiondef(p.oid)
+--   FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid
+--   WHERE p.proname = 'haal_beschikbare_operators_op' AND n.nspname = 'public';
+--
+-- Stap 2: Voeg als LAATSTE parameter toe (signature moet CREATE OR REPLACE matchen):
+--   p_negeer_reistijd boolean DEFAULT false
+--
+-- Stap 3: Waar overlap/beschikbaarheid met reistijd werkt via extra minuten op start/einde
+-- (bijv. + interval '15 minutes', + interval '30 minutes', of vaste buffers in vergelijkingen):
+--     travel_buffer interval := CASE
+--       WHEN COALESCE(p_negeer_reistijd, false) THEN interval '0 minutes'
+--       ELSE interval '15 minutes'
+--       END;
+--   Gebruik `travel_buffer` i.p.v. vaste literals, of sla de buffer-tak geheel over als p_negeer_reistijd true is.
+--
+-- De Flutter Handmatige Planner stuurt: p_negeer_reistijd := true naar haal_beschikbare_operators_op.
+SELECT 1;

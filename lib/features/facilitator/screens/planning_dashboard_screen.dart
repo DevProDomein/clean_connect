@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -65,6 +67,20 @@ class _PlanningDashboardScreenState extends State<PlanningDashboardScreen> {
     if (value is int) return value;
     if (value is num) return value.round();
     return int.tryParse(_text(value)) ?? fallback;
+  }
+
+  List<dynamic> _asPlanningList(dynamic raw) {
+    if (raw == null) return const <dynamic>[];
+    if (raw is List) return raw;
+    if (raw is String) {
+      try {
+        final decoded = jsonDecode(raw);
+        return decoded is List ? decoded : const <dynamic>[];
+      } catch (_) {
+        return const <dynamic>[];
+      }
+    }
+    return const <dynamic>[];
   }
 
   List<String> _asStringList(dynamic value) {
@@ -921,6 +937,29 @@ class _PlanningDashboardScreenState extends State<PlanningDashboardScreen> {
           'p_operator_id': result['operator_id'],
         },
       );
+
+      try {
+        final opdrachtenLijst = _asPlanningList(result['voorgestelde_planning']);
+        var datumString = 'binnenkort';
+        if (opdrachtenLijst.isNotEmpty && opdrachtenLijst.first is Map) {
+          final eerste = Map<String, dynamic>.from(opdrachtenLijst.first as Map);
+          final raw = _text(eerste['geplande_datum']);
+          if (raw.isNotEmpty) {
+            datumString = raw.contains('T') ? raw.split('T').first : raw;
+          }
+        }
+        await AppSupabase.client.functions.invoke(
+          'send-push-notification',
+          body: {
+            'operator_id': _text(result['operator_id']),
+            'aantal': opdrachtenLijst.length,
+            'datum_string': datumString,
+          },
+        );
+      } catch (e) {
+        // ignore: avoid_print
+        print('Kon pushmelding niet versturen: $e');
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
