@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 import '../../../providers/user_provider.dart';
 import 'operator_meldingen_screen.dart';
 import 'operator_rooster_screen.dart';
@@ -41,7 +42,8 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
   Map<String, dynamic>? _statsRow;
   String? _profielfotoUrl;
   List<Map<String, dynamic>> _recentVoltooid = [];
-  Map<String, dynamic>? _latestDks;
+  /// DKS: komt uit RPC [bereken_dks_voor_operator] (geen directe query op dks_rapporten).
+  int _dksScore = 0;
   List<Map<String, dynamic>> _vandaagRows = [];
 
   late final AnimationController _fadeCtl;
@@ -97,26 +99,6 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
       return double.tryParse(s.replaceAll('.', '').replaceAll(',', '.')) ?? 0;
     }
     return 0;
-  }
-
-  double? _asDoubleNullable(dynamic v) {
-    if (v == null) return null;
-    final d = _asDouble(v);
-    return d;
-  }
-
-  double? _dksScoreFromRow(Map<String, dynamic> r) {
-    for (final k in const [
-      'score_percentage',
-      'score_definitief',
-      'score_voorgesteld',
-      'totaal_score',
-      'gemiddelde_score',
-    ]) {
-      final x = _asDoubleNullable(r[k]);
-      if (x != null && x > 0) return x;
-    }
-    return null;
   }
 
   /// Toon als schoolcijfer (bijv. 8,8): ruwe waarde > 10 wordt als percentage geïnterpreteerd.
@@ -244,31 +226,17 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
         debugPrint('opdracht_planning recent: $e\n$st');
       }
 
-      Map<String, dynamic>? dks;
+      int dksScore = 0;
       try {
-        final one = await _client
-            .from('dks_rapporten')
-            .select()
-            .eq('operator_id', uid)
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
-        if (one != null) {
-          dks = Map<String, dynamic>.from(one as Map);
-        }
-      } catch (_) {
-        try {
-          final one = await _client
-              .from('dks_rapporten')
-              .select()
-              .eq('operator_id', uid)
-              .order('updated_at', ascending: false)
-              .limit(1)
-              .maybeSingle();
-          if (one != null) dks = Map<String, dynamic>.from(one as Map);
-        } catch (e2, st2) {
-          debugPrint('dks_rapporten operator: $e2\n$st2');
-        }
+        final response = await _client.rpc(
+          'bereken_dks_voor_operator',
+          params: {'p_operator_id': uid},
+        );
+        dksScore = (response as num?)?.toInt() ?? 0;
+      } catch (e) {
+        // ignore: avoid_print
+        print('Fout bij ophalen DKS via RPC: $e');
+        dksScore = 0;
       }
 
       List<Map<String, dynamic>> vandaag = [];
@@ -295,7 +263,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
       setState(() {
         _statsRow = stats;
         _recentVoltooid = recent;
-        _latestDks = dks;
+        _dksScore = dksScore;
         _vandaagRows = vandaag;
         _loading = false;
       });
@@ -711,7 +679,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
   }
 
   Widget _dksSquareCard() {
-    final raw = _latestDks == null ? null : _dksScoreFromRow(_latestDks!);
+    final raw = _dksScore > 0 ? _dksScore.toDouble() : null;
     final cijfer = _displayDksCijfer(raw);
     final progress =
         (cijfer == null) ? 0.0 : (cijfer / 10).clamp(0.0, 1.0);
@@ -1059,6 +1027,9 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                           child: _buildHeroBanner(voorNaam),
                         ),
                         SliverToBoxAdapter(child: _bentoBlock()),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: mobileNavBuffer),
+                        ),
                       ],
                     ),
                   ),

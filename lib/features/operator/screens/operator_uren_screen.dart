@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 /// Operator: dashboard voor bruto salaris ([loonadministratie_maand]) en
 /// afgeronde diensten ([opdracht_planning], status `voltooid`).
@@ -899,6 +900,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
                           ),
                         ),
                       ),
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: mobileNavBuffer),
+                    ),
                   ],
                 );
               },
@@ -926,6 +930,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
                           ),
                         ),
                       ),
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: mobileNavBuffer),
+                    ),
                   ],
                 );
               },

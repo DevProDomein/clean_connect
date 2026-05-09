@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 /// Kalenderoverzicht voor operators ([app_operator_agenda]).
 class OperatorAgendaScreen extends StatefulWidget {
@@ -825,7 +826,7 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24 + mobileNavBuffer),
       itemCount: list.length,
       separatorBuilder: (context, _) => const SizedBox(height: 12),
       itemBuilder: (context, i) {

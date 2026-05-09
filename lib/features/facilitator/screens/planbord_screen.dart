@@ -2177,7 +2177,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 120),
                   ],
                 ),
               ),

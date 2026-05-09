@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 typedef _CatOption = ({String value, String label});
 
@@ -518,6 +519,7 @@ class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
             ],
           ),
         ),
+        const SizedBox(height: mobileNavBuffer),
       ],
     );
   }
@@ -581,7 +583,10 @@ class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-      children: _history.map(_historyCard).toList(),
+      children: [
+        ..._history.map(_historyCard),
+        const SizedBox(height: mobileNavBuffer),
+      ],
     );
   }
 

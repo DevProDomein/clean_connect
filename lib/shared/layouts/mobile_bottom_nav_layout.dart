@@ -37,6 +37,7 @@ class MobileBottomNavLayout extends StatefulWidget {
 
 class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
   int _index = 0;
+  bool _isDrawerOpen = false;
 
   static const _facilitatorFallbackKeys = <String>[
     'dashboard',
@@ -351,16 +352,21 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
     return Scaffold(
       extendBody: true,
       drawer: const AppDrawer(),
-      body: Stack(
-        children: [
-          body,
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: bottomBar,
-          ),
-        ],
+      onDrawerChanged: (isOpened) {
+        if (mounted) {
+          setState(() {
+            _isDrawerOpen = isOpened;
+          });
+        }
+      },
+      body: body,
+      bottomNavigationBar: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: _isDrawerOpen ? 0.0 : 1.0,
+        child: IgnorePointer(
+          ignoring: _isDrawerOpen,
+          child: bottomBar,
+        ),
       ),
     );
   }

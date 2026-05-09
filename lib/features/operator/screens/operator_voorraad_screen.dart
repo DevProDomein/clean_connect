@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 String? _pickStr(Map<String, dynamic> row, List<String> keys) {
   for (final k in keys) {
@@ -395,6 +396,7 @@ class _OperatorVoorraadScreenState extends State<OperatorVoorraadScreen> {
         ),
         const SizedBox(height: 20),
         _inventoryBlock(),
+        const SizedBox(height: mobileNavBuffer),
       ],
     );
   }
