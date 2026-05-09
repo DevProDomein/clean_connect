@@ -660,6 +660,8 @@ class AppDrawerPanel extends StatelessWidget {
                     label: const Text('Uitloggen'),
                   ),
                 ),
+                // Zodat onderste footer (mobiel) boven de zwevende bottom nav uitkomt.
+                const SizedBox(height: 120),
               ],
             ),
           ),

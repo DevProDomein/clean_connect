@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/app_drawer.dart';
+import '../../../services/live_activity_service.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 import 'active_work_order_screen.dart';
 import '../widgets/packing_list_modal.dart';
@@ -345,6 +346,13 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Ingeklokt!'), backgroundColor: Colors.green),
         );
+        final taakNaam =
+            (task['bedrijfsnaam'] ?? task['project_naam'] ?? 'Actieve opdracht')
+                .toString();
+        LiveActivityService.startLiveTimer(
+          taakNaam,
+          DateTime.now().millisecondsSinceEpoch,
+        );
         await Navigator.push<void>(
           context,
           MaterialPageRoute<void>(
@@ -608,6 +616,22 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
               Expanded(child: _buildTodayPrimaryActions(task, status)),
             ],
           ),
+          if (isActive) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _openActieveOpdracht(task),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Open opdracht details'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -626,37 +650,23 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         child: const Text('▶ INKLOKKEN', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
       );
     } else if (status == 'in_uitvoering') {
-      return Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.timer, color: Colors.red.shade700, size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  _getLiveDuration(task['werkelijke_starttijd']),
-                  style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueAccent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                padding: const EdgeInsets.symmetric(vertical: 16),
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.timer, color: Colors.red.shade700, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                _getLiveDuration(task['werkelijke_starttijd']),
+                style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 16),
               ),
-              onPressed: () => _openActieveOpdracht(task),
-              child: const Text('Open Opdracht', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
+            ],
           ),
-        ],
+        ),
       );
     } else if (status == 'voltooid') {
       return ElevatedButton(
@@ -700,9 +710,70 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         ),
         trailing: Icon(Icons.chevron_right, color: Colors.grey.shade300),
         onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Deze taak is gepland voor de toekomst.')),
+          final DateTime nu = DateTime.now();
+          final DateTime vandaag = DateTime(nu.year, nu.month, nu.day);
+
+          final String taakDatumStr = dateLabel;
+          DateTime taakDatum;
+          try {
+            taakDatum = DateTime.parse(dateLabel);
+          } catch (_) {
+            taakDatum = nu;
+          }
+          final DateTime taakDag = DateTime(
+            taakDatum.year,
+            taakDatum.month,
+            taakDatum.day,
           );
+
+          if (taakDag.isAfter(vandaag)) {
+            showDialog<void>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: Text(
+                  task['bedrijfsnaam']?.toString() ?? 'Opdracht Details',
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.calendar_today),
+                      title: Text('Datum: $taakDatumStr'),
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.access_time),
+                      title: Text(
+                        'Tijden: ${_safeTime(task['rooster_starttijd'])} - ${_safeTime(task['rooster_eindtijd'])}',
+                      ),
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.location_on),
+                      title: Text(
+                        task['uitvoer_adres_volledig']?.toString() ??
+                            'Geen adres bekend',
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Sluiten'),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Deze taak is gepland voor de toekomst.'),
+              ),
+            );
+          }
         },
       ),
     );

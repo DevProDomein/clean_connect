@@ -212,10 +212,9 @@ class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
         'gemeld_door_id': uid,
         'categorie': _selectedCategory,
         'onderwerp': onderwerp,
-        'omschrijving': text,
+        'beschrijving': text,
         'prioriteit': 'normaal',
         'status': 'open',
-        'bron': 'operator',
       };
 
       await AppSupabase.client.from('tickets').insert(payload);

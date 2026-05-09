@@ -843,7 +843,65 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(_radiusCard),
-            onTap: () => _openDetails(task),
+            onTap: () {
+              final DateTime nu = DateTime.now();
+              final DateTime vandaag = DateTime(nu.year, nu.month, nu.day);
+
+              final rawDatum = task['geplande_datum']?.toString() ?? '';
+              final String taakDatumStr = rawDatum.length >= 10
+                  ? rawDatum.substring(0, 10)
+                  : rawDatum;
+              final DateTime taakDatum =
+                  DateTime.tryParse(taakDatumStr.isNotEmpty ? taakDatumStr : rawDatum) ??
+                      nu;
+              final DateTime taakDag = DateTime(
+                taakDatum.year,
+                taakDatum.month,
+                taakDatum.day,
+              );
+
+              if (taakDag.isAfter(vandaag)) {
+                showDialog<void>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(
+                      bedrijf.isEmpty ? 'Opdracht Details' : bedrijf,
+                    ),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.calendar_today),
+                          title: Text('Datum: $taakDatumStr'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.access_time),
+                          title: Text('Tijden: $start – $eind'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.location_on),
+                          title: Text(
+                            adres.isEmpty ? 'Geen adres bekend' : adres,
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Sluiten'),
+                      ),
+                    ],
+                  ),
+                );
+              } else {
+                _openDetails(task);
+              }
+            },
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,

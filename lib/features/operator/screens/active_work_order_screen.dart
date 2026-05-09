@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../services/live_activity_service.dart';
+
 /// Persistente checklist voor een actieve werkbon. Vinkjes zijn alleen lokaal (geen DB per tick).
 class ActiveWorkOrderScreen extends StatefulWidget {
   final String opdrachtId;
@@ -38,6 +40,12 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
   Timer? _liveTimer;
   DateTime? _parsedStartTime;
   String _elapsedTime = '00:00:00';
+  double? _benodigdeUren;
+  String? _headerBedrijfsnaam;
+  /// Opdrachtnummer / titel / projectnaam — hoofdregel boven timer.
+  String? _headerOpdrachtTitel;
+  String? _headerAdres;
+  String? _headerTijdLabel;
 
   @override
   void initState() {
@@ -87,6 +95,48 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
   }
 
   Future<void> _loadChecklist() async {
+    double? benodigdeUren;
+    String? headerBedrijfsnaam;
+    String? headerOpdrachtTitel;
+    String? headerAdres;
+    String? headerTijdLabel;
+    try {
+      final opdrachtRow = await _supabase
+          .from('opdrachten')
+          .select(
+            'benodigde_uren_totaal, benodigde_uren, uitvoer_adres_volledig, '
+            'project_naam, opdracht_nummer, titel',
+          )
+          .eq('id', widget.opdrachtId)
+          .maybeSingle();
+      if (opdrachtRow != null) {
+        final m = Map<String, dynamic>.from(opdrachtRow as Map);
+        headerAdres = m['uitvoer_adres_volledig']?.toString();
+        headerOpdrachtTitel = _composeOpdrachtTitel(m);
+        final raw = m['benodigde_uren_totaal'] ?? m['benodigde_uren'];
+        if (raw is num) {
+          benodigdeUren = raw.toDouble();
+        } else if (raw != null) {
+          benodigdeUren = double.tryParse(raw.toString());
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final headRow = await _supabase
+          .from('app_operator_vandaag')
+          .select('bedrijfsnaam, rooster_starttijd, rooster_eindtijd')
+          .eq('planning_id', widget.planningId)
+          .maybeSingle();
+      if (headRow != null) {
+        final m = Map<String, dynamic>.from(headRow as Map);
+        headerBedrijfsnaam = m['bedrijfsnaam']?.toString();
+        final st = _fmtClock(m['rooster_starttijd']);
+        final en = _fmtClock(m['rooster_eindtijd']);
+        headerTijdLabel = '$st - $en';
+      }
+    } catch (_) {}
+
     try {
       final response = await _supabase
           .from('opdracht_checklist')
@@ -103,6 +153,11 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
       if (mounted) {
         setState(() {
           _groupedTasks = grouped;
+          _benodigdeUren = benodigdeUren;
+          _headerBedrijfsnaam = headerBedrijfsnaam;
+          _headerOpdrachtTitel = headerOpdrachtTitel;
+          _headerAdres = headerAdres;
+          _headerTijdLabel = headerTijdLabel;
           _isLoading = false;
         });
       }
@@ -110,10 +165,35 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
       if (mounted) {
         setState(() {
           _errorMessage = e.toString();
+          _benodigdeUren = benodigdeUren;
+          _headerBedrijfsnaam = headerBedrijfsnaam;
+          _headerOpdrachtTitel = headerOpdrachtTitel;
+          _headerAdres = headerAdres;
+          _headerTijdLabel = headerTijdLabel;
           _isLoading = false;
         });
       }
     }
+  }
+
+  /// Volgorde: opdracht_nummer → titel → project_naam.
+  String _composeOpdrachtTitel(Map<String, dynamic> m) {
+    final n = m['opdracht_nummer'];
+    if (n != null && n.toString().trim().isNotEmpty) {
+      return 'Opdracht ${n.toString().trim()}';
+    }
+    final titel = m['titel']?.toString().trim();
+    if (titel != null && titel.isNotEmpty) return titel;
+    final pn = m['project_naam']?.toString().trim();
+    if (pn != null && pn.isNotEmpty) return pn;
+    return 'Opdracht';
+  }
+
+  String _fmtClock(dynamic timeValue) {
+    if (timeValue == null) return '--:--';
+    final t = timeValue.toString();
+    if (t.length >= 5) return t.substring(0, 5);
+    return t;
   }
 
   String _taskKey(String roomName, int index, Map<String, dynamic> t) {
@@ -168,6 +248,7 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Klus voltooid en afgemeld!'), backgroundColor: Colors.green),
         );
+        LiveActivityService.stopLiveTimer();
         Navigator.pop(context, true);
       }
     } catch (e, st) {
@@ -230,26 +311,151 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
   }
 
   Widget _buildLiveTimerHeader() {
+    final benodigdeUren = _benodigdeUren;
+    final urenForRing =
+        (benodigdeUren != null && benodigdeUren > 0) ? benodigdeUren : 1.0;
+    final totaalSecondenNodig = urenForRing * 3600;
+    var verstrekenSeconden = 0;
+    final start = _parsedStartTime;
+    if (start != null) {
+      final diff = DateTime.now().difference(start);
+      if (!diff.isNegative) verstrekenSeconden = diff.inSeconds;
+    }
+    var progress = verstrekenSeconden / totaalSecondenNodig;
+    progress = progress.clamp(0.0, 1.0);
+
+    final cs = Theme.of(context).colorScheme;
+    final urenLabel = benodigdeUren == null
+        ? null
+        : (benodigdeUren == benodigdeUren.roundToDouble()
+            ? benodigdeUren.toInt().toString()
+            : benodigdeUren.toStringAsFixed(1));
+
+    final opdrachtTitelDisp =
+        (_headerOpdrachtTitel != null && _headerOpdrachtTitel!.trim().isNotEmpty)
+            ? _headerOpdrachtTitel!.trim()
+            : 'Opdracht';
+    final bedrijfsNaamDisp = (_headerBedrijfsnaam != null && _headerBedrijfsnaam!.trim().isNotEmpty)
+        ? _headerBedrijfsnaam!.trim()
+        : '';
+    final adresDisp = (_headerAdres != null && _headerAdres!.trim().isNotEmpty)
+        ? _headerAdres!.trim()
+        : 'Adres onbekend';
+    final tijdDisp =
+        (_headerTijdLabel != null && _headerTijdLabel!.trim().isNotEmpty)
+            ? _headerTijdLabel!.trim()
+            : '--:-- - --:--';
+
     return Material(
       elevation: 2,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         color: Colors.red.shade50,
         child: SafeArea(
           bottom: false,
-          child: Row(
+          child: Column(
             children: [
-              Icon(Icons.timer, color: Colors.red.shade700, size: 26),
-              const SizedBox(width: 12),
-              Text(
-                _elapsedTime,
-                style: GoogleFonts.lato(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.red.shade800,
-                  letterSpacing: 1.2,
+              Container(
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
                 ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.assignment, size: 20, color: cs.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            opdrachtTitelDisp,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (bedrijfsNaamDisp.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        bedrijfsNaamDisp,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.location_on, size: 20, color: Colors.grey.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            adresDisp,
+                            style: const TextStyle(color: Colors.black87),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time, size: 20, color: Colors.grey.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            tijdDisp,
+                            style: const TextStyle(color: Colors.black87),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 250,
+                    height: 250,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 12,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _elapsedTime,
+                        style: TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red.shade800,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        urenLabel != null ? 'van $urenLabel u' : '—',
+                        style: const TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
