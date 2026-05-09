@@ -26,6 +26,10 @@ import 'providers/theme_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/theme_mode_provider.dart';
 
+/// Voor SnackBar bij push in de voorgrond (Firebase `onMessage`).
+final GlobalKey<ScaffoldMessengerState> globalMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -44,6 +48,49 @@ Future<void> main() async {
   }
   // Keep messaging package linked/initialized for PWA.
   FirebaseMessaging.instance;
+
+  try {
+    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+  } catch (e) {
+    // ignore: avoid_print
+    print('Kon foreground options niet instellen: $e');
+  }
+
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    // ignore: avoid_print
+    print('--- 🚨 INKOME PUSH MELDING OP DE VOORGROND ---');
+    // ignore: avoid_print
+    print('Titel: ${message.notification?.title}');
+    // ignore: avoid_print
+    print('Body: ${message.notification?.body}');
+
+    if (message.notification != null) {
+      globalMessengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message.notification?.title ?? 'Melding',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(message.notification?.body ?? ''),
+            ],
+          ),
+          backgroundColor: Colors.blue.shade800,
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+          dismissDirection: DismissDirection.up,
+        ),
+      );
+    }
+  });
 
   // Load environment variables.
   // Note: If you renamed it for Netlify earlier, make sure this says "env.txt" instead of ".env".
@@ -324,6 +371,7 @@ class _MyAppState extends State<MyApp> {
         final themeMode = context.watch<ThemeModeProvider>().mode;
 
         return MaterialApp(
+          scaffoldMessengerKey: globalMessengerKey,
           key: ValueKey(_appEpoch),
           title: AppTexts.get('app_title'),
           supportedLocales: const [Locale('nl')],

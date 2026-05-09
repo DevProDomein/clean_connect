@@ -22,6 +22,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
   List<Map<String, dynamic>> handmatigeStarttijden = [];
   bool isHandmatigeTijdenLaden = false;
   String? geselecteerdeHandmatigeTijd;
+  DateTime? geselecteerdeHandmatigeDatum;
 
   bool _loading = true;
   bool _saving = false;
@@ -131,6 +132,12 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
 
   DateTime get _plannedDate => _dateFromValue(_opdracht?['geplande_datum']);
 
+  /// Datum voor handmatige planning (kiezer override of opdracht-bron).
+  DateTime get _effectieveHandmatigePlanningDatum {
+    final d = geselecteerdeHandmatigeDatum ?? _plannedDate;
+    return DateTime(d.year, d.month, d.day);
+  }
+
   TimeOfDay get _windowStart => _timeFromValue(_opdracht?['tijdslot_start']);
 
   TimeOfDay get _windowEnd => _timeFromValue(_opdracht?['tijdslot_eind']);
@@ -141,11 +148,8 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     return _timeFromValue(value);
   }
 
-  String get _plannedDateDb {
-    final raw = _text(_opdracht?['geplande_datum']);
-    if (raw.isEmpty) return _plannedDate.toIso8601String().split('T').first;
-    return raw.contains('T') ? raw.split('T').first : raw;
-  }
+  String get _plannedDateDb =>
+      DateFormat('yyyy-MM-dd').format(_effectieveHandmatigePlanningDatum);
 
   String _formatDate(DateTime date) => DateFormat('dd-MM-yyyy').format(date);
 
@@ -190,11 +194,17 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       _startTimeController.text = _timeToHuman(slotStart);
       geselecteerdeHandmatigeTijd = _timeToHuman(slotStart);
 
+      final pd = _dateFromValue(map['geplande_datum']);
+      final pdDay = DateTime(pd.year, pd.month, pd.day);
+
       if (!mounted) return;
-      setState(() => _opdracht = map);
+      setState(() {
+        _opdracht = map;
+        geselecteerdeHandmatigeDatum = pdDay;
+      });
 
       // Handmatige tijden initialiseren (zonder operator: toon alles zonder warnings).
-      await _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
+      await _berekenHandmatigeTijden(_selectedOperatorId ?? '', pdDay, _shiftHours);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -387,6 +397,31 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     }
   }
 
+  Future<void> _pickHandmatigeDatum() async {
+    final initial = _effectieveHandmatigePlanningDatum;
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+    );
+    if (picked == null || !mounted) return;
+    final pickedDay = DateTime(picked.year, picked.month, picked.day);
+    if (pickedDay.year == initial.year &&
+        pickedDay.month == initial.month &&
+        pickedDay.day == initial.day) {
+      return;
+    }
+
+    final opId = _text(_selectedOperatorId);
+    setState(() {
+      geselecteerdeHandmatigeDatum = pickedDay;
+      geselecteerdeHandmatigeTijd = null;
+    });
+
+    await _berekenHandmatigeTijden(opId, pickedDay, _shiftHours);
+  }
+
   Future<void> _submitPlan() async {
     if (_saving || _selectedOperatorId == null) return;
     final hours = _shiftHours;
@@ -397,10 +432,12 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
 
     setState(() => _saving = true);
     try {
+      final datumDb = _plannedDateDb;
+
       await Supabase.instance.client.from('opdracht_planning').insert({
         'opdracht_id': widget.opdrachtId,
         'operator_id': _selectedOperatorId,
-        'geplande_datum': _plannedDateDb,
+        'geplande_datum': datumDb,
         'starttijd': _minutesToDb(startMinutes),
         'eindtijd': _minutesToDb(endMinutes),
         'toegewezen_uren': hours,
@@ -408,8 +445,17 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       });
 
       try {
+        await Supabase.instance.client.from('opdrachten').update({
+          'geplande_datum': datumDb,
+        }).eq('id', widget.opdrachtId);
+      } catch (e) {
+        // ignore: avoid_print
+        print('Kon opdracht-datum niet bijwerken: $e');
+      }
+
+      try {
         final gekozenOperatorId = _text(_selectedOperatorId);
-        final rawDatum = _plannedDateDb;
+        final rawDatum = datumDb;
         final datumString = rawDatum.contains('T')
             ? rawDatum.split('T').first
             : (rawDatum.isNotEmpty ? rawDatum : 'binnenkort');
@@ -595,7 +641,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           cs,
           isDark,
           title: 'Geplande datum',
-          value: _formatDate(_plannedDate),
+          value: _formatDate(_effectieveHandmatigePlanningDatum),
         ),
         const SizedBox(height: 10),
         _infoCard(
@@ -744,6 +790,26 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           ),
         ),
         const SizedBox(height: 12),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.calendar_today, color: cs.primary),
+          title: Text(
+            'Datum opdracht',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(
+            geselecteerdeHandmatigeDatum != null
+                ? '${geselecteerdeHandmatigeDatum!.day}-${geselecteerdeHandmatigeDatum!.month}-${geselecteerdeHandmatigeDatum!.year}'
+                : 'Kies een datum',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          trailing: TextButton(
+            onPressed: _pickHandmatigeDatum,
+            child: const Text('Wijzigen'),
+          ),
+          onTap: _pickHandmatigeDatum,
+        ),
+        const SizedBox(height: 8),
         Row(
           children: [
             _StepperCircleButton(
@@ -753,7 +819,11 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                   _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
                   _selectedOperatorId = null;
                 });
-                _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
+                _berekenHandmatigeTijden(
+                  _selectedOperatorId ?? '',
+                  _effectieveHandmatigePlanningDatum,
+                  _shiftHours,
+                );
               },
             ),
             Expanded(
@@ -770,7 +840,11 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                   _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
                   _selectedOperatorId = null;
                 });
-                _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
+                _berekenHandmatigeTijden(
+                  _selectedOperatorId ?? '',
+                  _effectieveHandmatigePlanningDatum,
+                  _shiftHours,
+                );
               },
             ),
           ],
@@ -898,7 +972,11 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                 ? null
                 : (value) {
                     setState(() => _selectedOperatorId = value);
-                    _berekenHandmatigeTijden(_selectedOperatorId ?? '', _plannedDate, _shiftHours);
+                    _berekenHandmatigeTijden(
+                      _selectedOperatorId ?? '',
+                      _effectieveHandmatigePlanningDatum,
+                      _shiftHours,
+                    );
                   },
           ),
         const SizedBox(height: 18),

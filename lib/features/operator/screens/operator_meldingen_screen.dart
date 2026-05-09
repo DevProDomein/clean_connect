@@ -219,63 +219,73 @@ class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
 
       await AppSupabase.client.from('tickets').insert(payload);
 
-      String? facilitatorId;
-      var klantOfProjectNaam = 'een project';
+      // Project-id voor facilitator-lookup (formulier heeft alleen bedrijf_id).
+      String? projectIdForPush;
       try {
-        final bedrijfRow = await AppSupabase.client
-            .from('bedrijven')
-            .select('betrokken_facilitator_id, bedrijfsnaam')
-            .eq('id', bid)
+        final pr = await AppSupabase.client
+            .from('projecten')
+            .select('id')
+            .eq('bedrijf_id', bid)
+            .limit(1)
             .maybeSingle();
-
-        if (bedrijfRow != null) {
-          final bm = Map<String, dynamic>.from(bedrijfRow as Map);
-          final facRaw = bm['betrokken_facilitator_id'];
-          final naamRaw = bm['bedrijfsnaam'];
-          if (naamRaw != null && naamRaw.toString().trim().isNotEmpty) {
-            klantOfProjectNaam = naamRaw.toString().trim();
-          }
-          if (facRaw != null && facRaw.toString().trim().isNotEmpty) {
-            facilitatorId = facRaw.toString().trim();
-          }
+        if (pr != null) {
+          final m = Map<String, dynamic>.from(pr as Map);
+          final id = m['id']?.toString().trim();
+          if (id != null && id.isNotEmpty) projectIdForPush = id;
         }
+      } catch (e) {
+        // ignore: avoid_print
+        print('Kon project-id voor push niet resolven: $e');
+      }
 
-        if (facilitatorId == null || facilitatorId.isEmpty) {
-          final projectRow = await AppSupabase.client
+      final supabase = AppSupabase.client;
+
+      // ignore: avoid_print
+      print('--- START PUSH QUEUE LOGICA ---');
+      // ignore: avoid_print
+      print('Zoeken naar facilitator voor project ID: $projectIdForPush');
+
+      if (projectIdForPush != null && projectIdForPush.isNotEmpty) {
+        try {
+          final projectData = await supabase
               .from('projecten')
               .select('facilitator_id, project_naam')
-              .eq('bedrijf_id', bid)
-              .limit(1)
+              .eq('id', projectIdForPush)
               .maybeSingle();
-          if (projectRow != null) {
-            final pm = Map<String, dynamic>.from(projectRow as Map);
-            final pf = pm['facilitator_id'];
-            if (pf != null && pf.toString().trim().isNotEmpty) {
-              facilitatorId = pf.toString().trim();
-            }
-            final pn = pm['project_naam'];
-            if (pn != null && pn.toString().trim().isNotEmpty) {
-              klantOfProjectNaam = pn.toString().trim();
-            }
-          }
-        }
-      } catch (_) {
-        // Facilitator-resolving faalt stil; melding is al opgeslagen.
-      }
 
-      if (facilitatorId != null && facilitatorId.isNotEmpty) {
-        try {
-          await AppSupabase.client.from('push_queue').insert({
-            'operator_id': facilitatorId,
-            'titel': 'Nieuwe Melding 🚨',
-            'bericht':
-                'Een operator heeft zojuist een melding achtergelaten bij $klantOfProjectNaam. Bekijk het ticket in je dashboard.',
-          });
+          final facilitatorId = projectData?['facilitator_id'];
+          final projectNaam = projectData?['project_naam'] ?? 'een project';
+
+          // ignore: avoid_print
+          print('Gevonden Facilitator ID: $facilitatorId');
+
+          if (facilitatorId != null && facilitatorId.toString().trim().isNotEmpty) {
+            await supabase.from('push_queue').insert({
+              'operator_id': facilitatorId.toString(),
+              'titel': 'Nieuwe Melding 🚨',
+              'bericht':
+                  'Een operator heeft zojuist een melding achtergelaten bij $projectNaam. Bekijk het ticket in je dashboard.',
+            });
+            // ignore: avoid_print
+            print('SUCCES: Pushmelding in wachtrij geplaatst!');
+          } else {
+            // ignore: avoid_print
+            print(
+              'FAIL: facilitatorId is null in de database voor dit project!',
+            );
+          }
         } catch (e) {
           // ignore: avoid_print
-          print('Fout bij het klaarzetten van de facilitator pushmelding: $e');
+          print('CRASH BIJ PUSH QUEUE INSERT: $e');
         }
+      } else {
+        // ignore: avoid_print
+        print(
+          'FAIL: Project ID is null, we kunnen de facilitator niet opzoeken.',
+        );
       }
+      // ignore: avoid_print
+      print('--- EINDE PUSH QUEUE LOGICA ---');
 
       if (!mounted) return;
       _onderwerpCtl.clear();
