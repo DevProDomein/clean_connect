@@ -219,6 +219,64 @@ class _OperatorMeldingenScreenState extends State<OperatorMeldingenScreen>
 
       await AppSupabase.client.from('tickets').insert(payload);
 
+      String? facilitatorId;
+      var klantOfProjectNaam = 'een project';
+      try {
+        final bedrijfRow = await AppSupabase.client
+            .from('bedrijven')
+            .select('betrokken_facilitator_id, bedrijfsnaam')
+            .eq('id', bid)
+            .maybeSingle();
+
+        if (bedrijfRow != null) {
+          final bm = Map<String, dynamic>.from(bedrijfRow as Map);
+          final facRaw = bm['betrokken_facilitator_id'];
+          final naamRaw = bm['bedrijfsnaam'];
+          if (naamRaw != null && naamRaw.toString().trim().isNotEmpty) {
+            klantOfProjectNaam = naamRaw.toString().trim();
+          }
+          if (facRaw != null && facRaw.toString().trim().isNotEmpty) {
+            facilitatorId = facRaw.toString().trim();
+          }
+        }
+
+        if (facilitatorId == null || facilitatorId.isEmpty) {
+          final projectRow = await AppSupabase.client
+              .from('projecten')
+              .select('facilitator_id, project_naam')
+              .eq('bedrijf_id', bid)
+              .limit(1)
+              .maybeSingle();
+          if (projectRow != null) {
+            final pm = Map<String, dynamic>.from(projectRow as Map);
+            final pf = pm['facilitator_id'];
+            if (pf != null && pf.toString().trim().isNotEmpty) {
+              facilitatorId = pf.toString().trim();
+            }
+            final pn = pm['project_naam'];
+            if (pn != null && pn.toString().trim().isNotEmpty) {
+              klantOfProjectNaam = pn.toString().trim();
+            }
+          }
+        }
+      } catch (_) {
+        // Facilitator-resolving faalt stil; melding is al opgeslagen.
+      }
+
+      if (facilitatorId != null && facilitatorId.isNotEmpty) {
+        try {
+          await AppSupabase.client.from('push_queue').insert({
+            'operator_id': facilitatorId,
+            'titel': 'Nieuwe Melding 🚨',
+            'bericht':
+                'Een operator heeft zojuist een melding achtergelaten bij $klantOfProjectNaam. Bekijk het ticket in je dashboard.',
+          });
+        } catch (e) {
+          // ignore: avoid_print
+          print('Fout bij het klaarzetten van de facilitator pushmelding: $e');
+        }
+      }
+
       if (!mounted) return;
       _onderwerpCtl.clear();
       _toelichtingCtl.clear();

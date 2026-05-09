@@ -183,6 +183,39 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
         }
       }
 
+      // Totaal projecten per relatie obv `projecten.bedrijf_id` (incl. offerte-gegenereerde;
+      // de view kan `aantal_projecten` beperken tot o.a. is_handmatig).
+      if (clients.isNotEmpty) {
+        try {
+          final ids = clients
+              .map((c) => _text(c['id']))
+              .where((id) => id.isNotEmpty)
+              .toSet()
+              .toList();
+          if (ids.isNotEmpty) {
+            final projRes = await AppSupabase.client
+                .from('projecten')
+                .select('bedrijf_id')
+                .inFilter('bedrijf_id', ids);
+            final counts = <String, int>{};
+            for (final row in (projRes as List)) {
+              if (row is! Map) continue;
+              final m = Map<String, dynamic>.from(row);
+              final bid = _text(m['bedrijf_id']);
+              if (bid.isEmpty) continue;
+              counts[bid] = (counts[bid] ?? 0) + 1;
+            }
+            for (final c in clients) {
+              final id = _text(c['id']);
+              if (id.isEmpty) continue;
+              c['aantal_projecten'] = counts[id] ?? 0;
+            }
+          }
+        } catch (_) {
+          // Non-fatal: gebruik waarden uit de CRM-view.
+        }
+      }
+
       // 2) Quote KPIs: count total + signed for this facilitator.
       int quotesTotal = 0;
       int quotesSigned = 0;
