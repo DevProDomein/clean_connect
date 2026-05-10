@@ -1,11 +1,12 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:infinite_calendar_view/infinite_calendar_view.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
@@ -50,16 +51,20 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   List<Map<String, dynamic>> _tijdOpties = const <Map<String, dynamic>>[];
   bool _isTijdenLaden = false;
 
-  // Manual planning (table_calendar) state
+  // Manual planning (timeline) state
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay = DateTime.now();
   String? _selectedManualProjectId;
   String _calendarViewMode = 'Maand';
   bool _showFilters = true;
-  List<Map<String, dynamic>> _manualTasks = [];
-  Map<DateTime, List<dynamic>> _groupedTasks = {};
+  Map<DateTime, List<Map<String, dynamic>>> _groupedOpenTaken = {};
+  Map<DateTime, List<Map<String, dynamic>>> _groupedGeplandeTaken = {};
+
+  /// Ingeplande opdrachten voor de momenteel gekozen kalenderdag (query op `opdrachten`, status `ingepland`).
+  List<Map<String, dynamic>> _reedsGeplandeTaken = [];
+  bool _isLoadingReedsGeplande = false;
+  final Set<String> _reopeningOpdrachtIds = {};
   bool _isLoading = true;
-  CalendarFormat _calendarFormat = CalendarFormat.month;
 
   @override
   void initState() {
@@ -81,7 +86,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     super.dispose();
   }
 
-  DateTime _normalizeDate(DateTime date) => DateTime(date.year, date.month, date.day);
+  DateTime _normalizeDate(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
 
   String _text(dynamic value) => (value ?? '').toString().trim();
 
@@ -157,13 +163,16 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       final opties = <Map<String, dynamic>>[];
       final totaalDagen = datumsDb.length;
 
-      for (int actueleMinuten = startVensterMin;
-          (actueleMinuten + opdrachtMinuten) <= eindVensterMin;
-          actueleMinuten += 15) {
+      for (
+        int actueleMinuten = startVensterMin;
+        (actueleMinuten + opdrachtMinuten) <= eindVensterMin;
+        actueleMinuten += 15
+      ) {
         final potentieelEindMinuten = actueleMinuten + opdrachtMinuten;
         var vrij = 0;
         for (final d in datumsDb) {
-          final afspraken = afsprakenByDate[d] ?? const <Map<String, dynamic>>[];
+          final afspraken =
+              afsprakenByDate[d] ?? const <Map<String, dynamic>>[];
           var overlap = false;
           for (final a in afspraken) {
             final stRaw = _text(a['starttijd']);
@@ -187,7 +196,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
         final uren = actueleMinuten ~/ 60;
         final minuten = actueleMinuten % 60;
-        final tijd = '${uren.toString().padLeft(2, '0')}:${minuten.toString().padLeft(2, '0')}';
+        final tijd =
+            '${uren.toString().padLeft(2, '0')}:${minuten.toString().padLeft(2, '0')}';
         final status = vrij == totaalDagen ? 'volledig' : 'beperkt';
         opties.add({
           'tijd': tijd,
@@ -201,7 +211,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       setState(() {
         _tijdOpties = opties;
         final cur = (_handmatigeSmartTijd ?? '').trim();
-        final tijden = opties.map((e) => _text(e['tijd'])).where((t) => t.isNotEmpty).toList();
+        final tijden = opties
+            .map((e) => _text(e['tijd']))
+            .where((t) => t.isNotEmpty)
+            .toList();
         if (tijden.isNotEmpty) {
           if (cur.isEmpty || !tijden.contains(cur)) {
             _handmatigeSmartTijd = tijden.first;
@@ -252,7 +265,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       if (!mounted) return;
       final raw = _text(res?['starttijd']);
       setState(() {
-        _smartReedsIngeplandStart = raw.isEmpty ? null : (raw.length >= 5 ? raw.substring(0, 5) : raw);
+        _smartReedsIngeplandStart = raw.isEmpty
+            ? null
+            : (raw.length >= 5 ? raw.substring(0, 5) : raw);
       });
     } catch (_) {
       if (!mounted) return;
@@ -289,18 +304,21 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             fallback: 1,
           );
 
-    final suggested = _timeFromRaw(firstMap['starttijd'] ?? firstMap['tijdslot_start']) ??
+    final suggested =
+        _timeFromRaw(firstMap['starttijd'] ?? firstMap['tijdslot_start']) ??
         _timeFromRaw(_selectedProject?['tijdslot_start']) ??
         const TimeOfDay(hour: 8, minute: 0);
 
     final windowStart =
-        _timeFromRaw(_selectedProject?['tijdslot_start']) ?? const TimeOfDay(hour: 8, minute: 0);
+        _timeFromRaw(_selectedProject?['tijdslot_start']) ??
+        const TimeOfDay(hour: 8, minute: 0);
     final windowEnd =
-        _timeFromRaw(_selectedProject?['tijdslot_eind']) ?? const TimeOfDay(hour: 17, minute: 0);
+        _timeFromRaw(_selectedProject?['tijdslot_eind']) ??
+        const TimeOfDay(hour: 17, minute: 0);
 
     final urenPerShift =
         double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
-            _shiftHours;
+        _shiftHours;
 
     if (!mounted) return;
     setState(() {
@@ -312,15 +330,16 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     await _loadSmartReedsIngepland(opdrachtId);
 
-    final datumsDb = planning
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .map((m) => _text(m['geplande_datum']))
-        .where((d) => d.isNotEmpty)
-        .map((d) => d.contains('T') ? d.split('T').first : d)
-        .toSet()
-        .toList()
-      ..sort();
+    final datumsDb =
+        planning
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .map((m) => _text(m['geplande_datum']))
+            .where((d) => d.isNotEmpty)
+            .map((d) => d.contains('T') ? d.split('T').first : d)
+            .toSet()
+            .toList()
+          ..sort();
 
     if (datumsDb.isNotEmpty && _text(result['operator_id']).isNotEmpty) {
       await _berekenVeiligeTijden(
@@ -380,6 +399,105 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final joined = _projectJoin(task);
     final name = _text(joined?['project_naam']);
     return name.isEmpty ? 'Naamloos project' : name;
+  }
+
+  /// Embed `planning_details:opdracht_planning!huidige_planning_id` (+ list→eerste rij tolerantie).
+  Map<String, dynamic>? _planningDetailsVanItem(Map<String, dynamic> item) {
+    final raw = item['planning_details'];
+    if (raw == null) return null;
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty) {
+      final first = raw.first;
+      if (first is Map<String, dynamic>) return first;
+      if (first is Map) return Map<String, dynamic>.from(first);
+    }
+    return null;
+  }
+
+  /// Alias voor sort/modal/tijden: zelfde object als `planning_details`.
+  Map<String, dynamic>? _huidigePlanningMap(Map<String, dynamic> item) =>
+      _planningDetailsVanItem(item);
+
+  /// Uitvoerder via embed `uitvoerder_info:gebruikers!huidige_operator_id`.
+  String _extractIngeplandWeergaveNaam(Map<String, dynamic> item) {
+    final uitvoerderData = item['uitvoerder_info'];
+    if (uitvoerderData == null) {
+      // ignore: avoid_print
+      print(
+        'WAARSCHUWING: uitvoerder_info is NULL voor opdracht: ${item['id']}',
+      );
+      // ignore: avoid_print
+      print('Volledige data van dit item: $item');
+    }
+
+    final String vNaam = uitvoerderData?['voornaam']?.toString() ?? '';
+    final String aNaam = uitvoerderData?['achternaam']?.toString() ?? '';
+    final String volledigeNaam = '$vNaam $aNaam'.trim();
+    final String weergaveNaam = volledigeNaam.isNotEmpty
+        ? volledigeNaam
+        : 'Onbekende uitvoerder';
+    return weergaveNaam;
+  }
+
+  String _displayOpdrachtNummer(Map<String, dynamic> item) {
+    final n = _text(item['opdrachtnummer']);
+    if (n.isNotEmpty) return n;
+    final ref = _text(item['referentie']);
+    if (ref.isNotEmpty) return ref;
+    final id = _text(item['id']);
+    if (id.length >= 8) return id.substring(0, 8).toUpperCase();
+    return id.isNotEmpty ? id : '—';
+  }
+
+  String _reedsGeplandeSortTime(Map<String, dynamic> item) {
+    final plan = _huidigePlanningMap(item);
+    if (plan != null && _text(plan['starttijd']).isNotEmpty) {
+      return _timeLabel(plan['starttijd']);
+    }
+    return _timeLabel(item['tijdslot_start']);
+  }
+
+  List<Map<String, dynamic>> _sortOpenForAgenda(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final selectedKey = _normalizeDate(_selectedDay ?? _focusedDay);
+    final sorted = [...rows]
+      ..sort((a, b) {
+        final aDate = _normalizeDate(_toDate(a['geplande_datum']));
+        final bDate = _normalizeDate(_toDate(b['geplande_datum']));
+        final aIs = aDate == selectedKey;
+        final bIs = bDate == selectedKey;
+        if (aIs && !bIs) return -1;
+        if (!aIs && bIs) return 1;
+        return _toDate(
+          a['geplande_datum'],
+        ).compareTo(_toDate(b['geplande_datum']));
+      });
+    return sorted;
+  }
+
+  List<Map<String, dynamic>> _sortReedsGeplande(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final sorted = [...rows]
+      ..sort((a, b) {
+        final dateCmp = _toDate(
+          a['geplande_datum'],
+        ).compareTo(_toDate(b['geplande_datum']));
+        if (dateCmp != 0) return dateCmp;
+        return _reedsGeplandeSortTime(a).compareTo(_reedsGeplandeSortTime(b));
+      });
+    return sorted;
+  }
+
+  DateTime get _manualSelectedDay =>
+      _normalizeDate(_selectedDay ?? _focusedDay);
+
+  List<Map<String, dynamic>> get _openTasksManualDay {
+    final list =
+        _groupedOpenTaken[_manualSelectedDay] ?? const <Map<String, dynamic>>[];
+    return _sortOpenForAgenda(List<Map<String, dynamic>>.from(list));
   }
 
   Future<void> _fetchProjects() async {
@@ -503,16 +621,20 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
     final safeOperators = neededOperators <= 0 ? 1 : neededOperators;
     final totalHours = _asDouble(project['benodigde_uren_totaal'], fallback: 0);
-    final standardPerShift = _asDouble(project['standaard_uren_per_shift'], fallback: 0);
+    final standardPerShift = _asDouble(
+      project['standaard_uren_per_shift'],
+      fallback: 0,
+    );
     final rawHours = standardPerShift > 0
         ? standardPerShift
         : totalHours > 0
-            ? (totalHours / safeOperators)
-            : _asDouble(project['basis_uren_per_opdracht'], fallback: 1);
+        ? (totalHours / safeOperators)
+        : _asDouble(project['basis_uren_per_opdracht'], fallback: 1);
     final perShiftHours = rawHours.clamp(0.25, 24.0);
     final normalizedProject = Map<String, dynamic>.from(project);
-    normalizedProject['project_id'] =
-        _text(project['project_id']).isNotEmpty ? _text(project['project_id']) : _text(project['id']);
+    normalizedProject['project_id'] = _text(project['project_id']).isNotEmpty
+        ? _text(project['project_id'])
+        : _text(project['id']);
 
     setState(() {
       _selectedProject = normalizedProject;
@@ -531,7 +653,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final projectId = _text(selectedProject['project_id']).isNotEmpty
         ? selectedProject['project_id']
         : selectedProject['id'];
-    final parsedHours = double.tryParse(_hoursController.text.replaceAll(',', '.')) ?? 0.0;
+    final parsedHours =
+        double.tryParse(_hoursController.text.replaceAll(',', '.')) ?? 0.0;
     if (_text(projectId).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -565,10 +688,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     try {
       final response = await AppSupabase.client.rpc(
         'bereken_slimme_planning',
-        params: {
-          'p_project_id': projectId,
-          'p_uren_per_shift': parsedHours,
-        },
+        params: {'p_project_id': projectId, 'p_uren_per_shift': parsedHours},
       );
       debugPrint('RPC SUCCESS: $response');
 
@@ -596,7 +716,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   }
 
   Future<void> _confirmBooking(Map<String, dynamic> result) async {
-    final name = _text(result['naam']).isEmpty ? 'deze operator' : _text(result['naam']);
+    final name = _text(result['naam']).isEmpty
+        ? 'deze operator'
+        : _text(result['naam']);
     final available = _asInt(result['beschikbare_beurten']);
 
     final shouldConfirm = await showDialog<bool>(
@@ -604,7 +726,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       builder: (dialogContext) {
         return SelectionArea(
           child: AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             title: Text(
               'Definitief inplannen?',
               style: GoogleFonts.inter(fontWeight: FontWeight.w900),
@@ -616,14 +740,22 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: Text('Annuleren', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Annuleren',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                ),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
                 style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
                 ),
-                child: Text('Bevestigen', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+                child: Text(
+                  'Bevestigen',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),
@@ -642,10 +774,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       );
 
       try {
-        final opdrachtenLijst = _asPlanningList(result['voorgestelde_planning']);
+        final opdrachtenLijst = _asPlanningList(
+          result['voorgestelde_planning'],
+        );
         var datumString = 'binnenkort';
         if (opdrachtenLijst.isNotEmpty && opdrachtenLijst.first is Map) {
-          final eerste = Map<String, dynamic>.from(opdrachtenLijst.first as Map);
+          final eerste = Map<String, dynamic>.from(
+            opdrachtenLijst.first as Map,
+          );
           final raw = _text(eerste['geplande_datum']);
           if (raw.isNotEmpty) {
             datumString = raw.contains('T') ? raw.split('T').first : raw;
@@ -671,7 +807,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           backgroundColor: const Color(0xFF1E8E3E),
           content: Text(
             'Reeks succesvol ingepland!',
-            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800),
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       );
@@ -732,39 +871,45 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     final hours =
         double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
-            _shiftHours;
+        _shiftHours;
     final defaultDurMin = (hours * 60).round();
 
     final startHuman = definitieveStartTijd.length >= 5
         ? definitieveStartTijd.substring(0, 5)
         : definitieveStartTijd;
 
-    final updatedList = planning.map((raw) {
-      if (raw is! Map) return raw;
-      final m = Map<String, dynamic>.from(raw);
-      final itemHours = _asDouble(
-        m['toegewezen_uren'] ??
-            m['uren_per_shift'] ??
-            m['duur_uren'] ??
-            m['uren'],
-        fallback: hours,
-      );
-      final durMin =
-          itemHours > 0 ? (itemHours * 60).round() : defaultDurMin;
+    final updatedList = planning
+        .map((raw) {
+          if (raw is! Map) return raw;
+          final m = Map<String, dynamic>.from(raw);
+          final itemHours = _asDouble(
+            m['toegewezen_uren'] ??
+                m['uren_per_shift'] ??
+                m['duur_uren'] ??
+                m['uren'],
+            fallback: hours,
+          );
+          final durMin = itemHours > 0
+              ? (itemHours * 60).round()
+              : defaultDurMin;
 
-      final rawDate = _text(m['geplande_datum']);
-      final datumDb =
-          rawDate.contains('T') ? rawDate.split('T').first : rawDate;
-      if (datumDb.isEmpty) return null;
+          final rawDate = _text(m['geplande_datum']);
+          final datumDb = rawDate.contains('T')
+              ? rawDate.split('T').first
+              : rawDate;
+          if (datumDb.isEmpty) return null;
 
-      m['starttijd'] = '$startHuman:00';
-      m['eindtijd'] = _berekenEindTijd(startHuman, durMin);
-      return m;
-    }).whereType<Map>().toList(growable: false);
+          m['starttijd'] = '$startHuman:00';
+          m['eindtijd'] = _berekenEindTijd(startHuman, durMin);
+          return m;
+        })
+        .whereType<Map>()
+        .toList(growable: false);
 
     final patched = Map<String, dynamic>.from(selectedResult);
-    patched['voorgestelde_planning'] =
-        rawPlanning is String ? jsonEncode(updatedList) : updatedList;
+    patched['voorgestelde_planning'] = rawPlanning is String
+        ? jsonEncode(updatedList)
+        : updatedList;
     _confirmBooking(patched);
   }
 
@@ -783,55 +928,148 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   DateTime _toDate(dynamic value) {
     final raw = _text(value);
     if (raw.isEmpty) return DateTime.now();
-    return DateTime.tryParse(raw) ?? DateTime.now();
+    final head = raw.length >= 10 ? raw.substring(0, 10) : raw;
+    try {
+      return _normalizeDate(DateFormat('yyyy-MM-dd').parse(head));
+    } catch (_) {
+      final d = DateTime.tryParse(raw);
+      return d != null ? _normalizeDate(d) : DateTime.now();
+    }
   }
 
-  DateTime _startOfWeek(DateTime date) {
-    final normalized = _normalizeDate(date);
-    return normalized.subtract(Duration(days: normalized.weekday - DateTime.monday));
+  void _manualAddCalendarMonths(int delta) {
+    final d = _focusedDay;
+    final targetFirst = DateTime(d.year, d.month + delta, 1);
+    final dim = DateTime(targetFirst.year, targetFirst.month + 1, 0).day;
+    final newDay = math.min(d.day, dim);
+    setState(
+      () => _focusedDay = DateTime(targetFirst.year, targetFirst.month, newDay),
+    );
   }
 
-  List<dynamic> get _filteredAgendaTasks {
-    Iterable<Map<String, dynamic>> filtered = _manualTasks;
+  ({int start, int end}) _manualOpenSlotMinutes(Map<String, dynamic> task) {
+    final sh = _timeLabel(task['tijdslot_start'], fallback: '09:00');
+    final eh = _timeLabel(task['tijdslot_eind'], fallback: '10:00');
+    var sm = _timeToMinutes(sh);
+    var em = _timeToMinutes(eh);
+    if (em <= sm) em = sm + 60;
+    return (start: sm, end: em);
+  }
 
-    // 1) Project filter
-    if (_selectedManualProjectId != null && _selectedManualProjectId!.isNotEmpty) {
-      filtered = filtered.where((task) => _text(task['project_id']) == _selectedManualProjectId);
+  ({int start, int end}) _manualPlannedSlotMinutes(Map<String, dynamic> item) {
+    final plan = _planningDetailsVanItem(item);
+    final sh = plan != null && _text(plan['starttijd']).isNotEmpty
+        ? _timeLabel(plan['starttijd'])
+        : _timeLabel(item['tijdslot_start'], fallback: '09:00');
+    final eh = plan != null && _text(plan['eindtijd']).isNotEmpty
+        ? _timeLabel(plan['eindtijd'])
+        : _timeLabel(item['tijdslot_eind'], fallback: '10:00');
+    var sm = _timeToMinutes(sh);
+    var em = _timeToMinutes(eh);
+    if (em <= sm) em = sm + 60;
+    return (start: sm, end: em);
+  }
+
+  String _manualTimelineOpenTitle(Map<String, dynamic> task) {
+    final project = _projectName(task);
+    final company = _text(task['bedrijfsnaam']).isEmpty
+        ? 'Onbekende klant'
+        : _text(task['bedrijfsnaam']);
+    return project.isNotEmpty && project != 'Naamloos project'
+        ? project
+        : company;
+  }
+
+  String _manualTimelinePlannedTitle(Map<String, dynamic> item) {
+    final bedrijf = _text(item['bedrijfsnaam']).isEmpty
+        ? 'Onbekende klant'
+        : _text(item['bedrijfsnaam']);
+    return bedrijf;
+  }
+
+  /// `uitvoerder_info` / `planning_details` = expliciete aliases; `projecten` = zelfde subregel als open kaarten.
+  static const String _reedsGeplandeSelect =
+      '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),planning_details:opdracht_planning!huidige_planning_id(starttijd,eindtijd)';
+
+  Future<List<Map<String, dynamic>>> _fetchReedsGeplandeQueryVoorDag(
+    DateTime day,
+  ) async {
+    final dateStr = DateFormat('yyyy-MM-dd').format(_normalizeDate(day));
+    var q = AppSupabase.client
+        .from('opdrachten')
+        .select(_reedsGeplandeSelect)
+        .eq('status', 'ingepland')
+        .eq('geplande_datum', dateStr);
+    if (_selectedManualProjectId != null &&
+        _selectedManualProjectId!.isNotEmpty) {
+      q = q.eq('project_id', _selectedManualProjectId!);
     }
+    final response = await q.order('tijdslot_start', ascending: true);
+    return (response as List)
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((row) => _text(row['huidige_planning_id']).isNotEmpty)
+        .toList(growable: false);
+  }
 
-    // 2) Timeframe filter by selected calendar mode
-    if (_calendarViewMode == 'Maand') {
-      filtered = filtered.where((task) {
-        final date = _normalizeDate(_toDate(task['geplande_datum']));
-        return date.month == _focusedDay.month && date.year == _focusedDay.year;
+  Future<void> _fetchReedsGeplandeTakenVoorDag(DateTime day) async {
+    if (!mounted) return;
+    setState(() => _isLoadingReedsGeplande = true);
+    try {
+      final list = await _fetchReedsGeplandeQueryVoorDag(day);
+      if (!mounted) return;
+      setState(() {
+        _reedsGeplandeTaken = _sortReedsGeplande(list);
+        _isLoadingReedsGeplande = false;
       });
-    } else if (_calendarViewMode == 'Week') {
-      final start = _startOfWeek(_focusedDay);
-      final end = start.add(const Duration(days: 6));
-      filtered = filtered.where((task) {
-        final date = _normalizeDate(_toDate(task['geplande_datum']));
-        return !date.isBefore(start) && !date.isAfter(end);
-      });
-    } else {
-      final selected = _normalizeDate(_selectedDay ?? _focusedDay);
-      filtered = filtered.where((task) {
-        final date = _normalizeDate(_toDate(task['geplande_datum']));
-        return date.year == selected.year && date.month == selected.month && date.day == selected.day;
+    } catch (e) {
+      debugPrint('Planbord reeds ingeplande opdrachten (dag) mislukt: $e');
+      if (!mounted) return;
+      setState(() {
+        _reedsGeplandeTaken = [];
+        _isLoadingReedsGeplande = false;
       });
     }
+  }
 
-    final rows = filtered.toList(growable: false);
-    final selectedKey = _normalizeDate(_selectedDay ?? _focusedDay);
-    rows.sort((a, b) {
-      final aDate = _normalizeDate(_toDate(a['geplande_datum']));
-      final bDate = _normalizeDate(_toDate(b['geplande_datum']));
-      final aIsSelected = aDate == selectedKey;
-      final bIsSelected = bDate == selectedKey;
-      if (aIsSelected && !bIsSelected) return -1;
-      if (!aIsSelected && bIsSelected) return 1;
-      return _toDate(a['geplande_datum']).compareTo(_toDate(b['geplande_datum']));
-    });
-    return rows;
+  Future<void> _opdrachtOpnieuwOpenen(String opdrachtId) async {
+    final id = _text(opdrachtId);
+    if (id.isEmpty || _reopeningOpdrachtIds.contains(id)) return;
+    setState(() => _reopeningOpdrachtIds.add(id));
+    try {
+      await AppSupabase.client
+          .from('opdrachten')
+          .update({'status': 'open'})
+          .eq('id', id);
+      if (!mounted) return;
+      await _loadTasks();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Opdracht opnieuw geopend. Je kunt deze weer handmatig inplannen.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Planbord _opdrachtOpnieuwOpenen failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade800,
+          content: Text(
+            'Opnieuw openen mislukt: $e',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+    } finally {
+      _reopeningOpdrachtIds.remove(id);
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _loadTasks() async {
@@ -840,47 +1078,117 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     }
 
     try {
-      final baseQuery = AppSupabase.client
+      var openQuery = AppSupabase.client
           .from('opdrachten')
           .select(
             'id, project_id, geplande_datum, tijdslot_start, tijdslot_eind, '
             'bedrijfsnaam, werk_regio, status, benodigde_operators, projecten(project_naam)',
           )
-          .inFilter('status', const ['open', 'deels_voltooid']);
+          .eq('status', 'open');
 
-      final response = (_selectedManualProjectId != null && _selectedManualProjectId!.isNotEmpty)
-          ? await baseQuery
-              .eq('project_id', _selectedManualProjectId!)
-              .order('geplande_datum', ascending: true)
-          : await baseQuery.order('geplande_datum', ascending: true);
+      if (_selectedManualProjectId != null &&
+          _selectedManualProjectId!.isNotEmpty) {
+        openQuery = openQuery.eq('project_id', _selectedManualProjectId!);
+      }
 
-      final grouped = <DateTime, List<dynamic>>{};
-      for (final raw in (response as List)) {
-        if (raw is! Map) continue;
-        final task = Map<String, dynamic>.from(raw);
+      final openResponse = await openQuery.order(
+        'geplande_datum',
+        ascending: true,
+      );
+      final openList = (openResponse as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false);
+
+      final groupedOpen = <DateTime, List<Map<String, dynamic>>>{};
+      for (final task in openList) {
         final dateRaw = _text(task['geplande_datum']);
         if (dateRaw.isEmpty) continue;
-        final parsedDate = DateTime.tryParse(dateRaw);
-        if (parsedDate == null) continue;
-        final key = _normalizeDate(parsedDate);
-        grouped.putIfAbsent(key, () => <dynamic>[]).add(task);
+        final head = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
+        DateTime? parsed;
+        try {
+          parsed = DateFormat('yyyy-MM-dd').parse(head);
+        } catch (_) {
+          parsed = DateTime.tryParse(dateRaw);
+        }
+        if (parsed == null) continue;
+        final key = _normalizeDate(parsed);
+        groupedOpen.putIfAbsent(key, () => <Map<String, dynamic>>[]).add(task);
+      }
+
+      List<Map<String, dynamic>> ingeplandList = const [];
+      try {
+        var ingeplandQuery = AppSupabase.client
+            .from('opdrachten')
+            .select(_reedsGeplandeSelect)
+            .eq('status', 'ingepland');
+
+        if (_selectedManualProjectId != null &&
+            _selectedManualProjectId!.isNotEmpty) {
+          ingeplandQuery = ingeplandQuery.eq(
+            'project_id',
+            _selectedManualProjectId!,
+          );
+        }
+
+        final ingeplandResponse = await ingeplandQuery.order(
+          'geplande_datum',
+          ascending: true,
+        );
+        ingeplandList = (ingeplandResponse as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((row) => _text(row['huidige_planning_id']).isNotEmpty)
+            .toList(growable: false);
+      } catch (e) {
+        debugPrint('Planbord ingeplande opdrachten laden mislukt: $e');
+        ingeplandList = const [];
+      }
+
+      final groupedPlanned = <DateTime, List<Map<String, dynamic>>>{};
+      for (final row in ingeplandList) {
+        final dateRaw = _text(row['geplande_datum']);
+        if (dateRaw.isEmpty) continue;
+        final head = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
+        DateTime? parsed;
+        try {
+          parsed = DateFormat('yyyy-MM-dd').parse(head);
+        } catch (_) {
+          parsed = DateTime.tryParse(dateRaw);
+        }
+        if (parsed == null) continue;
+        final key = _normalizeDate(parsed);
+        groupedPlanned
+            .putIfAbsent(key, () => <Map<String, dynamic>>[])
+            .add(row);
+      }
+
+      List<Map<String, dynamic>> reedsVoorDag = const [];
+      try {
+        reedsVoorDag = await _fetchReedsGeplandeQueryVoorDag(
+          _selectedDay ?? _focusedDay,
+        );
+      } catch (e) {
+        debugPrint('Planbord reedsGeplande (geselecteerde dag) mislukt: $e');
+        reedsVoorDag = const [];
       }
 
       if (!mounted) return;
       setState(() {
-        _manualTasks = (response as List)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList(growable: false);
-        _groupedTasks = grouped;
+        _groupedOpenTaken = groupedOpen;
+        _groupedGeplandeTaken = groupedPlanned;
+        _reedsGeplandeTaken = _sortReedsGeplande(reedsVoorDag);
+        _isLoadingReedsGeplande = false;
         _isLoading = false;
       });
     } catch (error) {
       debugPrint('Planbord _loadTasks failed: $error');
       if (!mounted) return;
       setState(() {
-        _manualTasks = const <Map<String, dynamic>>[];
-        _groupedTasks = {};
+        _groupedOpenTaken = {};
+        _groupedGeplandeTaken = {};
+        _reedsGeplandeTaken = [];
+        _isLoadingReedsGeplande = false;
         _isLoading = false;
       });
     }
@@ -891,9 +1199,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => SelectionArea(
-        child: ManualPlanModal(opdrachtId: opdrachtId),
-      ),
+      builder: (_) =>
+          SelectionArea(child: ManualPlanModal(opdrachtId: opdrachtId)),
     );
     if (!mounted || result != true) return;
     await _fetchSmartProjects();
@@ -907,9 +1214,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const SelectionArea(
-        child: _ExtraOpdrachtModal(),
-      ),
+      builder: (_) => const SelectionArea(child: _ExtraOpdrachtModal()),
     );
     if (!mounted || ok != true) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -978,10 +1283,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final matchType = _text(result['match_type']);
     final isSolid = matchType == 'perfect_green' || matchType == 'bad_red';
     final textColor = isSolid ? Colors.white : const Color(0xFF15141F);
-    final conflicts = result['conflicten'] is List ? List<dynamic>.from(result['conflicten'] as List) : const [];
+    final conflicts = result['conflicten'] is List
+        ? List<dynamic>.from(result['conflicten'] as List)
+        : const [];
     final available = _asInt(result['beschikbare_beurten']);
     final total = _asInt(result['totale_beurten']);
-    final name = _text(result['naam']).isEmpty ? 'Onbekende operator' : _text(result['naam']);
+    final name = _text(result['naam']).isEmpty
+        ? 'Onbekende operator'
+        : _text(result['naam']);
     final selected = _selectedResultIndex == index;
 
     final hasAnyFreeSlot = _tijdOpties.isNotEmpty;
@@ -1039,7 +1348,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         _matchLabel(matchType),
                         textAlign: TextAlign.right,
                         style: GoogleFonts.inter(
-                          color: textColor.withValues(alpha: isSolid ? 0.96 : 0.82),
+                          color: textColor.withValues(
+                            alpha: isSolid ? 0.96 : 0.82,
+                          ),
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                         ),
@@ -1058,7 +1369,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   if (conflicts.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Theme(
-                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                      data: Theme.of(
+                        context,
+                      ).copyWith(dividerColor: Colors.transparent),
                       child: ExpansionTile(
                         tilePadding: EdgeInsets.zero,
                         childrenPadding: const EdgeInsets.only(bottom: 6),
@@ -1085,7 +1398,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   child: Text(
                                     '• ${_text((conflict is Map) ? conflict['datum'] ?? conflict['date'] ?? conflict['omschrijving'] ?? conflict : conflict)}',
                                     style: GoogleFonts.inter(
-                                      color: textColor.withValues(alpha: isSolid ? 0.92 : 0.72),
+                                      color: textColor.withValues(
+                                        alpha: isSolid ? 0.92 : 0.72,
+                                      ),
                                       fontSize: 12.5,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -1114,56 +1429,69 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               .toList(growable: false);
 
                           return Padding(
-                            padding: const EdgeInsets.only(top: 16.0, bottom: 24.0),
+                            padding: const EdgeInsets.only(
+                              top: 16.0,
+                              bottom: 24.0,
+                            ),
                             child: DropdownButtonFormField<String>(
-                              initialValue: (_handmatigeSmartTijd ?? '').trim().isEmpty
+                              initialValue:
+                                  (_handmatigeSmartTijd ?? '').trim().isEmpty
                                   ? null
                                   : _handmatigeSmartTijd,
                               dropdownColor: const Color(0xFFF2F2F7),
-                              items: opties.map((opt) {
-                          final tijd = _text(opt['tijd']);
-                          final status = _text(opt['status']);
-                          final vrije = _asInt(opt['vrijeDagen']);
-                          final totaal = _asInt(opt['totaalDagen']);
-                          final isBeperkt = status == 'beperkt';
-                          final label = isBeperkt
-                              ? '$tijd (Beperkt beschikbaar: $vrije/$totaal dagen)'
-                              : '$tijd (Volledig beschikbaar)';
-                          return DropdownMenuItem<String>(
-                            value: tijd,
-                            child: isBeperkt
-                                ? Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: Colors.orange.withValues(alpha: 0.55),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      label,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.normal,
-                                        fontSize: 14.0,
-                                      ),
-                                    ),
-                                  )
-                                : Text(
-                                    label,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.normal,
-                                      fontSize: 14.0,
-                                    ),
-                                  ),
-                          );
-                              }).toList(growable: false),
+                              items: opties
+                                  .map((opt) {
+                                    final tijd = _text(opt['tijd']);
+                                    final status = _text(opt['status']);
+                                    final vrije = _asInt(opt['vrijeDagen']);
+                                    final totaal = _asInt(opt['totaalDagen']);
+                                    final isBeperkt = status == 'beperkt';
+                                    final label = isBeperkt
+                                        ? '$tijd (Beperkt beschikbaar: $vrije/$totaal dagen)'
+                                        : '$tijd (Volledig beschikbaar)';
+                                    return DropdownMenuItem<String>(
+                                      value: tijd,
+                                      child: isBeperkt
+                                          ? Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: Colors.orange
+                                                      .withValues(alpha: 0.55),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                label,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.normal,
+                                                  fontSize: 14.0,
+                                                ),
+                                              ),
+                                            )
+                                          : Text(
+                                              label,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.normal,
+                                                fontSize: 14.0,
+                                              ),
+                                            ),
+                                    );
+                                  })
+                                  .toList(growable: false),
                               onChanged: tijden.isEmpty
                                   ? null
                                   : (v) {
                                       final next = (v ?? '').trim();
                                       if (next.isEmpty) return;
-                                      setState(() => _handmatigeSmartTijd = next);
+                                      setState(
+                                        () => _handmatigeSmartTijd = next,
+                                      );
                                     },
                               decoration: InputDecoration(
                                 labelText: 'Kies definitieve starttijd',
@@ -1219,14 +1547,17 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         })
         .toList(growable: false);
 
-    final selectedResult = (_selectedResultIndex != null &&
+    final selectedResult =
+        (_selectedResultIndex != null &&
             _selectedResultIndex! >= 0 &&
             _selectedResultIndex! < filteredResults.length)
         ? filteredResults[_selectedResultIndex!]
         : null;
 
-    final showMultiOperatorWarning = _smartNeededOperators > 1 &&
-        (_smartReedsIngeplandStart != null && _smartReedsIngeplandStart!.isNotEmpty);
+    final showMultiOperatorWarning =
+        _smartNeededOperators > 1 &&
+        (_smartReedsIngeplandStart != null &&
+            _smartReedsIngeplandStart!.isNotEmpty);
 
     final selectedProjectId = _text(_selectedProject?['project_id']).isNotEmpty
         ? _text(_selectedProject?['project_id'])
@@ -1247,121 +1578,133 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         child: _isLoadingSmartProjects
             ? const Center(child: CircularProgressIndicator())
             : _smartProjectsError != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'Projecten laden mislukt: $_smartProjectsError',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: visibleProjects.length,
-                    itemBuilder: (context, index) {
-                      final project = Map<String, dynamic>.from(visibleProjects[index]);
-                      final projectId = _text(project['project_id']).isNotEmpty
-                          ? _text(project['project_id'])
-                          : _text(project['id']);
-                      final projectName = _text(project['project_naam']).isEmpty
-                          ? 'Naamloos project'
-                          : _text(project['project_naam']);
-                      final region = _text(project['werk_regio']).isEmpty
-                          ? 'Geen regio'
-                          : _text(project['werk_regio']);
-                      final openTaskCount = _asInt(project['open_taken']);
-                      final totalTaskCount = _asInt(project['totaal_taken']);
-                      final neededOperators = _asInt(
-                        project['standaard_aantal_operators'] ?? project['benodigde_operators'],
-                        fallback: 1,
-                      );
-                      final hasAssignedHours = _asDouble(project['reeds_toegewezen_uren']) > 0;
-                      final selected = selectedProjectId.isNotEmpty &&
-                          projectId.isNotEmpty &&
-                          selectedProjectId == projectId;
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Projecten laden mislukt: $_smartProjectsError',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              )
+            : ListView.builder(
+                itemCount: visibleProjects.length,
+                itemBuilder: (context, index) {
+                  final project = Map<String, dynamic>.from(
+                    visibleProjects[index],
+                  );
+                  final projectId = _text(project['project_id']).isNotEmpty
+                      ? _text(project['project_id'])
+                      : _text(project['id']);
+                  final projectName = _text(project['project_naam']).isEmpty
+                      ? 'Naamloos project'
+                      : _text(project['project_naam']);
+                  final region = _text(project['werk_regio']).isEmpty
+                      ? 'Geen regio'
+                      : _text(project['werk_regio']);
+                  final openTaskCount = _asInt(project['open_taken']);
+                  final totalTaskCount = _asInt(project['totaal_taken']);
+                  final neededOperators = _asInt(
+                    project['standaard_aantal_operators'] ??
+                        project['benodigde_operators'],
+                    fallback: 1,
+                  );
+                  final hasAssignedHours =
+                      _asDouble(project['reeds_toegewezen_uren']) > 0;
+                  final selected =
+                      selectedProjectId.isNotEmpty &&
+                      projectId.isNotEmpty &&
+                      selectedProjectId == projectId;
 
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: projectId.isEmpty
+                            ? null
+                            : () => _onProjectSelected(projectId),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: selected ? cs.primaryContainer : cs.surface,
                             borderRadius: BorderRadius.circular(16),
-                            onTap: projectId.isEmpty ? null : () => _onProjectSelected(projectId),
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: selected ? cs.primaryContainer : cs.surface,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: hasAssignedHours
-                                      ? Colors.orange
-                                      : selected
-                                          ? cs.primary.withValues(alpha: 0.60)
-                                          : cs.onSurface.withValues(alpha: 0.06),
-                                  width: hasAssignedHours ? 2 : 1,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.03),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 5),
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    projectName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    region,
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w700,
-                                      color: cs.onSurface.withValues(alpha: 0.68),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Benodigde operators: $neededOperators',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: cs.onSurface.withValues(alpha: 0.74),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: cs.primary.withValues(alpha: 0.10),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      '$openTaskCount open taken van de $totalTaskCount',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                        color: cs.primary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            border: Border.all(
+                              color: hasAssignedHours
+                                  ? Colors.orange
+                                  : selected
+                                  ? cs.primary.withValues(alpha: 0.60)
+                                  : cs.onSurface.withValues(alpha: 0.06),
+                              width: hasAssignedHours ? 2 : 1,
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(
+                                  alpha: isDark ? 0.12 : 0.03,
+                                ),
+                                blurRadius: 12,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                projectName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                region,
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.onSurface.withValues(alpha: 0.68),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Benodigde operators: $neededOperators',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: cs.onSurface.withValues(alpha: 0.74),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cs.primary.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  '$openTaskCount open taken van de $totalTaskCount',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: cs.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                  );
+                },
+              ),
       );
     }
 
@@ -1392,17 +1735,23 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: isDark ? 0.18 : 0.14),
+                        color: Colors.orange.withValues(
+                          alpha: isDark ? 0.18 : 0.14,
+                        ),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: Colors.orange.withValues(alpha: isDark ? 0.35 : 0.30),
+                          color: Colors.orange.withValues(
+                            alpha: isDark ? 0.35 : 0.30,
+                          ),
                         ),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.warning_amber_rounded,
-                              color: Colors.orange.shade700),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange.shade700,
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
@@ -1422,7 +1771,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   ],
                   Text(
                     'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
-                    style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900),
+                    style: GoogleFonts.inter(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -1435,28 +1787,39 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               width: double.infinity,
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                                color: cs.surfaceContainerHighest.withValues(
+                                  alpha: 0.5,
+                                ),
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                                border: Border.all(
+                                  color: cs.onSurface.withValues(alpha: 0.08),
+                                ),
                               ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'Totaal benodigd',
                                           style: GoogleFonts.inter(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.62,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          formatHoursToText(_asDouble(_selectedProject?['benodigde_uren_totaal'])),
+                                          formatHoursToText(
+                                            _asDouble(
+                                              _selectedProject?['benodigde_uren_totaal'],
+                                            ),
+                                          ),
                                           style: GoogleFonts.inter(
                                             fontWeight: FontWeight.w900,
                                             fontSize: 14,
@@ -1468,12 +1831,18 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                           style: GoogleFonts.inter(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.62,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          formatHoursToText(_asDouble(_selectedProject?['standaard_uren_per_shift'])),
+                                          formatHoursToText(
+                                            _asDouble(
+                                              _selectedProject?['standaard_uren_per_shift'],
+                                            ),
+                                          ),
                                           style: GoogleFonts.inter(
                                             fontWeight: FontWeight.w900,
                                             fontSize: 14,
@@ -1485,19 +1854,26 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   const SizedBox(width: 16),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'Reeds toegewezen',
                                           style: GoogleFonts.inter(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.62,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          formatHoursToText(_asDouble(_selectedProject?['reeds_toegewezen_uren'])),
+                                          formatHoursToText(
+                                            _asDouble(
+                                              _selectedProject?['reeds_toegewezen_uren'],
+                                            ),
+                                          ),
                                           style: GoogleFonts.inter(
                                             fontWeight: FontWeight.w900,
                                             fontSize: 14,
@@ -1509,12 +1885,18 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                           style: GoogleFonts.inter(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.62),
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.62,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          formatHoursToText(_asDouble(_selectedProject?['resterende_uren_per_beurt'])),
+                                          formatHoursToText(
+                                            _asDouble(
+                                              _selectedProject?['resterende_uren_per_beurt'],
+                                            ),
+                                          ),
                                           style: GoogleFonts.inter(
                                             fontWeight: FontWeight.w900,
                                             fontSize: 14,
@@ -1529,11 +1911,18 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             ),
                             const SizedBox(height: 12),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
+                                color: isDark
+                                    ? const Color(0xFF1B1B23)
+                                    : const Color(0xFFF5F5F7),
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                                border: Border.all(
+                                  color: cs.onSurface.withValues(alpha: 0.06),
+                                ),
                               ),
                               child: Row(
                                 children: [
@@ -1541,8 +1930,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                     icon: Icons.remove_rounded,
                                     onPressed: () {
                                       setState(() {
-                                        _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
-                                        _hoursController.text = _shiftHours.toStringAsFixed(2);
+                                        _shiftHours = (_shiftHours - 0.25)
+                                            .clamp(0.25, 24.0);
+                                        _hoursController.text = _shiftHours
+                                            .toStringAsFixed(2);
                                       });
                                     },
                                   ),
@@ -1554,7 +1945,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                           style: GoogleFonts.inter(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w700,
-                                            color: cs.onSurface.withValues(alpha: 0.68),
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.68,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 2),
@@ -1573,8 +1966,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                     icon: Icons.add_rounded,
                                     onPressed: () {
                                       setState(() {
-                                        _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
-                                        _hoursController.text = _shiftHours.toStringAsFixed(2);
+                                        _shiftHours = (_shiftHours + 0.25)
+                                            .clamp(0.25, 24.0);
+                                        _hoursController.text = _shiftHours
+                                            .toStringAsFixed(2);
                                       });
                                     },
                                   ),
@@ -1599,9 +1994,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               width: double.infinity,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: cs.onSurface.withValues(alpha: isDark ? 0.10 : 0.04),
+                                color: cs.onSurface.withValues(
+                                  alpha: isDark ? 0.10 : 0.04,
+                                ),
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: cs.onSurface.withValues(alpha: 0.07)),
+                                border: Border.all(
+                                  color: cs.onSurface.withValues(alpha: 0.07),
+                                ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1616,8 +2015,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   const SizedBox(height: 8),
                                   if (_isLoadingPlannedOperators)
                                     const Padding(
-                                      padding: EdgeInsets.symmetric(vertical: 4),
-                                      child: LinearProgressIndicator(minHeight: 3),
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 4,
+                                      ),
+                                      child: LinearProgressIndicator(
+                                        minHeight: 3,
+                                      ),
                                     )
                                   else if (_plannedOperatorsError != null)
                                     Text(
@@ -1630,28 +2033,43 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   else if (_plannedOperators.isEmpty)
                                     Text(
                                       'Nog geen operators ingepland.',
-                                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                     )
                                   else
                                     ListView.builder(
                                       shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
                                       itemCount: _plannedOperators.length,
                                       itemBuilder: (context, index) {
-                                        final operator = _plannedOperators[index];
-                                        final filled = _asInt(operator['aantal_beurten_gevuld']);
-                                        final total = _asInt(_selectedProject?['totaal_taken']);
-                                        final name = _text(operator['operator_naam']).isEmpty
+                                        final operator =
+                                            _plannedOperators[index];
+                                        final filled = _asInt(
+                                          operator['aantal_beurten_gevuld'],
+                                        );
+                                        final total = _asInt(
+                                          _selectedProject?['totaal_taken'],
+                                        );
+                                        final name =
+                                            _text(
+                                              operator['operator_naam'],
+                                            ).isEmpty
                                             ? 'Operator'
                                             : _text(operator['operator_naam']);
                                         return Padding(
-                                          padding: const EdgeInsets.only(bottom: 6),
+                                          padding: const EdgeInsets.only(
+                                            bottom: 6,
+                                          ),
                                           child: Row(
                                             children: [
                                               Icon(
                                                 Icons.person,
                                                 size: 16,
-                                                color: cs.onSurface.withValues(alpha: 0.74),
+                                                color: cs.onSurface.withValues(
+                                                  alpha: 0.74,
+                                                ),
                                               ),
                                               const SizedBox(width: 6),
                                               Expanded(
@@ -1690,7 +2108,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: cs.primary,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                           child: _isCalculating
                               ? const SizedBox(
@@ -1698,12 +2118,16 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   height: 18,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2.0,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
                                   ),
                                 )
                               : Text(
                                   'Slim Inplannen',
-                                  style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                         ),
                       ),
@@ -1714,25 +2138,32 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     child: _isCalculating
                         ? const Center(child: CircularProgressIndicator())
                         : !_hasCalculated
-                            ? Center(
-                                child: Text(
-                                  'Klik op "Slim Inplannen" om operator matches te berekenen.',
-                                  style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                                ),
-                              )
-                            : filteredResults.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'Geen plannerresultaten gevonden voor de huidige filters.',
-                                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                                    ),
-                                  )
-                                : ListView.builder(
-                                    itemCount: filteredResults.length,
-                                    itemBuilder: (context, index) {
-                                      return _buildResultCard(filteredResults[index], index: index);
-                                    },
-                                  ),
+                        ? Center(
+                            child: Text(
+                              'Klik op "Slim Inplannen" om operator matches te berekenen.',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        : filteredResults.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Geen plannerresultaten gevonden voor de huidige filters.',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: filteredResults.length,
+                            itemBuilder: (context, index) {
+                              return _buildResultCard(
+                                filteredResults[index],
+                                index: index,
+                              );
+                            },
+                          ),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -1743,7 +2174,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           : () => _submitSmartPlannerBooking(selectedResult),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                       child: Text(
                         'Definitief Inplannen',
@@ -1783,16 +2216,23 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   children: [
                     Text(
                       'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
-                      style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900),
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                        color: cs.surfaceContainerHighest.withValues(
+                          alpha: 0.5,
+                        ),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                        border: Border.all(
+                          color: cs.onSurface.withValues(alpha: 0.08),
+                        ),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1811,7 +2251,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  formatHoursToText(_asDouble(_selectedProject?['benodigde_uren_totaal'])),
+                                  formatHoursToText(
+                                    _asDouble(
+                                      _selectedProject?['benodigde_uren_totaal'],
+                                    ),
+                                  ),
                                   style: GoogleFonts.inter(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 14,
@@ -1828,7 +2272,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  formatHoursToText(_asDouble(_selectedProject?['standaard_uren_per_shift'])),
+                                  formatHoursToText(
+                                    _asDouble(
+                                      _selectedProject?['standaard_uren_per_shift'],
+                                    ),
+                                  ),
                                   style: GoogleFonts.inter(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 14,
@@ -1852,7 +2300,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  formatHoursToText(_asDouble(_selectedProject?['reeds_toegewezen_uren'])),
+                                  formatHoursToText(
+                                    _asDouble(
+                                      _selectedProject?['reeds_toegewezen_uren'],
+                                    ),
+                                  ),
                                   style: GoogleFonts.inter(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 14,
@@ -1869,7 +2321,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  formatHoursToText(_asDouble(_selectedProject?['resterende_uren_per_beurt'])),
+                                  formatHoursToText(
+                                    _asDouble(
+                                      _selectedProject?['resterende_uren_per_beurt'],
+                                    ),
+                                  ),
                                   style: GoogleFonts.inter(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 14,
@@ -1884,11 +2340,18 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     ),
                     const SizedBox(height: 12),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
+                        color: isDark
+                            ? const Color(0xFF1B1B23)
+                            : const Color(0xFFF5F5F7),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+                        border: Border.all(
+                          color: cs.onSurface.withValues(alpha: 0.06),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -1896,8 +2359,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             icon: Icons.remove_rounded,
                             onPressed: () {
                               setState(() {
-                                _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
-                                _hoursController.text = _shiftHours.toStringAsFixed(2);
+                                _shiftHours = (_shiftHours - 0.25).clamp(
+                                  0.25,
+                                  24.0,
+                                );
+                                _hoursController.text = _shiftHours
+                                    .toStringAsFixed(2);
                               });
                             },
                           ),
@@ -1928,8 +2395,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             icon: Icons.add_rounded,
                             onPressed: () {
                               setState(() {
-                                _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
-                                _hoursController.text = _shiftHours.toStringAsFixed(2);
+                                _shiftHours = (_shiftHours + 0.25).clamp(
+                                  0.25,
+                                  24.0,
+                                );
+                                _hoursController.text = _shiftHours
+                                    .toStringAsFixed(2);
                               });
                             },
                           ),
@@ -1954,9 +2425,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: cs.onSurface.withValues(alpha: isDark ? 0.10 : 0.04),
+                        color: cs.onSurface.withValues(
+                          alpha: isDark ? 0.10 : 0.04,
+                        ),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: cs.onSurface.withValues(alpha: 0.07)),
+                        border: Border.all(
+                          color: cs.onSurface.withValues(alpha: 0.07),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1985,7 +2460,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           else if (_plannedOperators.isEmpty)
                             Text(
                               'Nog geen operators ingepland.',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                              ),
                             )
                           else
                             ListView.builder(
@@ -1994,9 +2471,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               itemCount: _plannedOperators.length,
                               itemBuilder: (context, index) {
                                 final operator = _plannedOperators[index];
-                                final filled = _asInt(operator['aantal_beurten_gevuld']);
-                                final total = _asInt(_selectedProject?['totaal_taken']);
-                                final name = _text(operator['operator_naam']).isEmpty
+                                final filled = _asInt(
+                                  operator['aantal_beurten_gevuld'],
+                                );
+                                final total = _asInt(
+                                  _selectedProject?['totaal_taken'],
+                                );
+                                final name =
+                                    _text(operator['operator_naam']).isEmpty
                                     ? 'Operator'
                                     : _text(operator['operator_naam']);
                                 return Padding(
@@ -2006,7 +2488,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                       Icon(
                                         Icons.person,
                                         size: 16,
-                                        color: cs.onSurface.withValues(alpha: 0.74),
+                                        color: cs.onSurface.withValues(
+                                          alpha: 0.74,
+                                        ),
                                       ),
                                       const SizedBox(width: 6),
                                       Expanded(
@@ -2043,7 +2527,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: cs.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
                         child: _isCalculating
                             ? const SizedBox(
@@ -2051,12 +2537,16 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.0,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
                                 ),
                               )
                             : Text(
                                 'Slim Inplannen',
-                                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                       ),
                     ),
@@ -2073,7 +2563,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           child: Text(
                             'Klik op "Slim Inplannen" om operator matches te berekenen.',
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       )
@@ -2084,7 +2576,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           child: Text(
                             'Geen plannerresultaten gevonden voor de huidige filters.',
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       )
@@ -2094,7 +2588,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: filteredResults.length,
                         itemBuilder: (context, index) {
-                          return _buildResultCard(filteredResults[index], index: index);
+                          return _buildResultCard(
+                            filteredResults[index],
+                            index: index,
+                          );
                         },
                       ),
                     const SizedBox(height: 8),
@@ -2106,7 +2603,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             : () => _submitSmartPlannerBooking(selectedResult),
                         style: FilledButton.styleFrom(
                           minimumSize: const Size.fromHeight(50),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
                         child: Text(
                           'Definitief Inplannen',
@@ -2127,7 +2626,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: isMobile
-          ? (_selectedProject == null ? buildLeftColumn() : buildRightColumnMobile())
+          ? (_selectedProject == null
+                ? buildLeftColumn()
+                : buildRightColumnMobile())
           : Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2139,10 +2640,614 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
   }
 
+  Widget _buildManualOpenTaskCard(
+    Map<String, dynamic> task,
+    ColorScheme cs,
+    bool isDark,
+  ) {
+    final opdrachtId = _text(task['id']);
+    final project = _projectName(task);
+    final company = _text(task['bedrijfsnaam']).isEmpty
+        ? 'Onbekende klant'
+        : _text(task['bedrijfsnaam']);
+    final start = _timeLabel(task['tijdslot_start']);
+    final end = _timeLabel(task['tijdslot_eind']);
+    final date = _toDate(task['geplande_datum']);
+    final needed = _asInt(task['benodigde_operators'], fallback: 1);
+    final title = project.isNotEmpty ? project : company;
+    final isSelectedDay = DateUtils.isSameDay(
+      _selectedDay ?? _focusedDay,
+      date,
+    );
+    final accent = Colors.blue.shade700;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: opdrachtId.isEmpty
+              ? null
+              : () => _openManualPlanModal(opdrachtId),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isSelectedDay
+                  ? accent.withValues(alpha: isDark ? 0.14 : 0.06)
+                  : isDark
+                  ? const Color(0xFF171722)
+                  : const Color(0xFFFDFDFE),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelectedDay
+                    ? accent.withValues(alpha: 0.35)
+                    : cs.onSurface.withValues(alpha: 0.06),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.035),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 6,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.90),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: accent,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        company,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface.withValues(alpha: 0.70),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '$start - $end',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800,
+                                color: accent,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              _manualRegion(task),
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface.withValues(alpha: 0.75),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        DateFormat('d MMMM yyyy', 'nl_NL').format(date),
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface.withValues(alpha: 0.70),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Nodig: $needed operators',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800,
+                          color: accent.withValues(alpha: 0.92),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.45),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReedsGeplandeInfoModal(Map<String, dynamic> item) async {
+    final opdrachtId = _text(item['id']);
+    final bedrijf = _text(item['bedrijfsnaam']).isEmpty
+        ? 'Onbekende klant'
+        : _text(item['bedrijfsnaam']);
+    final nr = _displayOpdrachtNummer(item);
+    final datum = _toDate(item['geplande_datum']);
+    final plan = _planningDetailsVanItem(item);
+    final start = _timeLabel(plan?['starttijd']);
+    final end = _timeLabel(plan?['eindtijd']);
+    final adres = _text(item['uitvoer_adres_volledig']);
+    final weergaveNaam = _extractIngeplandWeergaveNaam(item);
+    final datumStr = DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(datum);
+    final tijdStr = '$start – $end';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final mq = MediaQuery.of(ctx);
+        final modalCs = Theme.of(ctx).colorScheme;
+        final bottomInset =
+            MediaQuery.paddingOf(ctx).bottom +
+            MediaQuery.viewInsetsOf(ctx).bottom;
+        final sheetBg = Theme.of(ctx).brightness == Brightness.dark
+            ? const Color(0xFF171722)
+            : Colors.white;
+
+        Widget infoRow({
+          required IconData icon,
+          required String title,
+          required String value,
+        }) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  icon,
+                  size: 24,
+                  color: modalCs.primary.withValues(alpha: 0.92),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: modalCs.onSurface.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        value.isNotEmpty ? value : '—',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: modalCs.onSurface.withValues(alpha: 0.92),
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return SelectionArea(
+          child: Padding(
+            padding: EdgeInsets.only(top: mq.size.height * 0.12),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: sheetBg,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(22),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 20,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                top: false,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: mq.size.height * 0.82),
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(22, 10, 22, 14 + bottomInset),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: modalCs.onSurface.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          bedrijf,
+                          style: GoogleFonts.inter(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Opdrachtnr. $nr',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: modalCs.onSurface.withValues(alpha: 0.56),
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        infoRow(
+                          icon: Icons.place_outlined,
+                          title: 'Adres',
+                          value: adres.isNotEmpty ? adres : 'Onbekend',
+                        ),
+                        infoRow(
+                          icon: Icons.calendar_today_rounded,
+                          title: 'Datum',
+                          value: datumStr,
+                        ),
+                        infoRow(
+                          icon: Icons.schedule_rounded,
+                          title: 'Tijd',
+                          value: tijdStr,
+                        ),
+                        infoRow(
+                          icon: Icons.badge_outlined,
+                          title: 'Operator',
+                          value: weergaveNaam,
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.icon(
+                          onPressed:
+                              (opdrachtId.isEmpty ||
+                                  _reopeningOpdrachtIds.contains(opdrachtId))
+                              ? null
+                              : () async {
+                                  Navigator.of(ctx).pop();
+                                  await _opdrachtOpnieuwOpenen(opdrachtId);
+                                },
+                          icon: const Icon(Icons.undo_rounded, size: 20),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            backgroundColor: modalCs.error,
+                            foregroundColor: modalCs.onError,
+                          ),
+                          label: Text(
+                            'Opdracht opnieuw openen',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildReedsGeplandeCard(
+    Map<String, dynamic> item,
+    ColorScheme cs,
+    bool isDark,
+  ) {
+    final opdrachtId = _text(item['id']);
+    final bedrijf = _text(item['bedrijfsnaam']).isEmpty
+        ? 'Onbekende klant'
+        : _text(item['bedrijfsnaam']);
+    final projectLabel = _projectName(item);
+    final planningDetails = _planningDetailsVanItem(item);
+    final start = _timeLabel(planningDetails?['starttijd']);
+    final end = _timeLabel(planningDetails?['eindtijd']);
+    final date = _toDate(item['geplande_datum']);
+    final isSelectedDay = DateUtils.isSameDay(
+      _selectedDay ?? _focusedDay,
+      date,
+    );
+    final accent = Colors.red.shade400;
+    final weergaveNaam = _extractIngeplandWeergaveNaam(item);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: opdrachtId.isEmpty
+              ? null
+              : () => _openReedsGeplandeInfoModal(item),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isSelectedDay
+                  ? accent.withValues(alpha: isDark ? 0.14 : 0.06)
+                  : isDark
+                  ? const Color(0xFF171722)
+                  : const Color(0xFFFDFDFE),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelectedDay
+                    ? accent.withValues(alpha: 0.35)
+                    : cs.onSurface.withValues(alpha: 0.06),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.035),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 6,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.90),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        bedrijf,
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: accent,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        projectLabel,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface.withValues(alpha: 0.70),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '$start - $end',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800,
+                                color: accent,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.onSurface.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              _manualRegion(item),
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface.withValues(alpha: 0.75),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        DateFormat('d MMMM yyyy', 'nl_NL').format(date),
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface.withValues(alpha: 0.70),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline,
+                            size: 16,
+                            color: cs.onSurface.withValues(alpha: 0.55),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Uitvoerder: $weergaveNaam',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w600,
+                                color: cs.onSurface.withValues(alpha: 0.70),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.45),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _manualSplitOpenColumn(
+    ColorScheme cs,
+    bool isDark,
+    List<Map<String, dynamic>> openDay,
+  ) {
+    final accent = Colors.blue.shade700;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Nog in te plannen (${openDay.length})',
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: accent,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: openDay.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'Geen openstaande opdrachten op deze dag.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface.withValues(alpha: 0.62),
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  itemCount: openDay.length,
+                  itemBuilder: (context, index) =>
+                      _buildManualOpenTaskCard(openDay[index], cs, isDark),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _manualSplitPlannedColumn(
+    ColorScheme cs,
+    bool isDark,
+    List<Map<String, dynamic>> reedsGeplande,
+    bool isLoadingReedsGeplande,
+  ) {
+    final accent = Colors.red.shade400;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ingepland (${reedsGeplande.length})',
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: accent,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: isLoadingReedsGeplande
+              ? const Center(child: CircularProgressIndicator())
+              : reedsGeplande.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'Geen planningen voor deze dag',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface.withValues(alpha: 0.62),
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  itemCount: reedsGeplande.length,
+                  itemBuilder: (context, index) =>
+                      _buildReedsGeplandeCard(reedsGeplande[index], cs, isDark),
+                ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildManualPlanningTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
     final isMobile = MediaQuery.of(context).size.width < 800;
-    final agendaTasks = _filteredAgendaTasks;
+    final openDay = _openTasksManualDay;
 
     return Column(
       children: [
@@ -2153,135 +3258,165 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
               onPressed: () => setState(() => _showFilters = !_showFilters),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
               child: Text(
-                _showFilters ? 'Filters & Zoeken verbergen' : 'Filters & Zoeken tonen',
+                _showFilters
+                    ? 'Filters & Zoeken verbergen'
+                    : 'Filters & Zoeken tonen',
                 style: GoogleFonts.inter(fontWeight: FontWeight.w900),
               ),
             ),
           ),
         AnimatedCrossFade(
           duration: const Duration(milliseconds: 180),
-          crossFadeState: _showFilters ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          crossFadeState: _showFilters
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
           secondChild: const SizedBox.shrink(),
           firstChild: Column(
             children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF111019) : Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-            ),
-            child: DropdownButtonFormField<String?>(
-              initialValue: _selectedManualProjectId,
-              decoration: InputDecoration(
-                labelText: isMobile ? 'Project' : 'Projectfilter',
-                labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              items: [
-                DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('Alle projecten', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-                ),
-                ..._projects
-                    .map((raw) => Map<String, dynamic>.from(raw as Map))
-                    .map(
-                      (project) => DropdownMenuItem<String?>(
-                        value: _text(project['id']),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF111019) : Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: cs.onSurface.withValues(alpha: 0.06),
+                    ),
+                  ),
+                  child: DropdownButtonFormField<String?>(
+                    initialValue: _selectedManualProjectId,
+                    decoration: InputDecoration(
+                      labelText: isMobile ? 'Project' : 'Projectfilter',
+                      labelStyle: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700,
+                      ),
+                      filled: true,
+                      fillColor: isDark
+                          ? const Color(0xFF1B1B23)
+                          : const Color(0xFFF5F5F7),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        value: null,
                         child: Text(
-                          _text(project['project_naam']).isEmpty
-                              ? 'Naamloos project'
-                              : _text(project['project_naam']),
+                          'Alle projecten',
                           style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                         ),
                       ),
-                    ),
-              ],
-              onChanged: _isLoading
-                  ? null
-                  : (value) async {
-                      setState(() => _selectedManualProjectId = value);
-                      await _loadTasks();
-                    },
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              onPressed: _isLoading ? null : _openExtraOpdrachtModal,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: Text(
-                '+ Extra Opdracht',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                      ..._projects
+                          .map((raw) => Map<String, dynamic>.from(raw as Map))
+                          .map(
+                            (project) => DropdownMenuItem<String?>(
+                              value: _text(project['id']),
+                              child: Text(
+                                _text(project['project_naam']).isEmpty
+                                    ? 'Naamloos project'
+                                    : _text(project['project_naam']),
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                    ],
+                    onChanged: _isLoading
+                        ? null
+                        : (value) async {
+                            setState(() => _selectedManualProjectId = value);
+                            await _loadTasks();
+                          },
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: CupertinoSlidingSegmentedControl<String>(
-              groupValue: _calendarViewMode,
-              padding: const EdgeInsets.all(4),
-              thumbColor: cs.primary,
-              backgroundColor: cs.onSurface.withValues(alpha: isDark ? 0.14 : 0.08),
-              children: {
-                'Maand': Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text(
-                    'Maand',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w800,
-                      color: _calendarViewMode == 'Maand' ? Colors.white : cs.onSurface,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: _isLoading ? null : _openExtraOpdrachtModal,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: Text(
+                      '+ Extra Opdracht',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w900),
                     ),
                   ),
                 ),
-                'Week': Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text(
-                    'Week',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w800,
-                      color: _calendarViewMode == 'Week' ? Colors.white : cs.onSurface,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: CupertinoSlidingSegmentedControl<String>(
+                    groupValue: _calendarViewMode,
+                    padding: const EdgeInsets.all(4),
+                    thumbColor: cs.primary,
+                    backgroundColor: cs.onSurface.withValues(
+                      alpha: isDark ? 0.14 : 0.08,
                     ),
+                    children: {
+                      'Maand': Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          'Maand',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w800,
+                            color: _calendarViewMode == 'Maand'
+                                ? Colors.white
+                                : cs.onSurface,
+                          ),
+                        ),
+                      ),
+                      'Week': Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          'Week',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w800,
+                            color: _calendarViewMode == 'Week'
+                                ? Colors.white
+                                : cs.onSurface,
+                          ),
+                        ),
+                      ),
+                      'Dag': Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          'Dag',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w800,
+                            color: _calendarViewMode == 'Dag'
+                                ? Colors.white
+                                : cs.onSurface,
+                          ),
+                        ),
+                      ),
+                    },
+                    onValueChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _calendarViewMode = value);
+                    },
                   ),
                 ),
-                'Dag': Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text(
-                    'Dag',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w800,
-                      color: _calendarViewMode == 'Dag' ? Colors.white : cs.onSurface,
-                    ),
-                  ),
-                ),
-              },
-              onValueChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  _calendarViewMode = value;
-                  _calendarFormat =
-                      (value == 'Maand') ? CalendarFormat.month : CalendarFormat.week;
-                });
-              },
-            ),
-          ),
-        ),
+              ),
             ],
           ),
         ),
@@ -2301,120 +3436,56 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 ),
               ],
             ),
-            child: TableCalendar<dynamic>(
-              locale: 'nl_NL',
-              firstDay: DateTime.now().subtract(const Duration(days: 730)),
-              lastDay: DateTime.now().add(const Duration(days: 730)),
+            child: ManualPlannerInfiniteView(
+              viewMode: _calendarViewMode,
               focusedDay: _focusedDay,
-              calendarFormat: _calendarFormat,
-              startingDayOfWeek: StartingDayOfWeek.monday,
-              availableCalendarFormats: const {
-                CalendarFormat.month: 'Maand',
-                CalendarFormat.week: 'Week',
-              },
-              selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-              eventLoader: (day) => _groupedTasks[_normalizeDate(day)] ?? const <dynamic>[],
-              onFormatChanged: (format) {
-                setState(() => _calendarFormat = format);
-              },
-              onPageChanged: (focusedDay) {
-                setState(() {
-                  _focusedDay = focusedDay;
-                });
-              },
+              selectedDay: _selectedDay,
+              groupedOpenTaken: _groupedOpenTaken,
+              groupedGeplandeTaken: _groupedGeplandeTaken,
+              colorScheme: cs,
+              isDark: isDark,
+              normalizeDay: _normalizeDate,
               onDaySelected: (selectedDay, focusedDay) {
                 setState(() {
                   _selectedDay = selectedDay;
                   _focusedDay = focusedDay;
                 });
+                _fetchReedsGeplandeTakenVoorDag(selectedDay);
               },
-              calendarStyle: CalendarStyle(
-                isTodayHighlighted: true,
-                todayDecoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.20),
-                  shape: BoxShape.circle,
-                ),
-                selectedDecoration: BoxDecoration(
-                  color: cs.primary,
-                  shape: BoxShape.circle,
-                ),
-                markerDecoration: const BoxDecoration(color: Colors.transparent),
-                outsideTextStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.35)),
-              ),
-              headerStyle: HeaderStyle(
-                titleTextStyle: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900),
-                formatButtonTextStyle: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: cs.primary,
-                ),
-                formatButtonDecoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              daysOfWeekStyle: DaysOfWeekStyle(
-                weekdayStyle: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                weekendStyle: GoogleFonts.inter(fontWeight: FontWeight.w800),
-              ),
-              calendarBuilders: CalendarBuilders<dynamic>(
-                markerBuilder: (context, date, events) {
-                  if (events.isEmpty) return const SizedBox.shrink();
-                  final visible = events.take(3).toList(growable: false);
-                  final remainder = events.length - visible.length;
-                  return Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 2, left: 2, right: 2),
-                      child: Wrap(
-                        spacing: 2,
-                        runSpacing: 2,
-                        alignment: WrapAlignment.center,
-                        children: [
-                          ...visible.map((event) {
-                            final task = event is Map<String, dynamic>
-                                ? event
-                                : Map<String, dynamic>.from(event as Map);
-                            final startLabel = _timeLabel(task['tijdslot_start']);
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: cs.primary.withValues(alpha: 0.20),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                startLabel,
-                                style: GoogleFonts.inter(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: cs.primary,
-                                  height: 1.0,
-                                ),
-                              ),
-                            );
-                          }),
-                          if (remainder > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: cs.onSurface.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '+$remainder',
-                                style: GoogleFonts.inter(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: cs.onSurface.withValues(alpha: 0.74),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+              onMonthNavigate: _manualAddCalendarMonths,
+              onMonthStickyChanged: (monthFirst) {
+                setState(() {
+                  final dim = DateTime(
+                    monthFirst.year,
+                    monthFirst.month + 1,
+                    0,
+                  ).day;
+                  _focusedDay = DateTime(
+                    monthFirst.year,
+                    monthFirst.month,
+                    math.min(_focusedDay.day, dim),
                   );
-                },
-              ),
+                });
+              },
+              onZoomToDagFromMonth: (day) {
+                setState(() {
+                  _selectedDay = day;
+                  _focusedDay = day;
+                  _calendarViewMode = 'Dag';
+                });
+                _fetchReedsGeplandeTakenVoorDag(day);
+              },
+              openSlotMinutes: _manualOpenSlotMinutes,
+              plannedSlotMinutes: _manualPlannedSlotMinutes,
+              openBlockTitle: _manualTimelineOpenTitle,
+              plannedBlockTitle: _manualTimelinePlannedTitle,
+              plannedWorkerName: _extractIngeplandWeergaveNaam,
+              onOpenTap: (task) {
+                final id = _text(task['id']);
+                if (id.isEmpty) return;
+                _openManualPlanModal(id);
+              },
+              onPlannedTap: _openReedsGeplandeInfoModal,
             ),
           ),
         ),
@@ -2440,180 +3511,80 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Agenda (${_calendarViewMode.toLowerCase()})',
-                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900),
+                        'Agenda — ${DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(_manualSelectedDay)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Alle opdrachten voor deze ${_calendarViewMode.toLowerCase()}',
-                        style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.w900),
+                        'Kalender: ${_calendarViewMode.toLowerCase()} · Open (blauw) versus ingepland (rood) voor de geselecteerde dag',
+                        style: GoogleFonts.lato(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface.withValues(alpha: 0.72),
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Expanded(
-                        child: agendaTasks.isEmpty
-                            ? Center(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                  decoration: BoxDecoration(
-                                    color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.04),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Text(
-                                    'Geen opdrachten gevonden voor deze periode.',
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w700,
-                                      color: cs.onSurface.withValues(alpha: 0.72),
+                        child: isMobile
+                            ? Column(
+                                children: [
+                                  Expanded(
+                                    child: _manualSplitOpenColumn(
+                                      cs,
+                                      isDark,
+                                      openDay,
                                     ),
                                   ),
-                                ),
-                              )
-                            : ListView.builder(
-                                itemCount: agendaTasks.length,
-                                itemBuilder: (context, index) {
-                                  final task = Map<String, dynamic>.from(agendaTasks[index] as Map);
-                                  final opdrachtId = _text(task['id']);
-                                  final project = _projectName(task);
-                                  final company = _text(task['bedrijfsnaam']).isEmpty
-                                      ? 'Onbekende klant'
-                                      : _text(task['bedrijfsnaam']);
-                                  final start = _timeLabel(task['tijdslot_start']);
-                                  final end = _timeLabel(task['tijdslot_eind']);
-                                  final date = _toDate(task['geplande_datum']);
-                                  final needed = _asInt(task['benodigde_operators'], fallback: 1);
-                                  final title = project.isNotEmpty ? project : company;
-                                  final isSelectedDay =
-                                      isSameDay(_selectedDay ?? _focusedDay, date);
-
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(16),
-                                        onTap: opdrachtId.isEmpty ? null : () => _openManualPlanModal(opdrachtId),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(14),
-                                          decoration: BoxDecoration(
-                                            color: isSelectedDay
-                                                ? Colors.blue.shade50
-                                                : isDark
-                                                    ? const Color(0xFF171722)
-                                                    : const Color(0xFFFDFDFE),
-                                            borderRadius: BorderRadius.circular(16),
-                                            border: Border.all(
-                                              color: isSelectedDay
-                                                  ? Colors.blue.withValues(alpha: 0.30)
-                                                  : cs.onSurface.withValues(alpha: 0.06),
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.035),
-                                                blurRadius: 14,
-                                                offset: const Offset(0, 6),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Container(
-                                                width: 6,
-                                                height: 52,
-                                                decoration: BoxDecoration(
-                                                  color: cs.primary.withValues(alpha: 0.85),
-                                                  borderRadius: BorderRadius.circular(20),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      title,
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 15,
-                                                        fontWeight: FontWeight.w900,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      company,
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight: FontWeight.w600,
-                                                        color: cs.onSurface.withValues(alpha: 0.70),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 6),
-                                                    Wrap(
-                                                      spacing: 8,
-                                                      runSpacing: 8,
-                                                      children: [
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                          decoration: BoxDecoration(
-                                                            color: cs.primary.withValues(alpha: 0.10),
-                                                            borderRadius: BorderRadius.circular(999),
-                                                          ),
-                                                          child: Text(
-                                                            '$start - $end',
-                                                            style: GoogleFonts.inter(
-                                                              fontWeight: FontWeight.w800,
-                                                              color: cs.primary,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                          decoration: BoxDecoration(
-                                                            color: cs.onSurface.withValues(alpha: 0.06),
-                                                            borderRadius: BorderRadius.circular(999),
-                                                          ),
-                                                          child: Text(
-                                                            _manualRegion(task),
-                                                            style: GoogleFonts.inter(
-                                                              fontWeight: FontWeight.w700,
-                                                              color: cs.onSurface.withValues(alpha: 0.75),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    const SizedBox(height: 6),
-                                                    Text(
-                                                      DateFormat('d MMMM yyyy', 'nl_NL').format(date),
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight: FontWeight.w700,
-                                                        color: cs.onSurface.withValues(alpha: 0.70),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 2),
-                                                    Text(
-                                                      'Nodig: $needed operators',
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight: FontWeight.w800,
-                                                        color: cs.primary.withValues(alpha: 0.85),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              Icon(
-                                                Icons.chevron_right_rounded,
-                                                color: cs.onSurface.withValues(alpha: 0.45),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                    child: Divider(
+                                      height: 1,
+                                      color: cs.onSurface.withValues(
+                                        alpha: 0.12,
                                       ),
                                     ),
-                                  );
-                                },
+                                  ),
+                                  Expanded(
+                                    child: _manualSplitPlannedColumn(
+                                      cs,
+                                      isDark,
+                                      _reedsGeplandeTaken,
+                                      _isLoadingReedsGeplande,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: _manualSplitOpenColumn(
+                                      cs,
+                                      isDark,
+                                      openDay,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  VerticalDivider(
+                                    width: 1,
+                                    thickness: 1,
+                                    color: cs.onSurface.withValues(alpha: 0.12),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: _manualSplitPlannedColumn(
+                                      cs,
+                                      isDark,
+                                      _reedsGeplandeTaken,
+                                      _isLoadingReedsGeplande,
+                                    ),
+                                  ),
+                                ],
                               ),
                       ),
                     ],
@@ -2640,12 +3611,19 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           elevation: 0,
           title: Text(
             'Planbord & Projecten',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.2,
+            ),
           ),
           actions: [
             IconButton(
               tooltip: 'Vernieuwen',
-              onPressed: (_isLoading || _isLoadingProjects || _isLoadingSmartProjects || _isCalculating)
+              onPressed:
+                  (_isLoading ||
+                      _isLoadingProjects ||
+                      _isLoadingSmartProjects ||
+                      _isCalculating)
                   ? null
                   : () async {
                       await _fetchSmartProjects();
@@ -2659,39 +3637,39 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         body: SelectionArea(
           child: Column(
             children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                padding: const EdgeInsets.all(6),
-                child: TabBar(
-                  indicator: BoxDecoration(
-                    color: cs.primary,
-                    borderRadius: BorderRadius.circular(14),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
-                  labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                  tabs: const [
-                    Tab(text: 'Smart Planner'),
-                    Tab(text: 'Handmatig Plannen'),
+                  padding: const EdgeInsets.all(6),
+                  child: TabBar(
+                    indicator: BoxDecoration(
+                      color: cs.primary,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
+                    labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                    tabs: const [
+                      Tab(text: 'Smart Planner'),
+                      Tab(text: 'Handmatig Plannen'),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _buildSmartPlannerTab(isDark),
+                    _buildManualPlanningTab(isDark),
                   ],
                 ),
               ),
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildSmartPlannerTab(isDark),
-                  _buildManualPlanningTab(isDark),
-                ],
-              ),
-            ),
             ],
           ),
         ),
@@ -2700,24 +3678,640 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   }
 }
 
+/// Handmatige planner: `infinite_calendar_view` — compacte maand + lane week/dag.
+/// Tijdelijk insert-bestand; wordt ingevoegd in planbord_screen.dart.
+class ManualPlannerInfiniteView extends StatefulWidget {
+  const ManualPlannerInfiniteView({
+    super.key,
+    required this.viewMode,
+    required this.focusedDay,
+    required this.selectedDay,
+    required this.groupedOpenTaken,
+    required this.groupedGeplandeTaken,
+    required this.colorScheme,
+    required this.isDark,
+    required this.normalizeDay,
+    required this.onDaySelected,
+    required this.onMonthNavigate,
+    required this.onMonthStickyChanged,
+    required this.onZoomToDagFromMonth,
+    required this.openSlotMinutes,
+    required this.plannedSlotMinutes,
+    required this.openBlockTitle,
+    required this.plannedBlockTitle,
+    required this.plannedWorkerName,
+    required this.onOpenTap,
+    required this.onPlannedTap,
+  });
+
+  final String viewMode;
+  final DateTime focusedDay;
+  final DateTime? selectedDay;
+  final Map<DateTime, List<Map<String, dynamic>>> groupedOpenTaken;
+  final Map<DateTime, List<Map<String, dynamic>>> groupedGeplandeTaken;
+  final ColorScheme colorScheme;
+  final bool isDark;
+  final DateTime Function(DateTime) normalizeDay;
+  final void Function(DateTime selectedDay, DateTime focusedDay) onDaySelected;
+  final void Function(int monthDelta) onMonthNavigate;
+  final void Function(DateTime monthFirstDaySticky) onMonthStickyChanged;
+  final void Function(DateTime day) onZoomToDagFromMonth;
+  final ({int start, int end}) Function(Map<String, dynamic>) openSlotMinutes;
+  final ({int start, int end}) Function(Map<String, dynamic>)
+  plannedSlotMinutes;
+  final String Function(Map<String, dynamic>) openBlockTitle;
+  final String Function(Map<String, dynamic>) plannedBlockTitle;
+  final String Function(Map<String, dynamic>) plannedWorkerName;
+  final void Function(Map<String, dynamic>) onOpenTap;
+  final void Function(Map<String, dynamic>) onPlannedTap;
+
+  @override
+  State<ManualPlannerInfiniteView> createState() =>
+      _ManualPlannerInfiniteViewState();
+}
+
+class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
+  static const Object _openKind = Object();
+  static const Object _plannedKind = Object();
+
+  late final EventsController _controller = EventsController();
+  final GlobalKey<EventsMonthsState> _monthsKey = GlobalKey();
+
+  DateTime _norm(DateTime d) => widget.normalizeDay(d);
+
+  DateTime _mondayOf(DateTime day) {
+    final n = _norm(day);
+    return n.subtract(Duration(days: (n.weekday - DateTime.monday + 7) % 7));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _applyMonthEventFilter();
+    _pushEventsFromMaps();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ManualPlannerInfiniteView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewMode != widget.viewMode) {
+      _applyMonthEventFilter();
+    }
+    final mapsChanged =
+        !identical(oldWidget.groupedOpenTaken, widget.groupedOpenTaken) ||
+        !identical(oldWidget.groupedGeplandeTaken, widget.groupedGeplandeTaken);
+    if (mapsChanged ||
+        oldWidget.viewMode != widget.viewMode ||
+        oldWidget.focusedDay != widget.focusedDay) {
+      _pushEventsFromMaps();
+    }
+    if (widget.viewMode == 'Maand') {
+      if (oldWidget.focusedDay.year != widget.focusedDay.year ||
+          oldWidget.focusedDay.month != widget.focusedDay.month) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _monthsKey.currentState?.jumpToDate(widget.focusedDay);
+        });
+      }
+    }
+  }
+
+  void _applyMonthEventFilter() {
+    if (widget.viewMode == 'Maand') {
+      _controller.updateDayEventsFilter(newFilter: (_, _) => <Event>[]);
+    } else {
+      _controller.updateDayEventsFilter(newFilter: (_, list) => list);
+    }
+  }
+
+  void _pushEventsFromMaps() {
+    _controller.updateCalendarData((calendar) {
+      calendar.clearAll();
+      final list = <Event>[];
+      widget.groupedOpenTaken.forEach((day, rows) {
+        for (final task in rows) {
+          final slot = widget.openSlotMinutes(task);
+          final start = DateTime(
+            day.year,
+            day.month,
+            day.day,
+          ).add(Duration(minutes: slot.start));
+          var end = DateTime(
+            day.year,
+            day.month,
+            day.day,
+          ).add(Duration(minutes: slot.end));
+          if (!end.isAfter(start)) {
+            end = start.add(const Duration(minutes: 60));
+          }
+          list.add(
+            Event(
+              columnIndex: 0,
+              startTime: start,
+              endTime: end,
+              title: widget.openBlockTitle(task),
+              color: Colors.blue.shade700,
+              textColor: Colors.white,
+              data: task,
+              eventType: _openKind,
+            ),
+          );
+        }
+      });
+      widget.groupedGeplandeTaken.forEach((day, rows) {
+        for (final item in rows) {
+          final slot = widget.plannedSlotMinutes(item);
+          final start = DateTime(
+            day.year,
+            day.month,
+            day.day,
+          ).add(Duration(minutes: slot.start));
+          var end = DateTime(
+            day.year,
+            day.month,
+            day.day,
+          ).add(Duration(minutes: slot.end));
+          if (!end.isAfter(start)) {
+            end = start.add(const Duration(minutes: 60));
+          }
+          final worker = widget.plannedWorkerName(item);
+          list.add(
+            Event(
+              columnIndex: 1,
+              startTime: start,
+              endTime: end,
+              title: widget.plannedBlockTitle(item),
+              description: worker.isNotEmpty ? worker : null,
+              color: Colors.red.shade400,
+              textColor: Colors.white,
+              data: item,
+              eventType: _plannedKind,
+            ),
+          );
+        }
+      });
+      calendar.addEvents(list);
+    });
+  }
+
+  DateTime _plannerAnchor() {
+    final sel = widget.selectedDay ?? widget.focusedDay;
+    if (widget.viewMode == 'Week') {
+      return _mondayOf(sel);
+    }
+    return _norm(sel);
+  }
+
+  double _hourHeightPm() => 1.0;
+
+  String _monthYearTitleNl() {
+    final raw = DateFormat('MMMM yyyy', 'nl_NL').format(widget.focusedDay);
+    if (raw.isEmpty) return raw;
+    return raw[0].toUpperCase() + raw.substring(1);
+  }
+
+  Widget _manualMonthNavigator() {
+    final cs = widget.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 4),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => widget.onMonthNavigate(-1),
+            icon: Icon(
+              Icons.chevron_left_rounded,
+              color: cs.onSurface.withValues(alpha: 0.86),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              _monthYearTitleNl(),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => widget.onMonthNavigate(1),
+            icon: Icon(
+              Icons.chevron_right_rounded,
+              color: cs.onSurface.withValues(alpha: 0.86),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _manualMonthDayHeader(DateTime day) {
+    final cs = widget.colorScheme;
+    final norm = _norm(day);
+    final openCount = widget.groupedOpenTaken[norm]?.length ?? 0;
+    final planCount = widget.groupedGeplandeTaken[norm]?.length ?? 0;
+    final inMonth =
+        day.month == widget.focusedDay.month &&
+        day.year == widget.focusedDay.year;
+    final sel = widget.selectedDay;
+    final isSel = sel != null && DateUtils.isSameDay(norm, sel);
+    final isToday = DateUtils.isSameDay(norm, _norm(DateTime.now()));
+    final blue = Colors.blue.shade700;
+    final red = Colors.red.shade400;
+    final subStyle = GoogleFonts.inter(
+      fontWeight: FontWeight.w800,
+      fontSize: 7.5,
+      height: 1,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '${day.day}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: inMonth ? 12.5 : 11,
+              fontWeight: FontWeight.w900,
+              color: cs.onSurface.withValues(
+                alpha: inMonth ? (isSel ? 1 : 0.92) : 0.45,
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: '$openCount openstaand',
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: blue.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: blue.withValues(alpha: isToday ? 0.55 : 0.35),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$openCount',
+                          style: GoogleFonts.inter(
+                            color: blue,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'open',
+                          style: subStyle.copyWith(
+                            color: blue.withValues(alpha: 0.85),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 3),
+              Expanded(
+                child: Tooltip(
+                  message: '$planCount ingepland',
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: red.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: red.withValues(alpha: isToday ? 0.5 : 0.32),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$planCount',
+                          style: GoogleFonts.inter(
+                            color: red,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          'gepl.',
+                          style: subStyle.copyWith(
+                            color: red.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _plannerTile(Event ev, double height, double width, double hpm) {
+    final accent = identical(ev.eventType, _openKind)
+        ? Colors.blue.shade700
+        : Colors.red.shade400;
+    final raw = ev.data;
+    if (raw is! Map) return const SizedBox.shrink();
+    final map = Map<String, dynamic>.from(raw);
+    final maxLines = math.max(1, (height / 22).floor());
+    return Material(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          if (identical(ev.eventType, _openKind)) {
+            widget.onOpenTap(map);
+          } else {
+            widget.onPlannedTap(map);
+          }
+        },
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border(left: BorderSide(color: accent, width: 3)),
+            color: accent.withValues(alpha: widget.isDark ? 0.22 : 0.13),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: widget.isDark ? 0.35 : 0.08,
+                ),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  ev.title ?? '',
+                  maxLines: maxLines,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: math.min(12, height / 8),
+                    fontWeight: FontWeight.w900,
+                    color: accent,
+                    height: 1.05,
+                  ),
+                ),
+              ),
+              if ((ev.description ?? '').trim().isNotEmpty)
+                Text(
+                  ev.description!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: widget.colorScheme.onSurface.withValues(alpha: 0.70),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonth(BuildContext context) {
+    final weekParam = WeekParam(
+      startOfWeekDay: 1,
+      headerHeight: 30,
+      weekHeight: 58,
+      daySpacing: 3,
+      weekDecoration: WeekParam.defaultWeekDecoration(context),
+      headerStyle: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 12),
+    );
+
+    final daysParam = DaysParam(
+      headerHeight: 54,
+      eventHeight: 200,
+      eventSpacing: 0,
+      spaceBetweenHeaderAndEvents: 0,
+      dayHeaderBuilder: _manualMonthDayHeader,
+      onDayTapUp: (d) => widget.onZoomToDagFromMonth(_norm(d)),
+    );
+
+    return Column(
+      children: [
+        _manualMonthNavigator(),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: EventsMonths(
+              key: _monthsKey,
+              controller: _controller,
+              initialMonth: DateTime(
+                widget.focusedDay.year,
+                widget.focusedDay.month,
+              ),
+              weekParam: weekParam,
+              daysParam: daysParam,
+              onMonthChange: widget.onMonthStickyChanged,
+              pinchToZoomParam: PinchToZoom(pinchToZoom: false),
+              verticalScrollPhysics: const ClampingScrollPhysics(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlanner(BuildContext context, {required int days}) {
+    final hpm = _hourHeightPm();
+    const startMin = 6 * 60;
+    const endMin = 22 * 60;
+    final anchor = _plannerAnchor();
+    final dayHeaderFg = Theme.of(context).brightness == Brightness.dark
+        ? widget.colorScheme.onPrimary
+        : widget.colorScheme.primary;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: EventsPlanner(
+        key: ValueKey(
+          'planner_${widget.viewMode}_${days}_${anchor.toIso8601String()}',
+        ),
+        controller: _controller,
+        initialDate: anchor,
+        daysShowed: days,
+        heightPerMinute: hpm,
+        pinchToZoomParam: PinchToZoomParameters(pinchToZoom: false),
+        fullDayParam: const FullDayParam(fullDayEventsBarVisibility: false),
+        initialVerticalScrollOffset: hpm * startMin,
+        minVerticalScrollOffset: hpm * startMin,
+        maxVerticalScrollOffset: hpm * endMin,
+        dayEventsArranger: const SimpleEventArranger(),
+        columnsParam: ColumnsParam(
+          columns: 2,
+          columnsLabels: const ['Open', 'Ingepland'],
+          columnsWidthRatio: const [0.5, 0.5],
+          columnsColors: [
+            Colors.blue.withValues(alpha: 0.10),
+            Colors.red.withValues(alpha: 0.05),
+          ],
+        ),
+        daysHeaderParam: DaysHeaderParam(
+          daysHeaderHeight: 44,
+          dayHeaderBuilder: (day, isToday) {
+            return InkWell(
+              onTap: () => widget.onDaySelected(_norm(day), _norm(day)),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      DateFormat.E('nl_NL').format(day),
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: widget.colorScheme.onSurface.withValues(
+                          alpha: 0.62,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${day.day}',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        color: isToday
+                            ? dayHeaderFg
+                            : widget.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+        dayParam: DayParam(dayEventBuilder: _plannerTile),
+        offTimesParam: const OffTimesParam(
+          offTimesAllDaysRanges: [
+            OffTimeRange(
+              TimeOfDay(hour: 0, minute: 0),
+              TimeOfDay(hour: 6, minute: 0),
+            ),
+            OffTimeRange(
+              TimeOfDay(hour: 22, minute: 0),
+              TimeOfDay(hour: 24, minute: 0),
+            ),
+          ],
+        ),
+        timesIndicatorsParam: const TimesIndicatorsParam(
+          timesIndicatorsWidth: 48,
+        ),
+        currentHourIndicatorParam: CurrentHourIndicatorParam(
+          currentHourIndicatorColor: Colors.red,
+          currentHourIndicatorLineVisibility: true,
+          currentHourIndicatorHourVisibility: true,
+        ),
+        onDayChange: (firstShown) => widget.onDaySelected(
+          widget.normalizeDay(firstShown),
+          widget.normalizeDay(firstShown),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mqShort = MediaQuery.sizeOf(context).shortestSide;
+    final plannerH = mqShort < 550 ? 600.0 : 520.0;
+
+    Widget body;
+    if (widget.viewMode == 'Maand') {
+      body = SizedBox(height: 420, child: _buildMonth(context));
+    } else if (widget.viewMode == 'Week') {
+      body = SizedBox(height: plannerH, child: _buildPlanner(context, days: 7));
+    } else {
+      body = SizedBox(height: plannerH, child: _buildPlanner(context, days: 1));
+    }
+
+    final hint = Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Tijdlijn 06:00 – 22:00 · kolom Open (blauw) · kolom Ingepland (rood) · rode lijn = nu',
+          style: GoogleFonts.lato(
+            fontSize: 11.6,
+            fontWeight: FontWeight.w700,
+            color: widget.colorScheme.onSurface.withValues(alpha: 0.62),
+          ),
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.viewMode != 'Maand') ...[
+          _manualWeekDayNavigatorStrip(),
+          const SizedBox(height: 8),
+        ],
+        body,
+        if (widget.viewMode != 'Maand') hint,
+      ],
+    );
+  }
+
+  /// Week/Dag tonen ook maandkop + chevrons (consistent met maand-tab).
+  Widget _manualWeekDayNavigatorStrip() {
+    return _manualMonthNavigator();
+  }
+}
+
 class _StepperCircleButton extends StatelessWidget {
   const _StepperCircleButton({required this.icon, required this.onPressed});
 
   final IconData icon;
+
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     return Material(
       color: cs.primary.withValues(alpha: 0.12),
+
       shape: const CircleBorder(),
+
       child: InkWell(
         customBorder: const CircleBorder(),
+
         onTap: onPressed,
+
         child: SizedBox(
           width: 34,
+
           height: 34,
+
           child: Icon(icon, size: 18, color: cs.primary),
         ),
       ),
@@ -2734,25 +4328,34 @@ class _ExtraOpdrachtModal extends StatefulWidget {
 
 class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
   final TextEditingController _urenCtrl = TextEditingController();
+
   bool _loadingProjects = true;
+
   bool _saving = false;
+
   Object? _error;
 
   List<Map<String, dynamic>> _projects = const [];
+
   Map<String, dynamic>? _selectedProject;
+
   DateTime? _date;
+
   TimeOfDay? _start;
+
   TimeOfDay? _end;
 
   @override
   void initState() {
     super.initState();
+
     _loadProjects();
   }
 
   @override
   void dispose() {
     _urenCtrl.dispose();
+
     super.dispose();
   }
 
@@ -2761,8 +4364,10 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
   Future<void> _loadProjects() async {
     setState(() {
       _loadingProjects = true;
+
       _error = null;
     });
+
     try {
       final res = await Supabase.instance.client
           .from('projecten')
@@ -2770,14 +4375,18 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
           .select('id, project_naam, werk_regio, bedrijven(bedrijfsnaam)')
           .eq('status', 'actief')
           .order('project_naam', ascending: true);
+
       final rows = (res as List)
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList(growable: false);
+
       if (!mounted) return;
+
       setState(() => _projects = rows);
     } catch (e) {
       if (!mounted) return;
+
       setState(() => _error = e);
     } finally {
       if (mounted) setState(() => _loadingProjects = false);
@@ -2786,22 +4395,32 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
+
     final picked = await showDatePicker(
       context: context,
+
       initialDate: _date ?? now,
+
       firstDate: DateTime(now.year - 1),
+
       lastDate: DateTime(now.year + 3),
     );
+
     if (picked == null || !mounted) return;
+
     setState(() => _date = picked);
   }
 
   Future<void> _pickTime({required bool start}) async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: (start ? _start : _end) ?? const TimeOfDay(hour: 8, minute: 0),
+
+      initialTime:
+          (start ? _start : _end) ?? const TimeOfDay(hour: 8, minute: 0),
     );
+
     if (picked == null || !mounted) return;
+
     setState(() {
       if (start) {
         _start = picked;
@@ -2816,52 +4435,74 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   Future<void> _save() async {
     if (_saving) return;
+
     if (_selectedProject == null) {
       setState(() => _error = 'Selecteer een project.');
+
       return;
     }
+
     if (_date == null) {
       setState(() => _error = 'Kies een datum.');
+
       return;
     }
+
     if (_start == null || _end == null) {
       setState(() => _error = 'Kies start- en eindtijd.');
+
       return;
     }
+
     final uren = double.tryParse(_urenCtrl.text.trim().replaceAll(',', '.'));
+
     if (uren == null || uren <= 0) {
       setState(() => _error = 'Vul geldige benodigde uren in.');
+
       return;
     }
 
     setState(() {
       _saving = true;
+
       _error = null;
     });
 
     try {
       final p = _selectedProject!;
+
       final bedrijven = p['bedrijven'];
+
       final bedrijfsnaam = (bedrijven is Map)
           ? _t(bedrijven['bedrijfsnaam'])
           : 'Onbekend Bedrijf';
 
       await Supabase.instance.client.from('opdrachten').insert({
         'project_id': p['id'],
+
         'bedrijfsnaam': bedrijfsnaam,
+
         'werk_regio': p['werk_regio'],
+
         'geplande_datum': _date!.toIso8601String().substring(0, 10),
+
         'tijdslot_start': _timeToDb(_start!),
+
         'tijdslot_eind': _timeToDb(_end!),
+
         'benodigde_uren_totaal': uren,
+
         'verwachte_uren_totaal': uren,
+
         'status': 'open',
       });
 
       if (!mounted) return;
+
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
+
       setState(() => _error = e);
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -2871,114 +4512,202 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+
     return AnimatedPadding(
       duration: const Duration(milliseconds: 150),
+
       padding: EdgeInsets.only(bottom: viewInsets),
+
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
+
           borderRadius: BorderRadius.only(
             topLeft: Radius.circular(32),
+
             topRight: Radius.circular(32),
           ),
         ),
+
         child: SafeArea(
           top: false,
+
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
+
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+
               children: [
                 Center(
                   child: Container(
                     width: 42,
+
                     height: 5,
+
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.08),
+
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
                 Text(
                   'Nieuwe Opdracht toevoegen aan Project',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 18),
+
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w900,
+
+                    fontSize: 18,
+                  ),
                 ),
+
                 const SizedBox(height: 12),
+
                 if (_error != null) ...[
                   Text(
                     '$_error',
+
                     style: GoogleFonts.inter(
                       fontWeight: FontWeight.w700,
+
                       color: const Color(0xFFCC2F2F),
                     ),
                   ),
+
                   const SizedBox(height: 10),
                 ],
+
                 DropdownButtonFormField<Map<String, dynamic>>(
-                  key: ValueKey(_selectedProject == null ? 'none' : _t(_selectedProject!['id'])),
+                  key: ValueKey(
+                    _selectedProject == null
+                        ? 'none'
+                        : _t(_selectedProject!['id']),
+                  ),
+
                   initialValue: _selectedProject,
+
                   items: _projects
                       .map(
                         (p) => DropdownMenuItem<Map<String, dynamic>>(
                           value: p,
+
                           child: Text(
-                            _t(p['project_naam']).isEmpty ? 'Project' : _t(p['project_naam']),
+                            _t(p['project_naam']).isEmpty
+                                ? 'Project'
+                                : _t(p['project_naam']),
+
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       )
                       .toList(),
-                  onChanged: (_loadingProjects || _saving) ? null : (v) => setState(() => _selectedProject = v),
-                  decoration: const InputDecoration(labelText: 'Selecteer Project'),
+
+                  onChanged: (_loadingProjects || _saving)
+                      ? null
+                      : (v) => setState(() => _selectedProject = v),
+
+                  decoration: const InputDecoration(
+                    labelText: 'Selecteer Project',
+                  ),
                 ),
+
                 const SizedBox(height: 12),
+
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
                         onPressed: _saving ? null : _pickDate,
-                        child: Text(_date == null ? 'Datum' : _date!.toIso8601String().substring(0, 10)),
+
+                        child: Text(
+                          _date == null
+                              ? 'Datum'
+                              : _date!.toIso8601String().substring(0, 10),
+                        ),
                       ),
                     ),
                   ],
                 ),
+
                 const SizedBox(height: 12),
+
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: _saving ? null : () => _pickTime(start: true),
-                        child: Text(_start == null ? 'Starttijd' : _start!.format(context)),
+                        onPressed: _saving
+                            ? null
+                            : () => _pickTime(start: true),
+
+                        child: Text(
+                          _start == null
+                              ? 'Starttijd'
+                              : _start!.format(context),
+                        ),
                       ),
                     ),
+
                     const SizedBox(width: 10),
+
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: _saving ? null : () => _pickTime(start: false),
-                        child: Text(_end == null ? 'Eindtijd' : _end!.format(context)),
+                        onPressed: _saving
+                            ? null
+                            : () => _pickTime(start: false),
+
+                        child: Text(
+                          _end == null ? 'Eindtijd' : _end!.format(context),
+                        ),
                       ),
                     ),
                   ],
                 ),
+
                 const SizedBox(height: 12),
+
                 TextField(
                   controller: _urenCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Benodigde uren'),
+
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+
+                  decoration: const InputDecoration(
+                    labelText: 'Benodigde uren',
+                  ),
                 ),
+
                 const SizedBox(height: 18),
+
                 SizedBox(
                   width: double.infinity,
+
                   child: FilledButton(
                     onPressed: (_saving || _loadingProjects) ? null : _save,
+
                     child: _saving
                         ? const SizedBox(
                             width: 18,
+
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+
+                              color: Colors.white,
+                            ),
                           )
-                        : Text('Opslaan', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+                        : Text(
+                            'Opslaan',
+
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -2989,4 +4718,3 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
     );
   }
 }
-
