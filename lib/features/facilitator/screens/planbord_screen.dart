@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:infinite_calendar_view/infinite_calendar_view.dart';
 import 'package:intl/intl.dart';
@@ -945,6 +944,35 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     setState(
       () => _focusedDay = DateTime(targetFirst.year, targetFirst.month, newDay),
     );
+  }
+
+  /// Pijl-navigatie in de handmatige kalender: stap hangt af van [_calendarViewMode].
+  void _manualCalendarNavigateStep(int direction) {
+    if (direction != -1 && direction != 1) return;
+    switch (_calendarViewMode) {
+      case 'Maand':
+        _manualAddCalendarMonths(direction);
+        break;
+      case 'Week':
+        final base = _selectedDay ?? _focusedDay;
+        final n = _normalizeDate(base).add(Duration(days: direction * 7));
+        setState(() {
+          _selectedDay = n;
+          _focusedDay = n;
+        });
+        _fetchReedsGeplandeTakenVoorDag(n);
+        break;
+      case 'Dag':
+      default:
+        final base = _selectedDay ?? _focusedDay;
+        final n = _normalizeDate(base).add(Duration(days: direction));
+        setState(() {
+          _selectedDay = n;
+          _focusedDay = n;
+        });
+        _fetchReedsGeplandeTakenVoorDag(n);
+        break;
+    }
   }
 
   ({int start, int end}) _manualOpenSlotMinutes(Map<String, dynamic> task) {
@@ -3356,64 +3384,62 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: CupertinoSlidingSegmentedControl<String>(
-                    groupValue: _calendarViewMode,
-                    padding: const EdgeInsets.all(4),
-                    thumbColor: cs.primary,
-                    backgroundColor: cs.onSurface.withValues(
-                      alpha: isDark ? 0.14 : 0.08,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<String>(
+                      segments: <ButtonSegment<String>>[
+                        ButtonSegment<String>(
+                          value: 'Maand',
+                          label: Text(
+                            'Maand',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.calendar_view_month_rounded,
+                            size: 18,
+                          ),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'Week',
+                          label: Text(
+                            'Week',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          icon: const Icon(Icons.view_week_rounded, size: 18),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'Dag',
+                          label: Text(
+                            'Dag',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          icon: const Icon(Icons.view_day_rounded, size: 18),
+                        ),
+                      ],
+                      selected: <String>{_calendarViewMode},
+                      onSelectionChanged: (Set<String> next) {
+                        if (next.isEmpty) return;
+                        setState(() => _calendarViewMode = next.first);
+                      },
+                      multiSelectionEnabled: false,
+                      emptySelectionAllowed: false,
+                      showSelectedIcon: false,
+                      style: SegmentedButton.styleFrom(
+                        selectedBackgroundColor: const Color(0xFF004A99),
+                        selectedForegroundColor: Colors.white,
+                        foregroundColor: cs.onSurface.withValues(alpha: 0.85),
+                        side: BorderSide(
+                          color: cs.onSurface.withValues(alpha: 0.12),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ),
-                    children: {
-                      'Maand': Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Text(
-                          'Maand',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w800,
-                            color: _calendarViewMode == 'Maand'
-                                ? Colors.white
-                                : cs.onSurface,
-                          ),
-                        ),
-                      ),
-                      'Week': Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Text(
-                          'Week',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w800,
-                            color: _calendarViewMode == 'Week'
-                                ? Colors.white
-                                : cs.onSurface,
-                          ),
-                        ),
-                      ),
-                      'Dag': Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Text(
-                          'Dag',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w800,
-                            color: _calendarViewMode == 'Dag'
-                                ? Colors.white
-                                : cs.onSurface,
-                          ),
-                        ),
-                      ),
-                    },
-                    onValueChanged: (value) {
-                      if (value == null) return;
-                      setState(() => _calendarViewMode = value);
-                    },
                   ),
                 ),
               ),
@@ -3452,7 +3478,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 });
                 _fetchReedsGeplandeTakenVoorDag(selectedDay);
               },
-              onMonthNavigate: _manualAddCalendarMonths,
+              onNavigateStep: _manualCalendarNavigateStep,
               onMonthStickyChanged: (monthFirst) {
                 setState(() {
                   final dim = DateTime(
@@ -3519,7 +3545,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Kalender: ${_calendarViewMode.toLowerCase()} · Open (blauw) versus ingepland (rood) voor de geselecteerde dag',
+                        'Kalender: ${_calendarViewMode.toLowerCase()} · Open (rood) versus ingepland (blauw) voor de geselecteerde dag',
                         style: GoogleFonts.lato(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -3679,7 +3705,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 }
 
 /// Handmatige planner: `infinite_calendar_view` — compacte maand + lane week/dag.
-/// Tijdelijk insert-bestand; wordt ingevoegd in planbord_screen.dart.
 class ManualPlannerInfiniteView extends StatefulWidget {
   const ManualPlannerInfiniteView({
     super.key,
@@ -3692,7 +3717,9 @@ class ManualPlannerInfiniteView extends StatefulWidget {
     required this.isDark,
     required this.normalizeDay,
     required this.onDaySelected,
-    required this.onMonthNavigate,
+
+    /// Pijl-links = -1, pijl-rechts = +1; parent past stap toe (maand/week/dag).
+    required this.onNavigateStep,
     required this.onMonthStickyChanged,
     required this.onZoomToDagFromMonth,
     required this.openSlotMinutes,
@@ -3713,7 +3740,7 @@ class ManualPlannerInfiniteView extends StatefulWidget {
   final bool isDark;
   final DateTime Function(DateTime) normalizeDay;
   final void Function(DateTime selectedDay, DateTime focusedDay) onDaySelected;
-  final void Function(int monthDelta) onMonthNavigate;
+  final void Function(int direction) onNavigateStep;
   final void Function(DateTime monthFirstDaySticky) onMonthStickyChanged;
   final void Function(DateTime day) onZoomToDagFromMonth;
   final ({int start, int end}) Function(Map<String, dynamic>) openSlotMinutes;
@@ -3815,7 +3842,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
               startTime: start,
               endTime: end,
               title: widget.openBlockTitle(task),
-              color: Colors.blue.shade700,
+              color: Colors.red.shade700,
               textColor: Colors.white,
               data: task,
               eventType: _openKind,
@@ -3847,7 +3874,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
               endTime: end,
               title: widget.plannedBlockTitle(item),
               description: worker.isNotEmpty ? worker : null,
-              color: Colors.red.shade400,
+              color: Colors.blue.shade700,
               textColor: Colors.white,
               data: item,
               eventType: _plannedKind,
@@ -3875,6 +3902,17 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     return raw[0].toUpperCase() + raw.substring(1);
   }
 
+  static const Color _cleanConnectBlue = Color(0xFF004A99);
+
+  String _navigatorCenterTitle() {
+    if (widget.viewMode == 'Week') {
+      final m = _mondayOf(widget.selectedDay ?? widget.focusedDay);
+      final end = m.add(const Duration(days: 6));
+      return '${DateFormat('d MMM', 'nl_NL').format(m)} – ${DateFormat('d MMM yyyy', 'nl_NL').format(end)}';
+    }
+    return _monthYearTitleNl();
+  }
+
   Widget _manualMonthNavigator() {
     final cs = widget.colorScheme;
     return Padding(
@@ -3882,7 +3920,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
       child: Row(
         children: [
           IconButton(
-            onPressed: () => widget.onMonthNavigate(-1),
+            onPressed: () => widget.onNavigateStep(-1),
             icon: Icon(
               Icons.chevron_left_rounded,
               color: cs.onSurface.withValues(alpha: 0.86),
@@ -3890,7 +3928,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
           ),
           Expanded(
             child: Text(
-              _monthYearTitleNl(),
+              _navigatorCenterTitle(),
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w900,
@@ -3899,7 +3937,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
             ),
           ),
           IconButton(
-            onPressed: () => widget.onMonthNavigate(1),
+            onPressed: () => widget.onNavigateStep(1),
             icon: Icon(
               Icons.chevron_right_rounded,
               color: cs.onSurface.withValues(alpha: 0.86),
@@ -3918,30 +3956,47 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     final inMonth =
         day.month == widget.focusedDay.month &&
         day.year == widget.focusedDay.year;
-    final sel = widget.selectedDay;
-    final isSel = sel != null && DateUtils.isSameDay(norm, sel);
-    final isToday = DateUtils.isSameDay(norm, _norm(DateTime.now()));
+    final hasAny = openCount > 0 || planCount > 0;
+    final red = Colors.red.shade700;
     final blue = Colors.blue.shade700;
-    final red = Colors.red.shade400;
     final subStyle = GoogleFonts.inter(
       fontWeight: FontWeight.w800,
       fontSize: 7.5,
       height: 1,
     );
+
+    if (!hasAny) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Align(
+          alignment: Alignment.topRight,
+          child: Text(
+            '${day.day}',
+            style: GoogleFonts.inter(
+              fontSize: inMonth ? 20 : 16,
+              fontWeight: FontWeight.bold,
+              color: cs.onSurface.withValues(alpha: inMonth ? 0.92 : 0.42),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            '${day.day}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              fontSize: inMonth ? 12.5 : 11,
-              fontWeight: FontWeight.w900,
-              color: cs.onSurface.withValues(
-                alpha: inMonth ? (isSel ? 1 : 0.92) : 0.45,
+          Align(
+            alignment: Alignment.topLeft,
+            child: Text(
+              '${day.day}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: inMonth ? 12 : 10.5,
+                fontWeight: FontWeight.w800,
+                color: cs.onSurface.withValues(alpha: inMonth ? 0.88 : 0.45),
               ),
             ),
           ),
@@ -3952,10 +4007,14 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                   message: '$openCount openstaand',
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: blue.withValues(alpha: 0.14),
+                      color: openCount > 0
+                          ? Colors.red.withValues(alpha: 0.05)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: blue.withValues(alpha: isToday ? 0.55 : 0.35),
+                        color: red.withValues(
+                          alpha: openCount > 0 ? 0.28 : 0.12,
+                        ),
                       ),
                     ),
                     child: Column(
@@ -3964,7 +4023,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                         Text(
                           '$openCount',
                           style: GoogleFonts.inter(
-                            color: blue,
+                            color: red,
                             fontSize: 10.5,
                             fontWeight: FontWeight.w900,
                           ),
@@ -3972,7 +4031,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                         Text(
                           'open',
                           style: subStyle.copyWith(
-                            color: blue.withValues(alpha: 0.85),
+                            color: red.withValues(alpha: 0.88),
                           ),
                         ),
                       ],
@@ -3986,10 +4045,14 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                   message: '$planCount ingepland',
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: red.withValues(alpha: 0.10),
+                      color: planCount > 0
+                          ? Colors.blue.withValues(alpha: 0.05)
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: red.withValues(alpha: isToday ? 0.5 : 0.32),
+                        color: blue.withValues(
+                          alpha: planCount > 0 ? 0.28 : 0.12,
+                        ),
                       ),
                     ),
                     child: Column(
@@ -3998,7 +4061,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                         Text(
                           '$planCount',
                           style: GoogleFonts.inter(
-                            color: red,
+                            color: blue,
                             fontSize: 10.5,
                             fontWeight: FontWeight.w900,
                           ),
@@ -4006,7 +4069,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                         Text(
                           'gepl.',
                           style: subStyle.copyWith(
-                            color: red.withValues(alpha: 0.9),
+                            color: blue.withValues(alpha: 0.88),
                           ),
                         ),
                       ],
@@ -4023,8 +4086,8 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
 
   Widget _plannerTile(Event ev, double height, double width, double hpm) {
     final accent = identical(ev.eventType, _openKind)
-        ? Colors.blue.shade700
-        : Colors.red.shade400;
+        ? Colors.red.shade700
+        : Colors.blue.shade700;
     final raw = ev.data;
     if (raw is! Map) return const SizedBox.shrink();
     final map = Map<String, dynamic>.from(raw);
@@ -4094,13 +4157,26 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
   }
 
   Widget _buildMonth(BuildContext context) {
+    const nlWeekdayShort = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
     final weekParam = WeekParam(
       startOfWeekDay: 1,
-      headerHeight: 30,
+      headerHeight: 34,
       weekHeight: 58,
       daySpacing: 3,
       weekDecoration: WeekParam.defaultWeekDecoration(context),
-      headerStyle: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 12),
+      headerDayBuilder: (weekdayIndex) {
+        final i = (weekdayIndex - 1).clamp(0, 6);
+        return Center(
+          child: Text(
+            nlWeekdayShort[i],
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        );
+      },
     );
 
     final daysParam = DaysParam(
@@ -4118,18 +4194,26 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: EventsMonths(
-              key: _monthsKey,
-              controller: _controller,
-              initialMonth: DateTime(
-                widget.focusedDay.year,
-                widget.focusedDay.month,
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                appBarTheme: const AppBarTheme(
+                  backgroundColor: _cleanConnectBlue,
+                  foregroundColor: Colors.white,
+                ),
               ),
-              weekParam: weekParam,
-              daysParam: daysParam,
-              onMonthChange: widget.onMonthStickyChanged,
-              pinchToZoomParam: PinchToZoom(pinchToZoom: false),
-              verticalScrollPhysics: const ClampingScrollPhysics(),
+              child: EventsMonths(
+                key: _monthsKey,
+                controller: _controller,
+                initialMonth: DateTime(
+                  widget.focusedDay.year,
+                  widget.focusedDay.month,
+                ),
+                weekParam: weekParam,
+                daysParam: daysParam,
+                onMonthChange: widget.onMonthStickyChanged,
+                pinchToZoomParam: PinchToZoom(pinchToZoom: false),
+                verticalScrollPhysics: const ClampingScrollPhysics(),
+              ),
             ),
           ),
         ),
@@ -4142,10 +4226,6 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     const startMin = 6 * 60;
     const endMin = 22 * 60;
     final anchor = _plannerAnchor();
-    final dayHeaderFg = Theme.of(context).brightness == Brightness.dark
-        ? widget.colorScheme.onPrimary
-        : widget.colorScheme.primary;
-
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: EventsPlanner(
@@ -4167,12 +4247,14 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
           columnsLabels: const ['Open', 'Ingepland'],
           columnsWidthRatio: const [0.5, 0.5],
           columnsColors: [
-            Colors.blue.withValues(alpha: 0.10),
             Colors.red.withValues(alpha: 0.05),
+            Colors.blue.withValues(alpha: 0.05),
           ],
         ),
         daysHeaderParam: DaysHeaderParam(
           daysHeaderHeight: 44,
+          daysHeaderColor: _cleanConnectBlue,
+          daysHeaderForegroundColor: Colors.white,
           dayHeaderBuilder: (day, isToday) {
             return InkWell(
               onTap: () => widget.onDaySelected(_norm(day), _norm(day)),
@@ -4187,20 +4269,16 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: widget.colorScheme.onSurface.withValues(
-                          alpha: 0.62,
-                        ),
+                        color: Colors.white.withValues(alpha: 0.92),
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${day.day}',
                       style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 17,
-                        color: isToday
-                            ? dayHeaderFg
-                            : widget.colorScheme.onSurface,
+                        fontWeight: isToday ? FontWeight.w900 : FontWeight.w800,
+                        fontSize: isToday ? 18 : 17,
+                        color: Colors.white,
                       ),
                     ),
                   ],
@@ -4257,7 +4335,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(
-          'Tijdlijn 06:00 – 22:00 · kolom Open (blauw) · kolom Ingepland (rood) · rode lijn = nu',
+          'Tijdlijn 06:00 – 22:00 · kolom Open (rood) · kolom Ingepland (blauw) · rode lijn = nu',
           style: GoogleFonts.lato(
             fontSize: 11.6,
             fontWeight: FontWeight.w700,
