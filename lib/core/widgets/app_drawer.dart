@@ -19,6 +19,7 @@ import '../../features/admin/screens/article_management_screen.dart';
 import '../../features/admin/screens/debtor_dashboard_screen.dart';
 import '../../features/admin/screens/financial_master_data_screen.dart';
 import '../../features/admin/screens/payroll_month_overview_screen.dart';
+import '../../features/admin/screens/uren_accorderen_screen.dart';
 import '../../features/admin/screens/period_close_screen.dart';
 import '../../features/admin/screens/factuur_editor_screen.dart';
 import '../../features/admin/screens/invoice_bulk_run_screen.dart';
@@ -345,6 +346,13 @@ class AppDrawerContent extends StatelessWidget {
                           icon: Icons.payments_outlined,
                           title: 'Loonadministratie',
                           screen: const PayrollMonthOverviewScreen(),
+                        ),
+                      if (isEnterpriseAdmin)
+                        navTile(
+                          name: '/admin/uren-accorderen',
+                          icon: Icons.fact_check_outlined,
+                          title: 'Uren accorderen',
+                          screen: const UrenAccorderenScreen(),
                         ),
                       if (canPeriodClose)
                         navTile(

@@ -1,14 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/widgets/app_drawer.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 
-/// Operator: dashboard voor bruto salaris ([loonadministratie_maand]) en
-/// afgeronde diensten ([opdracht_planning], status `voltooid`).
+/// Operator: bruto salaris ([loonadministratie_maand]) en diensten ([opdracht_planning])
+/// met offline-first urenregistratie (tab Uren Registreren).
 class OperatorUrenScreen extends StatefulWidget {
   const OperatorUrenScreen({super.key});
 
@@ -16,8 +19,7 @@ class OperatorUrenScreen extends StatefulWidget {
   State<OperatorUrenScreen> createState() => _OperatorUrenScreenState();
 }
 
-class _OperatorUrenScreenState extends State<OperatorUrenScreen>
-    with SingleTickerProviderStateMixin {
+class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   static const Color _deepNavy = Color(0xFF1A237E);
   static const Color _brightBlue = Color(0xFF0052CC);
   static const Color _pageBg = Color(0xFFF2F4F8);
@@ -27,7 +29,15 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
   bool _isLoading = true;
   String _errorMessage = '';
 
-  late final TabController _tabController;
+  /// Tab Overzicht: `true` = "Deze maand", `false` = "Totaal overzicht".
+  bool _overzichtMaandModus = true;
+  double? _contractVasteUren;
+  double? _contractVastSalaris;
+  double _voorschotBedrag = 0;
+
+  DateTime _regCalendarFocusedDay = DateTime.now();
+  DateTime? _regCalendarSelectedDay = DateTime.now();
+  CalendarFormat _regCalendarFormat = CalendarFormat.month;
 
   final NumberFormat _eur = NumberFormat.currency(
     locale: 'nl_NL',
@@ -38,13 +48,11 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _loadData();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -57,6 +65,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
         _errorMessage = 'Niet ingelogd.';
         _maandenLijst = [];
         _shiftsLijst = [];
+        _contractVasteUren = null;
+        _contractVastSalaris = null;
+        _voorschotBedrag = 0;
       });
       return;
     }
@@ -78,11 +89,16 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
             .order('kalender_maand', ascending: false),
         client
             .from('opdracht_planning')
-            .select()
+            .select(
+              'id, opdracht_id, geplande_datum, starttijd, eindtijd, '
+              'werkelijke_starttijd, werkelijke_eindtijd, gewerkte_uren_decimaal, '
+              'bruto_loonkosten, uren_status, status, bedrijfsnaam, '
+              'opdracht:opdrachten!opdracht_planning_opdracht_id_fkey('
+              'uitvoer_adres_volledig, bedrijfsnaam, projecten(project_naam))',
+            )
             .eq('operator_id', uid)
-            .eq('status', 'voltooid')
             .order('geplande_datum', ascending: false)
-            .limit(50),
+            .limit(200),
       ]);
 
       final maanden = (pair[0] as List)
@@ -92,6 +108,42 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
+      double? contractVasteUren;
+      double? contractVastSalaris;
+      double voorschot = 0;
+      try {
+        final u = await client
+            .from('gebruikers')
+            .select('contract_vaste_uren, contract_vast_salaris')
+            .eq('id', uid)
+            .maybeSingle();
+        if (u != null) {
+          final m = Map<String, dynamic>.from(u as Map);
+          contractVasteUren = _parseNullableDouble(m['contract_vaste_uren']);
+          contractVastSalaris = _parseNullableDouble(
+            m['contract_vast_salaris'],
+          );
+        }
+      } catch (e) {
+        debugPrint('OperatorUren: contractkolommen optioneel: $e');
+      }
+      try {
+        final maandSleutel = _currentKalenderMaandKey();
+        final v = await client
+            .from('operator_voorschotten')
+            .select('voorschot_bedrag')
+            .eq('operator_id', uid)
+            .eq('maand_sleutel', maandSleutel)
+            .maybeSingle();
+        if (v != null) {
+          final m = Map<String, dynamic>.from(v as Map);
+          final raw = m['voorschot_bedrag'];
+          voorschot = raw == null ? 0 : _asDouble(raw);
+        }
+      } catch (e) {
+        debugPrint('OperatorUren: operator_voorschotten optioneel: $e');
+      }
+
       // ignore: avoid_print
       print('X-RAY UREN DATA: $maanden');
 
@@ -99,6 +151,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
       setState(() {
         _maandenLijst = maanden;
         _shiftsLijst = shifts;
+        _contractVasteUren = contractVasteUren;
+        _contractVastSalaris = contractVastSalaris;
+        _voorschotBedrag = voorschot;
         _isLoading = false;
         _errorMessage = '';
       });
@@ -108,6 +163,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
       setState(() {
         _maandenLijst = [];
         _shiftsLijst = [];
+        _contractVasteUren = null;
+        _contractVastSalaris = null;
+        _voorschotBedrag = 0;
         _isLoading = false;
         _errorMessage = e.toString();
       });
@@ -117,12 +175,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
   String _currentKalenderMaandKey() {
     final n = DateTime.now();
     return '${n.year}-${n.month.toString().padLeft(2, '0')}';
-  }
-
-  /// Nieuwste rij uit [loonadministratie_maand] (zelfde bron als dashboard-weergave).
-  Map<String, dynamic>? _nieuwsteLoonMaandRow() {
-    if (_maandenLijst.isEmpty) return null;
-    return _maandenLijst.first;
   }
 
   String _kalenderMaandKey(dynamic v) {
@@ -206,12 +258,22 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
     return 0;
   }
 
+  double? _parseNullableDouble(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString().trim();
+    if (s.isEmpty) return null;
+    return _asDouble(v);
+  }
+
   /// Parser voor loon-kolommen: eerst `double.tryParse(.toString())` (int-safe),
   /// daarna nl.-notatie (`1.234,56`).
   double _parseLoonDouble(dynamic v) {
     if (v == null) return 0.0;
-    final normalized =
-        v.toString().trim().replaceAll(' ', '').replaceAll('€', '');
+    final normalized = v
+        .toString()
+        .trim()
+        .replaceAll(' ', '')
+        .replaceAll('€', '');
     if (normalized.isEmpty) return 0.0;
     final fromTryParse = double.tryParse(normalized);
     if (fromTryParse != null) return fromTryParse;
@@ -237,12 +299,312 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
     return null;
   }
 
+  DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  String _urenStatusNorm(Map<String, dynamic> r) =>
+      (r['uren_status'] ?? '').toString().toLowerCase().trim();
+
+  ({double bruto, double uren}) _approvedTotals() {
+    var b = 0.0;
+    var u = 0.0;
+    for (final row in _shiftsLijst) {
+      if (_urenStatusNorm(row) == 'geaccordeerd') {
+        b += _parseLoonDouble(row['bruto_loonkosten']);
+        u += _asDouble(row['gewerkte_uren_decimaal']);
+      }
+    }
+    return (bruto: b, uren: u);
+  }
+
+  double _pendingSubmittedHours() {
+    var u = 0.0;
+    for (final row in _shiftsLijst) {
+      if (_urenStatusNorm(row) == 'ingediend') {
+        u += _asDouble(row['gewerkte_uren_decimaal']);
+      }
+    }
+    return u;
+  }
+
+  List<Map<String, dynamic>> _overviewShiftsRows() {
+    return _shiftsLijst.where((r) => _urenStatusNorm(r) != 'open').toList();
+  }
+
+  /// Overzicht-tab: gefilterd op kalenderhuidige maand (ingediend + geaccordeerd).
+  List<Map<String, dynamic>> _overzichtLijstVoorModus() {
+    final base = _overviewShiftsRows();
+    if (!_overzichtMaandModus) return base;
+    final n = DateTime.now();
+    return base.where((r) {
+      final d = _parseShiftDay(r['geplande_datum']);
+      if (d == null) return false;
+      return d.year == n.year && d.month == n.month;
+    }).toList();
+  }
+
+  ({double uren, double bruto}) _geaccordeerdUrenEnBrutoDezeMaand() {
+    final n = DateTime.now();
+    var u = 0.0;
+    var b = 0.0;
+    for (final row in _shiftsLijst) {
+      if (_urenStatusNorm(row) != 'geaccordeerd') continue;
+      final d = _parseShiftDay(row['geplande_datum']);
+      if (d == null || d.year != n.year || d.month != n.month) continue;
+      u += _asDouble(row['gewerkte_uren_decimaal']);
+      b += _parseLoonDouble(row['bruto_loonkosten']);
+    }
+    return (uren: u, bruto: b);
+  }
+
+  bool _heeftVastContractVoorMaandDashboard() {
+    final u = _contractVasteUren;
+    final s = _contractVastSalaris;
+    return u != null && u > 0 && s != null && s > 0;
+  }
+
+  Widget _buildOverzichtSegmentToggle() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+      child: SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment<bool>(
+            value: false,
+            label: Text('Totaal overzicht'),
+            icon: Icon(Icons.dashboard_outlined),
+          ),
+          ButtonSegment<bool>(
+            value: true,
+            label: Text('Deze maand'),
+            icon: Icon(Icons.calendar_month_rounded),
+          ),
+        ],
+        emptySelectionAllowed: false,
+        multiSelectionEnabled: false,
+        selected: {_overzichtMaandModus},
+        onSelectionChanged: (Set<bool> next) {
+          if (next.isEmpty) return;
+          setState(() => _overzichtMaandModus = next.first);
+        },
+      ),
+    );
+  }
+
+  Widget _buildMaandHrDashboard() {
+    final g = _geaccordeerdUrenEnBrutoDezeMaand();
+    final geacc = g.uren;
+    final brutoAcc = g.bruto;
+    final uurtarief = geacc > 0 ? brutoAcc / geacc : 20.0;
+    final voorschot = _voorschotBedrag;
+    final vU = _contractVasteUren;
+    final vS = _contractVastSalaris;
+    final heeftContract = _heeftVastContractVoorMaandDashboard();
+
+    final salarisUurbasis = geacc * uurtarief;
+    final nogUurbasis = salarisUurbasis - voorschot;
+
+    final overwerkUren = heeftContract && vU != null
+        ? math.max(0.0, geacc - vU)
+        : 0.0;
+    final extraVerdiensten = heeftContract ? overwerkUren * uurtarief : 0.0;
+    final totaalBrutoContract = heeftContract && vS != null
+        ? vS + extraVerdiensten
+        : 0.0;
+    final nogContract = heeftContract
+        ? totaalBrutoContract - voorschot
+        : nogUurbasis;
+
+    final denom = (vU != null && vU > 0) ? vU : 1.0;
+    final progressRaw = geacc / denom;
+    final progress = progressRaw.isFinite ? progressRaw.clamp(0.0, 1.0) : 0.0;
+
+    final hoofdBedrag = heeftContract ? nogContract : nogUurbasis;
+    final sub1Links = heeftContract
+        ? _eur.format(vS ?? 0)
+        : _eur.format(salarisUurbasis);
+    final sub2 = _eur.format(voorschot);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_deepNavy, _brightBlue],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _brightBlue.withValues(alpha: 0.28),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Nog te ontvangen: ${_eur.format(hoofdBedrag)}',
+                  style: GoogleFonts.lato(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  heeftContract
+                      ? 'Vast salaris: $sub1Links | Reeds uitbetaald (Voorschot): $sub2'
+                      : 'Bruto gewerkt: $sub1Links | Reeds uitbetaald: $sub2',
+                  style: GoogleFonts.lato(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.88),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (heeftContract) ...[
+            const SizedBox(height: 14),
+            Text(
+              'Contract uren: ${_formatUrenNl(geacc)} / ${_formatUrenNl(vU)} uur',
+              style: GoogleFonts.lato(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 10,
+                backgroundColor: Colors.grey.shade300,
+                color: _brightBlue,
+              ),
+            ),
+            if (overwerkUren > 0) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF166534).withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text(
+                  'Extra verdiensten: ${_eur.format(extraVerdiensten)} '
+                  '(+ ${_formatUrenNl(overwerkUren)} uur)',
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: const Color(0xFF166534),
+                  ),
+                ),
+              ),
+            ],
+          ] else ...[
+            const SizedBox(height: 12),
+            Text(
+              'Totaal geaccordeerde uren deze maand: ${_formatUrenNl(geacc)} uur',
+              style: GoogleFonts.lato(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Uurtarief (indicatie): ${_eur.format(uurtarief)} / uur',
+              style: GoogleFonts.lato(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _openShiftsForDay(DateTime day) {
+    final key = _dayOnly(day);
+    return _shiftsLijst.where((r) {
+      final d = _parseShiftDay(r['geplande_datum']);
+      return d != null && _dayOnly(d) == key && _urenStatusNorm(r) == 'open';
+    }).toList();
+  }
+
+  /// Open uren in de maand van de kalender-focus, exclusief de geselecteerde dag (die staat al bovenaan).
+  /// Geen taken in de toekomst (vangnet).
+  List<Map<String, dynamic>> _openShiftsVoorMaandExclusiefGeselecteerdeDag() {
+    final m = _regCalendarFocusedDay;
+    final sel = _regCalendarSelectedDay ?? m;
+    final selKey = _dayOnly(sel);
+    final vandaag = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final out = <Map<String, dynamic>>[];
+    for (final r in _shiftsLijst) {
+      if (_urenStatusNorm(r) != 'open') continue;
+      final d = _parseShiftDay(r['geplande_datum']);
+      if (d == null) continue;
+      final taakDag = DateTime(d.year, d.month, d.day);
+      if (taakDag.isAfter(vandaag)) continue;
+      if (d.year != m.year || d.month != m.month) continue;
+      if (_dayOnly(d) == selKey) continue;
+      out.add(r);
+    }
+    out.sort((a, b) {
+      final da = _parseShiftDay(a['geplande_datum']);
+      final db = _parseShiftDay(b['geplande_datum']);
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      final c = da.compareTo(db);
+      if (c != 0) return c;
+      return _safeTime(a['starttijd']).compareTo(_safeTime(b['starttijd']));
+    });
+    return out;
+  }
+
+  bool _calendarDayHasStatus(DateTime day, Set<String> statuses) {
+    final key = _dayOnly(day);
+    for (final r in _shiftsLijst) {
+      final d = _parseShiftDay(r['geplande_datum']);
+      if (d == null || _dayOnly(d) != key) continue;
+      if (statuses.contains(_urenStatusNorm(r))) return true;
+    }
+    return false;
+  }
+
+  Map<String, dynamic>? _approvedHeroRow() {
+    final t = _approvedTotals();
+    if (t.bruto == 0 && t.uren == 0) return null;
+    return {'totaal_bruto_verdiend': t.bruto, 'totaal_gewerkte_uren': t.uren};
+  }
+
   double _urenDezeWeek() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final windowStart = today.subtract(const Duration(days: 6));
     double sum = 0;
     for (final row in _shiftsLijst) {
+      if (_urenStatusNorm(row) != 'geaccordeerd') continue;
       final day = _parseShiftDay(row['geplande_datum']);
       if (day == null) continue;
       if (!day.isBefore(windowStart) && !day.isAfter(today)) {
@@ -252,15 +614,65 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
     return sum;
   }
 
+  Map<String, dynamic>? _opdrachtEmbed(Map<String, dynamic> row) {
+    final a = row['opdracht'];
+    if (a is Map<String, dynamic>) return a;
+    if (a is Map) return Map<String, dynamic>.from(a);
+    final b = row['opdrachten'];
+    if (b is Map<String, dynamic>) return b;
+    if (b is Map) return Map<String, dynamic>.from(b);
+    return null;
+  }
+
   String _shiftBedrijfsnaam(Map<String, dynamic> row) {
     final direct = row['bedrijfsnaam']?.toString().trim();
     if (direct != null && direct.isNotEmpty) return direct;
-    final nested = row['opdrachten'];
-    if (nested is Map && nested['bedrijfsnaam'] != null) {
-      final b = nested['bedrijfsnaam'].toString().trim();
-      if (b.isNotEmpty) return b;
+    final nested = _opdrachtEmbed(row);
+    if (nested != null) {
+      final pj = nested['projecten'];
+      if (pj is Map && pj['project_naam'] != null) {
+        final p = pj['project_naam'].toString().trim();
+        if (p.isNotEmpty) return p;
+      }
+      if (nested['bedrijfsnaam'] != null) {
+        final b = nested['bedrijfsnaam'].toString().trim();
+        if (b.isNotEmpty) return b;
+      }
     }
     return 'Locatie';
+  }
+
+  /// Adres uit geneste `opdracht` (embed), met beperkte fallbacks.
+  String _uitvoerAdresVolledigVoorRegistratie(Map<String, dynamic> item) {
+    String pick(dynamic v) => (v ?? '').toString().trim();
+
+    final op = item['opdracht'];
+    if (op is Map) {
+      final fromOp = pick(op['uitvoer_adres_volledig']);
+      if (fromOp.isNotEmpty) return fromOp;
+    }
+
+    final top = pick(item['uitvoer_adres_volledig']);
+    if (top.isNotEmpty) return top;
+
+    final proj = item['projecten'];
+    if (proj is Map) {
+      final fromProj = pick(proj['uitvoer_adres_volledig']);
+      if (fromProj.isNotEmpty) return fromProj;
+    }
+
+    final opdr = item['opdrachten'];
+    if (opdr is Map) {
+      final fromLegacy = pick(opdr['uitvoer_adres_volledig']);
+      if (fromLegacy.isNotEmpty) return fromLegacy;
+      final opProj = opdr['projecten'];
+      if (opProj is Map) {
+        final fromOpProj = pick(opProj['uitvoer_adres_volledig']);
+        if (fromOpProj.isNotEmpty) return fromOpProj;
+      }
+    }
+
+    return 'Adres onbekend';
   }
 
   String _safeTime(dynamic timeValue) {
@@ -293,10 +705,11 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
         .toList();
   }
 
-  BoxDecoration _cardDecoration() {
+  BoxDecoration _cardDecoration({Border? border}) {
     return BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
+      border: border,
       boxShadow: [
         BoxShadow(
           color: Colors.black.withValues(alpha: 0.04),
@@ -329,10 +742,10 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
       final rawHours = row['totaal_gewerkte_uren'];
       displayAmount =
           double.tryParse(rawAmount?.toString().trim() ?? '') ??
-              _parseLoonDouble(rawAmount);
+          _parseLoonDouble(rawAmount);
       displayHours =
           double.tryParse(rawHours?.toString().trim() ?? '') ??
-              _parseLoonDouble(rawHours);
+          _parseLoonDouble(rawHours);
     } else {
       displayAmount = 0.0;
       displayHours = 0.0;
@@ -480,7 +893,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
         children: [
           _kpiChip(
             title: 'Totaal diensten',
-            value: '${_shiftsLijst.length}',
+            value: '${_overviewShiftsRows().length}',
             icon: Icons.calendar_month_rounded,
           ),
           const SizedBox(width: 12),
@@ -503,92 +916,114 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
     final tijden = '$t0 – $t1';
     final urenLabel = '${_formatUrenNl(row['gewerkte_uren_decimaal'])} u';
     final brutoText = _formatBruto(row['bruto_loonkosten']);
+    final isPendingApproval = _urenStatusNorm(row) == 'ingediend';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        decoration: _cardDecoration(),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        decoration: _cardDecoration(
+          border: isPendingApproval
+              ? Border.all(color: Colors.orange.shade700, width: 2)
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFEEF2FF),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                dayNum,
-                style: GoogleFonts.lato(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.4,
-                  color: _deepNavy,
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    naam,
-                    style: GoogleFonts.lato(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                      color: const Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    tijden,
-                    style: GoogleFonts.lato(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'Geregistreerde uren',
+            if (isPendingApproval)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  'In afwachting van goedkeuring',
                   style: GoogleFonts.lato(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.2,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  urenLabel,
-                  style: GoogleFonts.lato(
-                    fontSize: 15,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: -0.4,
-                    color: const Color(0xFF0F172A),
+                    color: Colors.orange.shade800,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  brutoText,
-                  style: GoogleFonts.lato(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
-                    color: Colors.grey.shade800,
+              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFEEF2FF),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    dayNum,
+                    style: GoogleFonts.lato(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
+                      color: _deepNavy,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        naam,
+                        style: GoogleFonts.lato(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        tijden,
+                        style: GoogleFonts.lato(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Geregistreerde uren',
+                      style: GoogleFonts.lato(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      urenLabel,
+                      style: GoogleFonts.lato(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.4,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      brutoText,
+                      style: GoogleFonts.lato(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -606,10 +1041,10 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
     final rawBruto = row['totaal_bruto_verdiend'];
     final urenVal =
         double.tryParse(rawUren?.toString().trim() ?? '') ??
-            _parseLoonDouble(rawUren);
+        _parseLoonDouble(rawUren);
     final brutoVal =
         double.tryParse(rawBruto?.toString().trim() ?? '') ??
-            _parseLoonDouble(rawBruto);
+        _parseLoonDouble(rawBruto);
     final uren = urenVal == urenVal.roundToDouble()
         ? urenVal.toInt().toString()
         : NumberFormat.decimalPattern('nl_NL').format(urenVal);
@@ -741,7 +1176,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 40, 24, 48),
       child: Text(
-        'Je hebt nog geen afgeronde diensten.',
+        'Je hebt nog geen diensten in dit overzicht.',
         textAlign: TextAlign.center,
         style: GoogleFonts.lato(
           fontSize: 15,
@@ -769,177 +1204,710 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _pageBg,
-      drawer: const AppDrawer(),
-      appBar: AppBar(
-        backgroundColor: _pageBg,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
-        title: Text(
-          'Mijn Uren & Salaris',
-          style: GoogleFonts.lato(
-            fontWeight: FontWeight.w900,
-            fontSize: 22,
-            letterSpacing: -0.5,
-            color: const Color(0xFF0F172A),
-          ),
+  TimeOfDay? _timeOfDayFromRaw(dynamic v) {
+    final s = _safeTime(v);
+    if (s == '—' || s.length < 5) return null;
+    final p = s.split(':');
+    final h = int.tryParse(p[0]);
+    final m = int.tryParse(p.length > 1 ? p[1] : '0');
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h.clamp(0, 23), minute: m.clamp(0, 59));
+  }
+
+  String _timeToDb(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+
+  Duration _workDurationMinutes(TimeOfDay start, TimeOfDay end) {
+    final sm = start.hour * 60 + start.minute;
+    var em = end.hour * 60 + end.minute;
+    if (em <= sm) em += 24 * 60;
+    return Duration(minutes: em - sm);
+  }
+
+  List<String> _calendarEventsForDay(DateTime day) {
+    final out = <String>[];
+    if (_calendarDayHasStatus(day, {'open'})) out.add('o');
+    if (_calendarDayHasStatus(day, {'ingediend', 'geaccordeerd'})) {
+      out.add('g');
+    }
+    return out;
+  }
+
+  Future<void> _openUrenInvullenSheet(Map<String, dynamic> row) async {
+    final id = row['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+    final parsed = _parseShiftDay(row['geplande_datum']);
+    final taakDatum =
+        parsed ??
+        DateTime.tryParse(row['geplande_datum'].toString().trim()) ??
+        nu;
+    final taakDag = DateTime(taakDatum.year, taakDatum.month, taakDatum.day);
+    if (taakDag.isAfter(vandaag)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Je kunt geen uren in de toekomst invullen!'),
+          backgroundColor: Colors.orange,
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _loadData,
-            tooltip: 'Vernieuwen',
-          ),
-        ],
-      ),
-      body: SelectionArea(child: _buildBody()),
+      );
+      return;
+    }
+
+    final startT =
+        _timeOfDayFromRaw(row['starttijd']) ??
+        _timeOfDayFromRaw(row['werkelijke_starttijd']);
+    final endT =
+        _timeOfDayFromRaw(row['eindtijd']) ??
+        _timeOfDayFromRaw(row['werkelijke_eindtijd']);
+
+    final day = _parseShiftDay(row['geplande_datum']);
+    final datumStr = day != null
+        ? DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(day)
+        : '—';
+    final project = _shiftBedrijfsnaam(row);
+
+    final times = <TimeOfDay>[
+      startT ?? const TimeOfDay(hour: 8, minute: 0),
+      endT ?? const TimeOfDay(hour: 17, minute: 0),
+    ];
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final bottomInset =
+            MediaQuery.paddingOf(ctx).bottom +
+            MediaQuery.viewInsetsOf(ctx).bottom;
+        return StatefulBuilder(
+          builder: (ctx, setModal) {
+            void pickStart() async {
+              final t = await showTimePicker(
+                context: ctx,
+                initialTime: times[0],
+              );
+              if (t != null) setModal(() => times[0] = t);
+            }
+
+            void pickEnd() async {
+              final t = await showTimePicker(
+                context: ctx,
+                initialTime: times[1],
+              );
+              if (t != null) setModal(() => times[1] = t);
+            }
+
+            final dur = _workDurationMinutes(times[0], times[1]);
+            final totalMin = dur.inMinutes;
+            final hPart = totalMin ~/ 60;
+            final mPart = totalMin % 60;
+            final urenDec = totalMin / 60.0;
+
+            Future<void> submit() async {
+              final ok = await showDialog<bool>(
+                context: ctx,
+                builder: (dCtx) => AlertDialog(
+                  title: const Text('Bevestigen'),
+                  content: const Text('Weet je het zeker?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dCtx, false),
+                      child: const Text('Nee'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(dCtx, true),
+                      child: const Text('Ja'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok != true) return;
+              try {
+                await Supabase.instance.client
+                    .from('opdracht_planning')
+                    .update({
+                      'werkelijke_starttijd': _timeToDb(times[0]),
+                      'werkelijke_eindtijd': _timeToDb(times[1]),
+                      'uren_status': 'ingediend',
+                      'gewerkte_uren_decimaal': urenDec,
+                    })
+                    .eq('id', id);
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+                if (!mounted) return;
+                await _loadData();
+                if (!mounted) return;
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Uren ingediend.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(
+                    content: Text('Fout: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(22),
+                ),
+                child: Material(
+                  color: Colors.white,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          datumStr,
+                          style: GoogleFonts.lato(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          project,
+                          style: GoogleFonts.lato(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        OutlinedButton(
+                          onPressed: pickStart,
+                          child: Text(
+                            'Starttijd: ${times[0].format(ctx)}',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed: pickEnd,
+                          child: Text(
+                            'Eindtijd: ${times[1].format(ctx)}',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Gewerkte uren: $hPart uur $mPart min',
+                          style: GoogleFonts.lato(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                            color: _brightBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton(
+                          onPressed: submit,
+                          child: Text(
+                            'Uren indienen',
+                            style: GoogleFonts.lato(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(child: CupertinoActivityIndicator(radius: 18));
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Text(
-            'Kon gegevens niet laden.\n$_errorMessage',
-            textAlign: TextAlign.center,
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: _pageBg,
+        drawer: const AppDrawer(),
+        appBar: AppBar(
+          backgroundColor: _pageBg,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
+          title: Text(
+            'Mijn Uren & Salaris',
             style: GoogleFonts.lato(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-              color: Colors.red.shade800,
-              height: 1.45,
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+              letterSpacing: -0.5,
+              color: const Color(0xFF0F172A),
             ),
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: _loadData,
+              tooltip: 'Vernieuwen',
+            ),
+          ],
+          bottom: _isLoading || _errorMessage.isNotEmpty
+              ? null
+              : TabBar(
+                  labelColor: _brightBlue,
+                  unselectedLabelColor: Colors.grey.shade600,
+                  indicatorColor: _brightBlue,
+                  indicatorWeight: 3,
+                  labelStyle: GoogleFonts.lato(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    letterSpacing: -0.5,
+                  ),
+                  unselectedLabelStyle: GoogleFonts.lato(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    letterSpacing: -0.5,
+                  ),
+                  tabs: const [
+                    Tab(text: 'Overzicht'),
+                    Tab(text: 'Uren Registreren'),
+                  ],
+                ),
         ),
-      );
-    }
+        body: SelectionArea(
+          child: _isLoading
+              ? const Center(child: CupertinoActivityIndicator(radius: 18))
+              : _errorMessage.isNotEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: Text(
+                      'Kon gegevens niet laden.\n$_errorMessage',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.lato(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: Colors.red.shade800,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                )
+              : TabBarView(
+                  children: [_buildOverzichtTab(), _buildRegistratieTab()],
+                ),
+        ),
+      ),
+    );
+  }
 
-    final heroRow = _nieuwsteLoonMaandRow();
+  Widget _buildOverzichtTab() {
+    final overview = _overzichtLijstVoorModus();
+    final hist = _maandenHistorieZonderHuidigeMaand();
+    final pending = _pendingSubmittedHours();
+    final heroRow = _approvedHeroRow();
 
     return RefreshIndicator(
       color: _brightBlue,
       onRefresh: _loadData,
-      child: NestedScrollView(
+      child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        headerSliverBuilder: (context, innerBoxIsScrolled) {
-          return [
+        slivers: [
+          SliverToBoxAdapter(child: _buildOverzichtSegmentToggle()),
+          if (!_overzichtMaandModus) ...[
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                 child: _heroCard(heroRow),
               ),
             ),
-            SliverToBoxAdapter(child: _buildKpiRow()),
-            SliverOverlapAbsorber(
-              handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-              sliver: SliverPersistentHeader(
-                pinned: true,
-                delegate: _UrenStickyTabsDelegate(
-                  tabBar: Material(
-                    color: _pageBg,
-                    elevation: innerBoxIsScrolled ? 1 : 0,
-                    shadowColor: Colors.black.withValues(alpha: 0.06),
-                    child: TabBar(
-                      controller: _tabController,
-                      labelColor: _brightBlue,
-                      unselectedLabelColor: Colors.grey.shade600,
-                      indicatorColor: _brightBlue,
-                      indicatorWeight: 3,
-                      labelStyle: GoogleFonts.lato(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 13,
-                        letterSpacing: -0.5,
-                      ),
-                      unselectedLabelStyle: GoogleFonts.lato(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        letterSpacing: -0.5,
-                      ),
-                      tabs: const [
-                        Tab(text: 'Recente diensten'),
-                        Tab(text: 'Maandoverzichten'),
-                      ],
-                    ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                child: Text(
+                  'In afwachting: ${_formatUrenNl(pending)} uur',
+                  style: GoogleFonts.lato(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.grey.shade700,
                   ),
                 ),
               ),
             ),
-          ];
-        },
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            Builder(
-              builder: (context) {
-                return CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverOverlapInjector(
-                      handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
-                          context),
-                    ),
-                    if (_shiftsLijst.isEmpty)
-                      SliverToBoxAdapter(child: _emptyShifts())
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) =>
-                                _shiftTile(_shiftsLijst[index]),
-                            childCount: _shiftsLijst.length,
-                          ),
-                        ),
-                      ),
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: mobileNavBuffer),
-                    ),
-                  ],
-                );
-              },
+            SliverToBoxAdapter(child: _buildKpiRow()),
+          ] else ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                child: Text(
+                  'In afwachting: ${_formatUrenNl(pending)} uur',
+                  style: GoogleFonts.lato(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ),
             ),
-            Builder(
-              builder: (context) {
-                final hist = _maandenHistorieZonderHuidigeMaand();
-                return CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverOverlapInjector(
-                      handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
-                          context),
-                    ),
-                    if (hist.isEmpty)
-                      SliverToBoxAdapter(child: _emptyMaandenHistorie())
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) =>
-                                _maandHistorieTile(hist[index]),
-                            childCount: hist.length,
-                          ),
-                        ),
-                      ),
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: mobileNavBuffer),
-                    ),
-                  ],
-                );
-              },
+            SliverToBoxAdapter(child: _buildMaandHrDashboard()),
+          ],
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: Text(
+                _overzichtMaandModus
+                    ? 'Diensten deze maand'
+                    : 'Recente diensten',
+                style: GoogleFonts.lato(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: _deepNavy,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ),
+          ),
+          if (overview.isEmpty)
+            SliverToBoxAdapter(child: _emptyShifts())
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _shiftTile(overview[index]),
+                  childCount: overview.length,
+                ),
+              ),
+            ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text(
+                'Maandoverzichten',
+                style: GoogleFonts.lato(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: _deepNavy,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ),
+          ),
+          if (hist.isEmpty)
+            SliverToBoxAdapter(child: _emptyMaandenHistorie())
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _maandHistorieTile(hist[index]),
+                  childCount: hist.length,
+                ),
+              ),
+            ),
+          const SliverToBoxAdapter(child: SizedBox(height: mobileNavBuffer)),
+        ],
+      ),
+    );
+  }
+
+  Widget _registratieOpenShiftTile(
+    BuildContext context,
+    Map<String, dynamic> row, {
+    required bool toonDatumInSubtitel,
+    required bool isDagLijst,
+    bool compact = false,
+  }) {
+    final tt = Theme.of(context).textTheme;
+    final day = _parseShiftDay(row['geplande_datum']);
+    final timeLine =
+        '${_safeTime(row['starttijd'])} – ${_safeTime(row['eindtijd'])}';
+    final adres = _uitvoerAdresVolledigVoorRegistratie(row);
+
+    final cardColor = isDagLijst ? Colors.blue.shade50 : Colors.white;
+    final cardRadius = BorderRadius.circular(isDagLijst ? 12 : 14);
+    final cardShape = RoundedRectangleBorder(
+      borderRadius: cardRadius,
+      side: isDagLijst
+          ? BorderSide(color: Colors.blue.shade200)
+          : BorderSide.none,
+    );
+
+    final subtitleChildren = <Widget>[
+      if (toonDatumInSubtitel && day != null) ...[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.calendar_today_outlined,
+              size: compact ? 15 : 16,
+              color: Colors.grey.shade700,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                DateFormat('EEEE d MMMM', 'nl_NL').format(day),
+                style: (compact ? tt.bodySmall : tt.bodyMedium)?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade800,
+                  height: 1.25,
+                ),
+              ),
             ),
           ],
         ),
+        SizedBox(height: compact ? 4 : 6),
+      ],
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.access_time_rounded,
+            size: compact ? 15 : 16,
+            color: Colors.grey.shade700,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              timeLine,
+              style: (compact ? tt.bodySmall : tt.bodyMedium)?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
       ),
+      const SizedBox(height: 6),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.location_on, size: 16, color: Colors.blueGrey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              adres,
+              style: const TextStyle(color: Colors.black87, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: compact ? 6 : 8),
+      child: Material(
+        color: cardColor,
+        shape: cardShape,
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 16,
+            vertical: compact ? 6 : 8,
+          ),
+          shape: cardShape,
+          title: Text(
+            _shiftBedrijfsnaam(row),
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              fontSize: compact ? 14 : 15,
+            ),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: subtitleChildren,
+          ),
+          trailing: Icon(
+            Icons.edit_calendar_rounded,
+            color: _brightBlue,
+            size: compact ? 26 : 28,
+          ),
+          onTap: () => _openUrenInvullenSheet(row),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRegistratieTab() {
+    final sel = _regCalendarSelectedDay ?? _regCalendarFocusedDay;
+    final openList = _openShiftsForDay(sel);
+    final maandVangnet = _openShiftsVoorMaandExclusiefGeselecteerdeDag();
+    final dagTitel = DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(sel);
+    final tt = Theme.of(context).textTheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TableCalendar<void>(
+            locale: 'nl_NL',
+            firstDay: DateTime.utc(2020, 1, 1),
+            lastDay: DateTime.utc(2035, 12, 31),
+            focusedDay: _regCalendarFocusedDay,
+            selectedDayPredicate: (d) => isSameDay(_regCalendarSelectedDay, d),
+            calendarFormat: _regCalendarFormat,
+            availableCalendarFormats: const {
+              CalendarFormat.month: 'Maand',
+              CalendarFormat.twoWeeks: '2 weken',
+              CalendarFormat.week: 'Week',
+            },
+            eventLoader: _calendarEventsForDay,
+            startingDayOfWeek: StartingDayOfWeek.monday,
+            calendarStyle: CalendarStyle(
+              markersMaxCount: 3,
+              markerDecoration: const BoxDecoration(color: Colors.transparent),
+            ),
+            calendarBuilders: CalendarBuilders(
+              markerBuilder: (context, date, events) {
+                if (events.isEmpty) return const SizedBox.shrink();
+                final hasOpen = events.contains('o');
+                final hasGreen = events.contains('g');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (hasOpen)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      if (hasOpen && hasGreen) const SizedBox(width: 3),
+                      if (hasGreen)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            onDaySelected: (selectedDay, focusedDay) {
+              setState(() {
+                _regCalendarSelectedDay = selectedDay;
+                _regCalendarFocusedDay = focusedDay;
+              });
+            },
+            onPageChanged: (focusedDay) {
+              setState(() => _regCalendarFocusedDay = focusedDay);
+            },
+            onFormatChanged: (format) {
+              setState(() => _regCalendarFormat = format);
+            },
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Uren voor $dagTitel',
+                  style: tt.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (openList.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Alle uren voor deze dag zijn ingevuld! ✅',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.lato(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.grey.shade700,
+                        height: 1.4,
+                      ),
+                    ),
+                  )
+                else
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: openList.length,
+                    itemBuilder: (context, index) {
+                      return _registratieOpenShiftTile(
+                        context,
+                        openList[index],
+                        toonDatumInSubtitel: false,
+                        isDagLijst: true,
+                      );
+                    },
+                  ),
+                const SizedBox(height: 20),
+                Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text(
+                  'Alle openstaande uren deze maand',
+                  style: tt.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (maandVangnet.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12, top: 4),
+                    child: Text(
+                      'Geen andere openstaande uren in deze maand.',
+                      style: tt.bodyMedium?.copyWith(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: maandVangnet.length,
+                    itemBuilder: (context, index) {
+                      return _registratieOpenShiftTile(
+                        context,
+                        maandVangnet[index],
+                        toonDatumInSubtitel: true,
+                        isDagLijst: false,
+                        compact: true,
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: mobileNavBuffer),
+      ],
     );
   }
 }
@@ -1056,70 +2024,44 @@ class _MaandShiftsModalState extends State<_MaandShiftsModal> {
             child: _loading
                 ? const Center(child: CupertinoActivityIndicator(radius: 18))
                 : _errorMessage.isNotEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'Kon diensten niet laden.\n$_errorMessage',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.lato(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: Colors.red.shade800,
-                            height: 1.45,
-                          ),
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Kon diensten niet laden.\n$_errorMessage',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.lato(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.red.shade800,
+                        height: 1.45,
+                      ),
+                    ),
+                  )
+                : _rows.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Text(
+                        'Geen diensten gevonden voor deze maand.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.lato(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade600,
+                          height: 1.45,
                         ),
-                      )
-                    : _rows.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(28),
-                              child: Text(
-                                'Geen diensten gevonden voor deze maand.',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.lato(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey.shade600,
-                                  height: 1.45,
-                                ),
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-                            itemCount: _rows.length,
-                            itemBuilder: (context, index) =>
-                                widget.shiftTile(_rows[index]),
-                          ),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+                    itemCount: _rows.length,
+                    itemBuilder: (context, index) =>
+                        widget.shiftTile(_rows[index]),
+                  ),
           ),
         ],
       ),
     );
-  }
-}
-
-class _UrenStickyTabsDelegate extends SliverPersistentHeaderDelegate {
-  _UrenStickyTabsDelegate({required this.tabBar});
-
-  final Widget tabBar;
-
-  @override
-  double get minExtent => 48;
-
-  @override
-  double get maxExtent => 48;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return SizedBox(height: 48, child: tabBar);
-  }
-
-  @override
-  bool shouldRebuild(covariant _UrenStickyTabsDelegate oldDelegate) {
-    return tabBar != oldDelegate.tabBar;
   }
 }

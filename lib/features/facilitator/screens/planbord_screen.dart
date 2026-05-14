@@ -164,7 +164,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
       for (
         int actueleMinuten = startVensterMin;
-        (actueleMinuten + opdrachtMinuten) <= eindVensterMin;
+          (actueleMinuten + opdrachtMinuten) <= eindVensterMin;
         actueleMinuten += 15
       ) {
         final potentieelEindMinuten = actueleMinuten + opdrachtMinuten;
@@ -317,7 +317,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     final urenPerShift =
         double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
-        _shiftHours;
+            _shiftHours;
 
     if (!mounted) return;
     setState(() {
@@ -331,14 +331,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     final datumsDb =
         planning
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .map((m) => _text(m['geplande_datum']))
-            .where((d) => d.isNotEmpty)
-            .map((d) => d.contains('T') ? d.split('T').first : d)
-            .toSet()
-            .toList()
-          ..sort();
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .map((m) => _text(m['geplande_datum']))
+        .where((d) => d.isNotEmpty)
+        .map((d) => d.contains('T') ? d.split('T').first : d)
+        .toSet()
+        .toList()
+      ..sort();
 
     if (datumsDb.isNotEmpty && _text(result['operator_id']).isNotEmpty) {
       await _berekenVeiligeTijden(
@@ -400,9 +400,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return name.isEmpty ? 'Naamloos project' : name;
   }
 
-  /// Embed `planning_details:opdracht_planning!huidige_planning_id` (+ list→eerste rij tolerantie).
+  /// Embed `planning:opdracht_planning!huidige_planning_id` (+ list→eerste rij tolerantie).
   Map<String, dynamic>? _planningDetailsVanItem(Map<String, dynamic> item) {
-    final raw = item['planning_details'];
+    final raw = item['planning'] ?? item['planning_details'];
     if (raw == null) return null;
     if (raw is Map<String, dynamic>) return raw;
     if (raw is Map) return Map<String, dynamic>.from(raw);
@@ -414,7 +414,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return null;
   }
 
-  /// Alias voor sort/modal/tijden: zelfde object als `planning_details`.
+  /// Alias voor sort/modal/tijden: zelfde object als `planning` / `planning_details` embed.
   Map<String, dynamic>? _huidigePlanningMap(Map<String, dynamic> item) =>
       _planningDetailsVanItem(item);
 
@@ -627,8 +627,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final rawHours = standardPerShift > 0
         ? standardPerShift
         : totalHours > 0
-        ? (totalHours / safeOperators)
-        : _asDouble(project['basis_uren_per_opdracht'], fallback: 1);
+            ? (totalHours / safeOperators)
+            : _asDouble(project['basis_uren_per_opdracht'], fallback: 1);
     final perShiftHours = rawHours.clamp(0.25, 24.0);
     final normalizedProject = Map<String, dynamic>.from(project);
     normalizedProject['project_id'] = _text(project['project_id']).isNotEmpty
@@ -1015,9 +1015,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return bedrijf;
   }
 
-  /// `uitvoerder_info` / `planning_details` = expliciete aliases; `projecten` = zelfde subregel als open kaarten.
+  /// `uitvoerder_info` / `planning` = expliciete aliases; `projecten` = zelfde subregel als open kaarten.
   static const String _reedsGeplandeSelect =
-      '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),planning_details:opdracht_planning!huidige_planning_id(starttijd,eindtijd)';
+      '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),planning:opdracht_planning!huidige_planning_id(starttijd,eindtijd)';
 
   Future<List<Map<String, dynamic>>> _fetchReedsGeplandeQueryVoorDag(
     DateTime day,
@@ -1469,47 +1469,47 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               dropdownColor: const Color(0xFFF2F2F7),
                               items: opties
                                   .map((opt) {
-                                    final tijd = _text(opt['tijd']);
-                                    final status = _text(opt['status']);
-                                    final vrije = _asInt(opt['vrijeDagen']);
-                                    final totaal = _asInt(opt['totaalDagen']);
-                                    final isBeperkt = status == 'beperkt';
-                                    final label = isBeperkt
-                                        ? '$tijd (Beperkt beschikbaar: $vrije/$totaal dagen)'
-                                        : '$tijd (Volledig beschikbaar)';
-                                    return DropdownMenuItem<String>(
-                                      value: tijd,
-                                      child: isBeperkt
-                                          ? Container(
+                          final tijd = _text(opt['tijd']);
+                          final status = _text(opt['status']);
+                          final vrije = _asInt(opt['vrijeDagen']);
+                          final totaal = _asInt(opt['totaalDagen']);
+                          final isBeperkt = status == 'beperkt';
+                          final label = isBeperkt
+                              ? '$tijd (Beperkt beschikbaar: $vrije/$totaal dagen)'
+                              : '$tijd (Volledig beschikbaar)';
+                          return DropdownMenuItem<String>(
+                            value: tijd,
+                            child: isBeperkt
+                                ? Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
                                                     horizontal: 8,
                                                     vertical: 6,
                                                   ),
-                                              decoration: BoxDecoration(
+                                    decoration: BoxDecoration(
                                                 borderRadius:
                                                     BorderRadius.circular(8),
-                                                border: Border.all(
+                                      border: Border.all(
                                                   color: Colors.orange
                                                       .withValues(alpha: 0.55),
-                                                ),
-                                              ),
-                                              child: Text(
-                                                label,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.normal,
-                                                  fontSize: 14.0,
-                                                ),
-                                              ),
-                                            )
-                                          : Text(
-                                              label,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.normal,
-                                                fontSize: 14.0,
-                                              ),
-                                            ),
-                                    );
+                                      ),
+                                    ),
+                                    child: Text(
+                                      label,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.normal,
+                                        fontSize: 14.0,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    label,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.normal,
+                                      fontSize: 14.0,
+                                    ),
+                                  ),
+                          );
                                   })
                                   .toList(growable: false),
                               onChanged: tijden.isEmpty
@@ -1606,133 +1606,133 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         child: _isLoadingSmartProjects
             ? const Center(child: CircularProgressIndicator())
             : _smartProjectsError != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Projecten laden mislukt: $_smartProjectsError',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              )
-            : ListView.builder(
-                itemCount: visibleProjects.length,
-                itemBuilder: (context, index) {
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Projecten laden mislukt: $_smartProjectsError',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: visibleProjects.length,
+                    itemBuilder: (context, index) {
                   final project = Map<String, dynamic>.from(
                     visibleProjects[index],
                   );
-                  final projectId = _text(project['project_id']).isNotEmpty
-                      ? _text(project['project_id'])
-                      : _text(project['id']);
-                  final projectName = _text(project['project_naam']).isEmpty
-                      ? 'Naamloos project'
-                      : _text(project['project_naam']);
-                  final region = _text(project['werk_regio']).isEmpty
-                      ? 'Geen regio'
-                      : _text(project['werk_regio']);
-                  final openTaskCount = _asInt(project['open_taken']);
-                  final totalTaskCount = _asInt(project['totaal_taken']);
-                  final neededOperators = _asInt(
+                      final projectId = _text(project['project_id']).isNotEmpty
+                          ? _text(project['project_id'])
+                          : _text(project['id']);
+                      final projectName = _text(project['project_naam']).isEmpty
+                          ? 'Naamloos project'
+                          : _text(project['project_naam']);
+                      final region = _text(project['werk_regio']).isEmpty
+                          ? 'Geen regio'
+                          : _text(project['werk_regio']);
+                      final openTaskCount = _asInt(project['open_taken']);
+                      final totalTaskCount = _asInt(project['totaal_taken']);
+                      final neededOperators = _asInt(
                     project['standaard_aantal_operators'] ??
                         project['benodigde_operators'],
-                    fallback: 1,
-                  );
+                        fallback: 1,
+                      );
                   final hasAssignedHours =
                       _asDouble(project['reeds_toegewezen_uren']) > 0;
                   final selected =
                       selectedProjectId.isNotEmpty &&
-                      projectId.isNotEmpty &&
-                      selectedProjectId == projectId;
+                          projectId.isNotEmpty &&
+                          selectedProjectId == projectId;
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
                         onTap: projectId.isEmpty
                             ? null
                             : () => _onProjectSelected(projectId),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: selected ? cs.primaryContainer : cs.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: hasAssignedHours
-                                  ? Colors.orange
-                                  : selected
-                                  ? cs.primary.withValues(alpha: 0.60)
-                                  : cs.onSurface.withValues(alpha: 0.06),
-                              width: hasAssignedHours ? 2 : 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: selected ? cs.primaryContainer : cs.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: hasAssignedHours
+                                      ? Colors.orange
+                                      : selected
+                                          ? cs.primary.withValues(alpha: 0.60)
+                                          : cs.onSurface.withValues(alpha: 0.06),
+                                  width: hasAssignedHours ? 2 : 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
                                 color: Colors.black.withValues(
                                   alpha: isDark ? 0.12 : 0.03,
                                 ),
-                                blurRadius: 12,
-                                offset: const Offset(0, 5),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                projectName,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              Text(
-                                region,
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                  color: cs.onSurface.withValues(alpha: 0.68),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Benodigde operators: $neededOperators',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: cs.onSurface.withValues(alpha: 0.74),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Container(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    projectName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    region,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.onSurface.withValues(alpha: 0.68),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Benodigde operators: $neededOperators',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.onSurface.withValues(alpha: 0.74),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                   vertical: 4,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: cs.primary.withValues(alpha: 0.10),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  '$openTaskCount open taken van de $totalTaskCount',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    color: cs.primary,
+                                    decoration: BoxDecoration(
+                                      color: cs.primary.withValues(alpha: 0.10),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '$openTaskCount open taken van de $totalTaskCount',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: cs.primary,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+                      );
+                    },
+                  ),
       );
     }
 
@@ -2166,32 +2166,32 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     child: _isCalculating
                         ? const Center(child: CircularProgressIndicator())
                         : !_hasCalculated
-                        ? Center(
-                            child: Text(
-                              'Klik op "Slim Inplannen" om operator matches te berekenen.',
+                            ? Center(
+                                child: Text(
+                                  'Klik op "Slim Inplannen" om operator matches te berekenen.',
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w700,
                               ),
-                            ),
-                          )
-                        : filteredResults.isEmpty
-                        ? Center(
-                            child: Text(
-                              'Geen plannerresultaten gevonden voor de huidige filters.',
+                                ),
+                              )
+                            : filteredResults.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      'Geen plannerresultaten gevonden voor de huidige filters.',
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w700,
                               ),
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount: filteredResults.length,
-                            itemBuilder: (context, index) {
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    itemCount: filteredResults.length,
+                                    itemBuilder: (context, index) {
                               return _buildResultCard(
                                 filteredResults[index],
                                 index: index,
                               );
-                            },
-                          ),
+                                    },
+                                  ),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -2765,14 +2765,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               color: accent.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(999),
                             ),
-                            child: Text(
+                  child: Text(
                               '$start - $end',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w800,
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w800,
                                 color: accent,
-                              ),
-                            ),
-                          ),
+                    ),
+                  ),
+                ),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -2782,14 +2782,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               color: cs.onSurface.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(999),
                             ),
-                            child: Text(
+                  child: Text(
                               _manualRegion(task),
-                              style: GoogleFonts.inter(
+                    style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w700,
                                 color: cs.onSurface.withValues(alpha: 0.75),
-                              ),
-                            ),
-                          ),
+                    ),
+                  ),
+                ),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -2806,11 +2806,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w800,
                           color: accent.withValues(alpha: 0.92),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+          ),
+        ),
+            ],
+          ),
+        ),
                 Icon(
                   Icons.chevron_right_rounded,
                   color: cs.onSurface.withValues(alpha: 0.45),
@@ -2875,8 +2875,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       Text(
                         title,
                         style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
                           color: modalCs.onSurface.withValues(alpha: 0.55),
                         ),
                       ),
@@ -2899,10 +2899,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         }
 
         return SelectionArea(
-          child: Padding(
+                    child: Padding(
             padding: EdgeInsets.only(top: mq.size.height * 0.12),
             child: DecoratedBox(
-              decoration: BoxDecoration(
+                              decoration: BoxDecoration(
                 color: sheetBg,
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(22),
@@ -2929,7 +2929,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           child: Container(
                             width: 40,
                             height: 4,
-                            decoration: BoxDecoration(
+                              decoration: BoxDecoration(
                               color: modalCs.onSurface.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(999),
                             ),
@@ -2938,7 +2938,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         const SizedBox(height: 18),
                         Text(
                           bedrijf,
-                          style: GoogleFonts.inter(
+                                style: GoogleFonts.inter(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
                             letterSpacing: -0.3,
@@ -2949,7 +2949,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           'Opdrachtnr. $nr',
                           style: GoogleFonts.inter(
                             fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                                  fontWeight: FontWeight.w800,
                             color: modalCs.onSurface.withValues(alpha: 0.56),
                           ),
                         ),
@@ -3000,9 +3000,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               fontSize: 15,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                ),
+              ],
+            ),
                   ),
                 ),
               ),
@@ -3020,7 +3020,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   ) {
     final opdrachtId = _text(item['id']);
     final bedrijf = _text(item['bedrijfsnaam']).isEmpty
-        ? 'Onbekende klant'
+                                      ? 'Onbekende klant'
         : _text(item['bedrijfsnaam']);
     final projectLabel = _projectName(item);
     final planningDetails = _planningDetailsVanItem(item);
@@ -3034,119 +3034,119 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final accent = Colors.red.shade400;
     final weergaveNaam = _extractIngeplandWeergaveNaam(item);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(16),
           onTap: opdrachtId.isEmpty
               ? null
               : () => _openReedsGeplandeInfoModal(item),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: isSelectedDay
+                                        child: Container(
+                                          padding: const EdgeInsets.all(14),
+                                          decoration: BoxDecoration(
+                                            color: isSelectedDay
                   ? accent.withValues(alpha: isDark ? 0.14 : 0.06)
-                  : isDark
-                  ? const Color(0xFF171722)
-                  : const Color(0xFFFDFDFE),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isSelectedDay
+                                                : isDark
+                                                    ? const Color(0xFF171722)
+                                                    : const Color(0xFFFDFDFE),
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(
+                                              color: isSelectedDay
                     ? accent.withValues(alpha: 0.35)
-                    : cs.onSurface.withValues(alpha: 0.06),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.035),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
+                                                  : cs.onSurface.withValues(alpha: 0.06),
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.035),
+                                                blurRadius: 14,
+                                                offset: const Offset(0, 6),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 6,
-                  height: 52,
-                  decoration: BoxDecoration(
+                                            children: [
+                                              Container(
+                                                width: 6,
+                                                height: 52,
+                                                decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.90),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+                                                  borderRadius: BorderRadius.circular(20),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
                         bedrijf,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 15,
+                                                        fontWeight: FontWeight.w900,
                           color: accent,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
                         projectLabel,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w600,
-                          color: cs.onSurface.withValues(alpha: 0.70),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
+                                                      style: GoogleFonts.inter(
+                                                        fontWeight: FontWeight.w600,
+                                                        color: cs.onSurface.withValues(alpha: 0.70),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    Wrap(
+                                                      spacing: 8,
+                                                      runSpacing: 8,
+                                                      children: [
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                          decoration: BoxDecoration(
                               color: accent.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              '$start - $end',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w800,
+                                                            borderRadius: BorderRadius.circular(999),
+                                                          ),
+                                                          child: Text(
+                                                            '$start - $end',
+                                                            style: GoogleFonts.inter(
+                                                              fontWeight: FontWeight.w800,
                                 color: accent,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: cs.onSurface.withValues(alpha: 0.06),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                          decoration: BoxDecoration(
+                                                            color: cs.onSurface.withValues(alpha: 0.06),
+                                                            borderRadius: BorderRadius.circular(999),
+                                                          ),
+                                                          child: Text(
                               _manualRegion(item),
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                                color: cs.onSurface.withValues(alpha: 0.75),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        DateFormat('d MMMM yyyy', 'nl_NL').format(date),
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface.withValues(alpha: 0.70),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
+                                                            style: GoogleFonts.inter(
+                                                              fontWeight: FontWeight.w700,
+                                                              color: cs.onSurface.withValues(alpha: 0.75),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    Text(
+                                                      DateFormat('d MMMM yyyy', 'nl_NL').format(date),
+                                                      style: GoogleFonts.inter(
+                                                        fontWeight: FontWeight.w700,
+                                                        color: cs.onSurface.withValues(alpha: 0.70),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
                       Row(
                         children: [
                           Icon(
@@ -3158,27 +3158,27 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           Expanded(
                             child: Text(
                               'Uitvoerder: $weergaveNaam',
-                              style: GoogleFonts.inter(
+                                                      style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w600,
                                 color: cs.onSurface.withValues(alpha: 0.70),
                               ),
-                            ),
+                                                      ),
                           ),
                         ],
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: cs.onSurface.withValues(alpha: 0.45),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Icon(
+                                                Icons.chevron_right_rounded,
+                                                color: cs.onSurface.withValues(alpha: 0.45),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
   }
 
   Widget _manualSplitOpenColumn(
@@ -3663,39 +3663,39 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         body: SelectionArea(
           child: Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  padding: const EdgeInsets.all(6),
-                  child: TabBar(
-                    indicator: BoxDecoration(
-                      color: cs.primary,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    dividerColor: Colors.transparent,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
-                    labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                    tabs: const [
-                      Tab(text: 'Smart Planner'),
-                      Tab(text: 'Handmatig Plannen'),
-                    ],
-                  ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    _buildSmartPlannerTab(isDark),
-                    _buildManualPlanningTab(isDark),
+                padding: const EdgeInsets.all(6),
+                child: TabBar(
+                  indicator: BoxDecoration(
+                    color: cs.primary,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
+                  labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                  tabs: const [
+                    Tab(text: 'Smart Planner'),
+                    Tab(text: 'Handmatig Plannen'),
                   ],
                 ),
               ),
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _buildSmartPlannerTab(isDark),
+                  _buildManualPlanningTab(isDark),
+                ],
+              ),
+            ),
             ],
           ),
         ),
