@@ -6,7 +6,6 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
-import 'planbord_screen.dart';
 
 class PlanningAgendaScreen extends StatefulWidget {
   const PlanningAgendaScreen({super.key});
@@ -191,10 +190,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => SelectionArea(
-        child: AgendaDetailModal(
-          task: task,
-          onSaved: _loadAgenda,
-        ),
+        child: AgendaDetailModal(task: task),
       ),
     );
   }
@@ -650,14 +646,9 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
 }
 
 class AgendaDetailModal extends StatefulWidget {
-  const AgendaDetailModal({
-    required this.task,
-    required this.onSaved,
-    super.key,
-  });
+  const AgendaDetailModal({required this.task, super.key});
 
   final Map<String, dynamic> task;
-  final Future<void> Function() onSaved;
 
   @override
   State<AgendaDetailModal> createState() => _AgendaDetailModalState();
@@ -691,8 +682,6 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
   String _geplandeEind = '--:--';
   String _geplandeOperator = 'Onbekend';
 
-  bool _rescheduling = false;
-
   @override
   void initState() {
     super.initState();
@@ -712,85 +701,6 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
     _geplandeStart = _timeLabel(t['starttijd']);
     _geplandeEind = _timeLabel(t['eindtijd']);
     _geplandeOperator = _originalOperator;
-  }
-
-  Future<void> _opdrachtOpnieuwOpenen() async {
-    if (_rescheduling) return;
-    setState(() => _rescheduling = true);
-    try {
-      // View doesn't provide planning PK, but does provide opdracht_id.
-      final dynamic dataObject = widget.task;
-
-      String? opdrachtId;
-      if (dataObject is Map) {
-        final m = Map<String, dynamic>.from(dataObject);
-        opdrachtId = _text(m['opdracht_id']);
-      } else {
-        try {
-          // ignore: avoid_dynamic_calls
-          final v = (dataObject as dynamic).opdrachtId ??
-              // ignore: avoid_dynamic_calls
-              (dataObject as dynamic).opdracht_id;
-          opdrachtId = _text(v);
-        } catch (_) {
-          opdrachtId = null;
-        }
-      }
-
-      // === DEBUG DUMP ===
-      debugPrint('--- DATA DUMP VOOR OPNIEUW OPENEN ---');
-      debugPrint('Type van object: ${dataObject.runtimeType}');
-      if (dataObject is Map) {
-        debugPrint('Keys: ${(dataObject).keys.toList()}');
-      }
-      debugPrint('Inhoud: $dataObject');
-      debugPrint('Gevonden opdrachtId: $opdrachtId');
-      debugPrint('---------------------------------------');
-
-      if (opdrachtId == null || opdrachtId.trim().isEmpty) {
-        throw Exception('Kan opdracht_id niet vinden in het object. Kijk in de console voor de Data Dump.');
-      }
-
-      // 2) Update opdracht naar open
-      await AppSupabase.client
-          .from('opdrachten')
-          .update({'status': 'open'})
-          .eq('id', opdrachtId);
-
-      // 3) Verwijder ALLE planningsregels die aan deze opdracht gekoppeld zijn
-      await AppSupabase.client
-          .from('opdracht_planning')
-          .delete()
-          .eq('opdracht_id', opdrachtId);
-
-      if (!mounted) return;
-      await widget.onSaved();
-      if (!mounted) return;
-
-      // 4) Sluit modal en navigeer naar planbord (Navigator-based app)
-      final rootNav = Navigator.of(context, rootNavigator: true);
-      rootNav.pop();
-      rootNav.push(
-        MaterialPageRoute<void>(
-          settings: const RouteSettings(name: '/facilitator/planning'),
-          builder: (_) => const PlanbordScreen(),
-        ),
-      );
-    } catch (e, stacktrace) {
-      debugPrint('--- FOUT BIJ OPNIEUW INPLANNEN ---');
-      debugPrint(e.toString());
-      debugPrint(stacktrace.toString());
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Fout bij openen: $e'),
-          backgroundColor: Colors.red.shade800,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _rescheduling = false);
-    }
   }
 
   Widget _block(BuildContext context, String label, String value) {
@@ -909,22 +819,17 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _rescheduling ? null : _opdrachtOpnieuwOpenen,
-                  icon: _rescheduling
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh_rounded),
-                  label: Text(
-                    'Opdracht opnieuw openen',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                  ),
-                  style: ElevatedButton.styleFrom(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(52),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(
+                    'Sluiten',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w900),
                   ),
                 ),
               ),

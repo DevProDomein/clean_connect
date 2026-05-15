@@ -457,25 +457,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return _timeLabel(item['tijdslot_start']);
   }
 
-  List<Map<String, dynamic>> _sortOpenForAgenda(
-    List<Map<String, dynamic>> rows,
-  ) {
-    final selectedKey = _normalizeDate(_selectedDay ?? _focusedDay);
-    final sorted = [...rows]
-      ..sort((a, b) {
-        final aDate = _normalizeDate(_toDate(a['geplande_datum']));
-        final bDate = _normalizeDate(_toDate(b['geplande_datum']));
-        final aIs = aDate == selectedKey;
-        final bIs = bDate == selectedKey;
-        if (aIs && !bIs) return -1;
-        if (!aIs && bIs) return 1;
-        return _toDate(
-          a['geplande_datum'],
-        ).compareTo(_toDate(b['geplande_datum']));
-      });
-    return sorted;
-  }
-
   List<Map<String, dynamic>> _sortReedsGeplande(
     List<Map<String, dynamic>> rows,
   ) {
@@ -493,10 +474,70 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   DateTime get _manualSelectedDay =>
       _normalizeDate(_selectedDay ?? _focusedDay);
 
-  List<Map<String, dynamic>> get _openTasksManualDay {
-    final list =
-        _groupedOpenTaken[_manualSelectedDay] ?? const <Map<String, dynamic>>[];
-    return _sortOpenForAgenda(List<Map<String, dynamic>>.from(list));
+  List<Map<String, dynamic>> _getZichtbareOpenTaken() {
+    final zichtbareTaken = <Map<String, dynamic>>[];
+
+    if (_calendarViewMode == 'Maand') {
+      _groupedOpenTaken.forEach((date, tasks) {
+        if (date.year == _focusedDay.year && date.month == _focusedDay.month) {
+          zichtbareTaken.addAll(tasks);
+        }
+      });
+    } else if (_calendarViewMode == 'Week') {
+      final offset = _focusedDay.weekday - 1;
+      final startOfWeek = _focusedDay.subtract(Duration(days: offset));
+      final endOfWeek = startOfWeek.add(const Duration(days: 6));
+      final startTrunc = DateTime(
+        startOfWeek.year,
+        startOfWeek.month,
+        startOfWeek.day,
+      );
+      final endTrunc = DateTime(
+        endOfWeek.year,
+        endOfWeek.month,
+        endOfWeek.day,
+      );
+
+      _groupedOpenTaken.forEach((date, tasks) {
+        final checkDate = DateTime(date.year, date.month, date.day);
+        if (!checkDate.isBefore(startTrunc) && !checkDate.isAfter(endTrunc)) {
+          zichtbareTaken.addAll(tasks);
+        }
+      });
+    } else {
+      final selected = _selectedDay ?? _focusedDay;
+      final truncSelected = DateTime(
+        selected.year,
+        selected.month,
+        selected.day,
+      );
+      zichtbareTaken.addAll(
+        _groupedOpenTaken[truncSelected] ?? const <Map<String, dynamic>>[],
+      );
+    }
+
+    zichtbareTaken.sort((a, b) {
+      final dateA =
+          DateTime.tryParse(a['geplande_datum']?.toString() ?? '') ??
+          DateTime.now();
+      final dateB =
+          DateTime.tryParse(b['geplande_datum']?.toString() ?? '') ??
+          DateTime.now();
+      return dateA.compareTo(dateB);
+    });
+
+    return zichtbareTaken;
+  }
+
+  String _openTakenLeegBericht() {
+    switch (_calendarViewMode) {
+      case 'Maand':
+        return 'Geen openstaande opdrachten in deze maand.';
+      case 'Week':
+        return 'Geen openstaande opdrachten in deze week.';
+      default:
+        return 'Geen openstaande opdrachten op deze dag.';
+    }
   }
 
   Future<void> _fetchProjects() async {
@@ -2762,17 +2803,37 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: accent.withValues(alpha: 0.45),
+                              ),
+                            ),
+                            child: Text(
+                              _formatTaakDatumTag(date),
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w900,
+                                color: accent,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
                               color: accent.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(999),
                             ),
-                  child: Text(
+                            child: Text(
                               '$start - $end',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w800,
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800,
                                 color: accent,
-                    ),
-                  ),
-                ),
+                              ),
+                            ),
+                          ),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -2782,23 +2843,15 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               color: cs.onSurface.withValues(alpha: 0.06),
                               borderRadius: BorderRadius.circular(999),
                             ),
-                  child: Text(
+                            child: Text(
                               _manualRegion(task),
-                    style: GoogleFonts.inter(
+                              style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w700,
                                 color: cs.onSurface.withValues(alpha: 0.75),
-                    ),
-                  ),
-                ),
+                              ),
+                            ),
+                          ),
                         ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        DateFormat('d MMMM yyyy', 'nl_NL').format(date),
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface.withValues(alpha: 0.70),
-                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -3181,17 +3234,26 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   );
   }
 
+  String _formatTaakDatumTag(DateTime d) {
+    try {
+      return DateFormat('E d MMM', 'nl_NL').format(d);
+    } catch (_) {
+      return DateFormat('E d MMM').format(d);
+    }
+  }
+
   Widget _manualSplitOpenColumn(
     ColorScheme cs,
     bool isDark,
-    List<Map<String, dynamic>> openDay,
+    List<Map<String, dynamic>> weergaveLijst,
+    String leegBericht,
   ) {
     final accent = Colors.blue.shade700;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Nog in te plannen (${openDay.length})',
+          'Nog in te plannen (${weergaveLijst.length})',
           style: GoogleFonts.inter(
             fontSize: 15,
             fontWeight: FontWeight.w900,
@@ -3200,12 +3262,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         ),
         const SizedBox(height: 10),
         Expanded(
-          child: openDay.isEmpty
+          child: weergaveLijst.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Text(
-                      'Geen openstaande opdrachten op deze dag.',
+                      leegBericht,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.inter(
                         fontWeight: FontWeight.w700,
@@ -3216,9 +3278,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.only(bottom: 8),
-                  itemCount: openDay.length,
-                  itemBuilder: (context, index) =>
-                      _buildManualOpenTaskCard(openDay[index], cs, isDark),
+                  itemCount: weergaveLijst.length,
+                  itemBuilder: (context, index) => _buildManualOpenTaskCard(
+                    weergaveLijst[index],
+                    cs,
+                    isDark,
+                  ),
                 ),
         ),
       ],
@@ -3275,7 +3340,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   Widget _buildManualPlanningTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
     final isMobile = MediaQuery.of(context).size.width < 800;
-    final openDay = _openTasksManualDay;
+    final weergaveLijst = _getZichtbareOpenTaken();
+    final openLeegBericht = _openTakenLeegBericht();
 
     return Column(
       children: [
@@ -3561,7 +3627,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                     child: _manualSplitOpenColumn(
                                       cs,
                                       isDark,
-                                      openDay,
+                                      weergaveLijst,
+                                      openLeegBericht,
                                     ),
                                   ),
                                   Padding(
@@ -3592,7 +3659,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                     child: _manualSplitOpenColumn(
                                       cs,
                                       isDark,
-                                      openDay,
+                                      weergaveLijst,
+                                      openLeegBericht,
                                     ),
                                   ),
                                   const SizedBox(width: 16),

@@ -304,16 +304,57 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   String _urenStatusNorm(Map<String, dynamic> r) =>
       (r['uren_status'] ?? '').toString().toLowerCase().trim();
 
-  ({double bruto, double uren}) _approvedTotals() {
-    var b = 0.0;
-    var u = 0.0;
-    for (final row in _shiftsLijst) {
-      if (_urenStatusNorm(row) == 'geaccordeerd') {
-        b += _parseLoonDouble(row['bruto_loonkosten']);
-        u += _asDouble(row['gewerkte_uren_decimaal']);
+  double _taakDuurInUren(Map<String, dynamic> taak) =>
+      _asDouble(taak['gewerkte_uren_decimaal']);
+
+  /// Totaal Overzicht: geaccordeerde uren per kalendermaand, salaris met vast
+  /// contract (vast maandsalaris + overwerk) of uurbasis per maand.
+  ({double bruto, double uren}) _geaccordeerdAllTimeAnalytics() {
+    var berekendTotaalSalaris = 0.0;
+    var berekendTotaalUren = 0.0;
+
+    final alleGeaccordeerdeTaken = _shiftsLijst
+        .where((r) => _urenStatusNorm(r) == 'geaccordeerd')
+        .toList();
+
+    final urenPerMaand = <String, double>{};
+    var totaalBrutoLoonkosten = 0.0;
+
+    for (final taak in alleGeaccordeerdeTaken) {
+      final date = _parseShiftDay(taak['geplande_datum']);
+      if (date == null) continue;
+
+      final monthKey =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}';
+      final duur = _taakDuurInUren(taak);
+
+      urenPerMaand[monthKey] = (urenPerMaand[monthKey] ?? 0.0) + duur;
+      berekendTotaalUren += duur;
+      totaalBrutoLoonkosten += _parseLoonDouble(taak['bruto_loonkosten']);
+    }
+
+    final uurtarief = berekendTotaalUren > 0
+        ? totaalBrutoLoonkosten / berekendTotaalUren
+        : 20.0;
+
+    final heeftVastContract = _heeftVastContractVoorMaandDashboard();
+    final contractVasteUren = _contractVasteUren;
+    final contractVastSalaris = _contractVastSalaris;
+
+    for (final entry in urenPerMaand.entries) {
+      final maandUren = entry.value;
+      if (heeftVastContract &&
+          contractVasteUren != null &&
+          contractVastSalaris != null) {
+        final overwerkUren = math.max(0.0, maandUren - contractVasteUren);
+        berekendTotaalSalaris +=
+            contractVastSalaris + (overwerkUren * uurtarief);
+      } else {
+        berekendTotaalSalaris += maandUren * uurtarief;
       }
     }
-    return (bruto: b, uren: u);
+
+    return (bruto: berekendTotaalSalaris, uren: berekendTotaalUren);
   }
 
   double _pendingSubmittedHours() {
@@ -593,7 +634,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   }
 
   Map<String, dynamic>? _approvedHeroRow() {
-    final t = _approvedTotals();
+    final t = _geaccordeerdAllTimeAnalytics();
     if (t.bruto == 0 && t.uren == 0) return null;
     return {'totaal_bruto_verdiend': t.bruto, 'totaal_gewerkte_uren': t.uren};
   }
@@ -780,7 +821,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Verwacht Bruto Salaris',
+            'Totaal Verdiend (All-Time)',
             style: GoogleFonts.lato(
               fontSize: 14,
               fontWeight: FontWeight.w700,
