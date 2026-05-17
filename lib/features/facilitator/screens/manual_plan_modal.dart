@@ -33,6 +33,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
 
   List<dynamic> _availableOperators = <dynamic>[];
   String? _selectedOperatorId;
+  String? _bestaandePlanningId;
   double _shiftHours = 0.25;
 
   @override
@@ -100,6 +101,61 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
   }
 
   String _minutesToDb(int minutes) => '${_minutesToHuman(minutes)}:00';
+
+  void _prefillHandmatigePlannerState(Map<String, dynamic> item) {
+    if (_text(item['status']) == 'ingepland') {
+      final pd = DateTime.tryParse(
+            _text(item['geplande_datum']).length >= 10
+                ? _text(item['geplande_datum']).substring(0, 10)
+                : _text(item['geplande_datum']),
+          ) ??
+          DateTime.now();
+      geselecteerdeHandmatigeDatum = DateTime(pd.year, pd.month, pd.day);
+      _bestaandePlanningId = _text(item['huidige_planning_id']);
+      _selectedOperatorId = _text(item['huidige_operator_id']).isEmpty
+          ? null
+          : _text(item['huidige_operator_id']);
+
+      final planningDetails = item['planning_details'] ?? item['planning'];
+      String? startRaw;
+      String? endRaw;
+      if (planningDetails is List && planningDetails.isNotEmpty) {
+        final first = planningDetails.first;
+        if (first is Map) {
+          startRaw = first['starttijd']?.toString();
+          endRaw = first['eindtijd']?.toString();
+        }
+      } else if (planningDetails is Map) {
+        startRaw = planningDetails['starttijd']?.toString();
+        endRaw = planningDetails['eindtijd']?.toString();
+      }
+
+      if (startRaw != null && startRaw.isNotEmpty) {
+        final start = _timeToHuman(_timeFromValue(startRaw));
+        geselecteerdeHandmatigeTijd = start;
+        _startTimeController.text = start;
+        if (endRaw != null && endRaw.isNotEmpty) {
+          final startMin = _timeStringToMinutes(start);
+          final endMin = _timeStringToMinutes(_timeToHuman(_timeFromValue(endRaw)));
+          if (endMin > startMin) {
+            _shiftHours = ((endMin - startMin) / 60.0).clamp(0.25, 24.0);
+          }
+        }
+      }
+
+      if (_selectedOperatorId != null && _selectedOperatorId!.isNotEmpty) {
+        _hasSearchedOperators = true;
+      }
+    } else {
+      final pd = _dateFromValue(item['geplande_datum']);
+      geselecteerdeHandmatigeDatum = DateTime(pd.year, pd.month, pd.day);
+      _bestaandePlanningId = null;
+      _selectedOperatorId = null;
+      geselecteerdeHandmatigeTijd = null;
+      _hasSearchedOperators = false;
+      _availableOperators = <dynamic>[];
+    }
+  }
 
   Map<String, dynamic>? _projectJoin() {
     final row = _opdracht;
@@ -174,11 +230,13 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       final row = await AppSupabase.client
           .from('opdrachten')
           .select(
-            'id, project_id, geplande_datum, tijdslot_start, tijdslot_eind, '
+            'id, project_id, status, geplande_datum, tijdslot_start, tijdslot_eind, '
+            'huidige_operator_id, huidige_planning_id, '
             'benodigde_uren_totaal, toegewezen_uren_totaal, resterende_uren, '
             'benodigde_operators, werk_regio, uitvoer_adres_volledig, '
             'toelichting_planning, bedrijfsnaam, '
-            'projecten(project_naam)',
+            'projecten(project_naam), '
+            'planning:opdracht_planning!huidige_planning_id(starttijd, eindtijd, operator_id)',
           )
           .eq('id', widget.opdrachtId)
           .single();
@@ -188,14 +246,27 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       final neededOperators = _asInt(map['benodigde_operators'], fallback: 1);
       final standardPerPerson = totalHours / math.max(1, neededOperators);
       final remainingHours = _asDouble(map['resterende_uren'], fallback: 0);
-      _shiftHours = (remainingHours > 0 ? remainingHours : standardPerPerson).clamp(0.25, 24.0);
-      final slotStartRaw = _text(map['tijdslot_start']);
-      final slotStart = slotStartRaw.isEmpty ? const TimeOfDay(hour: 8, minute: 0) : _timeFromValue(slotStartRaw);
-      _startTimeController.text = _timeToHuman(slotStart);
-      geselecteerdeHandmatigeTijd = _timeToHuman(slotStart);
+      _shiftHours = (remainingHours > 0 ? remainingHours : standardPerPerson)
+          .clamp(0.25, 24.0);
 
-      final pd = _dateFromValue(map['geplande_datum']);
-      final pdDay = DateTime(pd.year, pd.month, pd.day);
+      _prefillHandmatigePlannerState(map);
+
+      final slotStartRaw = _text(geselecteerdeHandmatigeTijd);
+      if (slotStartRaw.isEmpty) {
+        final slotStart = _text(map['tijdslot_start']).isEmpty
+            ? const TimeOfDay(hour: 8, minute: 0)
+            : _timeFromValue(map['tijdslot_start']);
+        final startHuman = _timeToHuman(slotStart);
+        _startTimeController.text = startHuman;
+        geselecteerdeHandmatigeTijd = startHuman;
+      }
+
+      final pdDay = geselecteerdeHandmatigeDatum ??
+          DateTime(
+            _dateFromValue(map['geplande_datum']).year,
+            _dateFromValue(map['geplande_datum']).month,
+            _dateFromValue(map['geplande_datum']).day,
+          );
 
       if (!mounted) return;
       setState(() {
@@ -203,8 +274,11 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
         geselecteerdeHandmatigeDatum = pdDay;
       });
 
-      // Handmatige tijden initialiseren (zonder operator: toon alles zonder warnings).
-      await _berekenHandmatigeTijden(_selectedOperatorId ?? '', pdDay, _shiftHours);
+      await _berekenHandmatigeTijden(
+        _selectedOperatorId ?? '',
+        pdDay,
+        _shiftHours,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -224,15 +298,18 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       final dateString = DateFormat('yyyy-MM-dd').format(datum);
 
       // 1. Haal afspraken op voor deze dag (als operator onbekend is: geen blokkades/warnings).
+      var afsprakenQuery = Supabase.instance.client
+          .from('opdracht_planning')
+          .select('id, starttijd, eindtijd')
+          .eq('operator_id', opId)
+          .eq('geplande_datum', dateString);
+      final excludeId = _text(_bestaandePlanningId);
+      if (excludeId.isNotEmpty) {
+        afsprakenQuery = afsprakenQuery.neq('id', excludeId);
+      }
       final List<dynamic> bestaandeAfspraken = opId.isEmpty
           ? const <dynamic>[]
-          : List<dynamic>.from(
-              await Supabase.instance.client
-                  .from('opdracht_planning')
-                  .select('starttijd, eindtijd')
-                  .eq('operator_id', opId)
-                  .eq('geplande_datum', dateString),
-            );
+          : List<dynamic>.from(await afsprakenQuery);
 
       /// Minuten sedert middernacht uit DB-tijd-string (HH:MM of HH:MM:SS). Geen buffers.
       int timeToMinutes(String t) {
@@ -432,33 +509,56 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
 
     setState(() => _saving = true);
     try {
-      final datumDb = _plannedDateDb;
+      final item = _opdracht ?? <String, dynamic>{'id': widget.opdrachtId};
+      final bestaandePlanningId = _text(
+        _bestaandePlanningId ?? item['huidige_planning_id'],
+      );
+      final isBestaandePlanning =
+          _text(item['status']) == 'ingepland' && bestaandePlanningId.isNotEmpty;
 
-      await Supabase.instance.client.from('opdracht_planning').insert({
-        'opdracht_id': widget.opdrachtId,
-        'operator_id': _selectedOperatorId,
-        'geplande_datum': datumDb,
-        'starttijd': _minutesToDb(startMinutes),
-        'eindtijd': _minutesToDb(endMinutes),
-        'toegewezen_uren': hours,
-        'status': 'gepland',
-      });
+      final nieuweDatum = geselecteerdeHandmatigeDatum!
+          .toIso8601String()
+          .split('T')
+          .first;
+      final berekendeEindTijd = _minutesToDb(endMinutes);
+      final startDb = _minutesToDb(startMinutes);
 
-      try {
+      if (isBestaandePlanning) {
+        await Supabase.instance.client.from('opdracht_planning').update({
+          'operator_id': _selectedOperatorId,
+          'geplande_datum': nieuweDatum,
+          'starttijd': startDb,
+          'eindtijd': berekendeEindTijd,
+          'toegewezen_uren': hours,
+        }).eq('id', bestaandePlanningId);
+
         await Supabase.instance.client.from('opdrachten').update({
-          'geplande_datum': datumDb,
+          'geplande_datum': nieuweDatum,
         }).eq('id', widget.opdrachtId);
-      } catch (e) {
-        // ignore: avoid_print
-        print('Kon opdracht-datum niet bijwerken: $e');
+      } else {
+        await Supabase.instance.client.from('opdracht_planning').insert({
+          'opdracht_id': widget.opdrachtId,
+          'operator_id': _selectedOperatorId,
+          'geplande_datum': nieuweDatum,
+          'starttijd': startDb,
+          'eindtijd': berekendeEindTijd,
+          'toegewezen_uren': hours,
+          'status': 'gepland',
+        });
+
+        try {
+          await Supabase.instance.client.from('opdrachten').update({
+            'geplande_datum': nieuweDatum,
+          }).eq('id', widget.opdrachtId);
+        } catch (e) {
+          // ignore: avoid_print
+          print('Kon opdracht-datum niet bijwerken: $e');
+        }
       }
 
       try {
         final gekozenOperatorId = _text(_selectedOperatorId);
-        final rawDatum = datumDb;
-        final datumString = rawDatum.contains('T')
-            ? rawDatum.split('T').first
-            : (rawDatum.isNotEmpty ? rawDatum : 'binnenkort');
+        final datumString = nieuweDatum.isNotEmpty ? nieuweDatum : 'binnenkort';
         await AppSupabase.client.functions.invoke(
           'send-push-notification',
           body: {
@@ -478,7 +578,9 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF1E8E3E),
           content: Text(
-            'Opdracht succesvol ingepland.',
+            isBestaandePlanning
+                ? 'Planning succesvol bijgewerkt.'
+                : 'Opdracht succesvol ingepland.',
             style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800),
           ),
         ),
@@ -998,7 +1100,10 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                   ),
                 )
               : Text(
-                  'Definitief Inplannen',
+                  (_text(_opdracht?['status']) == 'ingepland' &&
+                          _text(_bestaandePlanningId).isNotEmpty)
+                      ? 'Wijziging Opslaan'
+                      : 'Definitief Inplannen',
                   style: GoogleFonts.inter(fontWeight: FontWeight.w900),
                 ),
         ),

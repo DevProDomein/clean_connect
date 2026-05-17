@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,10 +5,11 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../../../core/utils/payroll_calculation.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 
-/// Operator: bruto salaris ([loonadministratie_maand]) en diensten ([opdracht_planning])
+/// Operator: uren/salaris-overzicht via [opdracht_planning] en [operator_uitbetalingen].
 /// met offline-first urenregistratie (tab Uren Registreren).
 class OperatorUrenScreen extends StatefulWidget {
   const OperatorUrenScreen({super.key});
@@ -24,15 +23,16 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   static const Color _brightBlue = Color(0xFF0052CC);
   static const Color _pageBg = Color(0xFFF2F4F8);
 
-  List<Map<String, dynamic>> _maandenLijst = [];
   List<Map<String, dynamic>> _shiftsLijst = [];
+  List<Map<String, dynamic>> _afgeslotenMaanden = [];
   bool _isLoading = true;
   String _errorMessage = '';
 
-  /// Tab Overzicht: `true` = "Deze maand", `false` = "Totaal overzicht".
-  bool _overzichtMaandModus = true;
-  double? _contractVasteUren;
-  double? _contractVastSalaris;
+  /// Tab Overzicht: `true` = Deze Maand (default), `false` = Historie.
+  bool _overzichtIsDezeMaand = true;
+
+  /// Ruwe `gebruikers`-rij voor payroll (standaard_uurloon, contractvelden).
+  Map<String, dynamic>? _gebruikerPayrollRow;
   double _voorschotBedrag = 0;
 
   DateTime _regCalendarFocusedDay = DateTime.now();
@@ -63,10 +63,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Niet ingelogd.';
-        _maandenLijst = [];
         _shiftsLijst = [];
-        _contractVasteUren = null;
-        _contractVastSalaris = null;
+        _afgeslotenMaanden = [];
+        _gebruikerPayrollRow = null;
         _voorschotBedrag = 0;
       });
       return;
@@ -81,48 +80,36 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     try {
       final client = Supabase.instance.client;
 
-      final pair = await Future.wait([
-        client
-            .from('loonadministratie_maand')
-            .select()
-            .eq('operator_id', uid)
-            .order('kalender_maand', ascending: false),
-        client
-            .from('opdracht_planning')
-            .select(
-              'id, opdracht_id, geplande_datum, starttijd, eindtijd, '
-              'werkelijke_starttijd, werkelijke_eindtijd, gewerkte_uren_decimaal, '
-              'bruto_loonkosten, uren_status, status, bedrijfsnaam, '
-              'opdracht:opdrachten!opdracht_planning_opdracht_id_fkey('
-              'uitvoer_adres_volledig, bedrijfsnaam, projecten(project_naam))',
-            )
-            .eq('operator_id', uid)
-            .order('geplande_datum', ascending: false)
-            .limit(200),
-      ]);
+      final shiftsResponse = await client
+          .from('opdracht_planning')
+          .select(
+            'id, opdracht_id, geplande_datum, starttijd, eindtijd, '
+            'werkelijke_starttijd, werkelijke_eindtijd, gewerkte_uren_decimaal, '
+            'bruto_loonkosten, uren_status, status, bedrijfsnaam, '
+            'opdracht:opdrachten!opdracht_planning_opdracht_id_fkey('
+            'uitvoer_adres_volledig, bedrijfsnaam, projecten(project_naam))',
+          )
+          .eq('operator_id', uid)
+          .order('geplande_datum', ascending: false)
+          .limit(200);
 
-      final maanden = (pair[0] as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      final shifts = (pair[1] as List)
+      final shifts = (shiftsResponse as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
-      double? contractVasteUren;
-      double? contractVastSalaris;
+      Map<String, dynamic>? gebruikerPayrollRow;
       double voorschot = 0;
       try {
         final u = await client
             .from('gebruikers')
-            .select('contract_vaste_uren, contract_vast_salaris')
+            .select(
+              'standaard_uurloon, contract_vaste_uren, contract_vast_salaris, '
+              'contract_startdatum, contract_einddatum',
+            )
             .eq('id', uid)
             .maybeSingle();
         if (u != null) {
-          final m = Map<String, dynamic>.from(u as Map);
-          contractVasteUren = _parseNullableDouble(m['contract_vaste_uren']);
-          contractVastSalaris = _parseNullableDouble(
-            m['contract_vast_salaris'],
-          );
+          gebruikerPayrollRow = Map<String, dynamic>.from(u as Map);
         }
       } catch (e) {
         debugPrint('OperatorUren: contractkolommen optioneel: $e');
@@ -144,15 +131,25 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
         debugPrint('OperatorUren: operator_voorschotten optioneel: $e');
       }
 
-      // ignore: avoid_print
-      print('X-RAY UREN DATA: $maanden');
+      var afgeslotenMaanden = <Map<String, dynamic>>[];
+      try {
+        final uitbetalingenRes = await client
+            .from('operator_uitbetalingen')
+            .select()
+            .eq('operator_id', uid)
+            .order('maand_sleutel', ascending: false);
+        afgeslotenMaanden = (uitbetalingenRes as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      } catch (e) {
+        debugPrint('OperatorUren: operator_uitbetalingen optioneel: $e');
+      }
 
       if (!mounted) return;
       setState(() {
-        _maandenLijst = maanden;
         _shiftsLijst = shifts;
-        _contractVasteUren = contractVasteUren;
-        _contractVastSalaris = contractVastSalaris;
+        _afgeslotenMaanden = afgeslotenMaanden;
+        _gebruikerPayrollRow = gebruikerPayrollRow;
         _voorschotBedrag = voorschot;
         _isLoading = false;
         _errorMessage = '';
@@ -161,10 +158,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
       debugPrint('OperatorUrenScreen._loadData error: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _maandenLijst = [];
         _shiftsLijst = [];
-        _contractVasteUren = null;
-        _contractVastSalaris = null;
+        _afgeslotenMaanden = [];
+        _gebruikerPayrollRow = null;
         _voorschotBedrag = 0;
         _isLoading = false;
         _errorMessage = e.toString();
@@ -172,67 +168,105 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     }
   }
 
+  String _text(dynamic v) => (v ?? '').toString().trim();
+
+  bool _isInHuidigeKalenderMaand(DateTime? dag) {
+    if (dag == null) return false;
+    final n = DateTime.now();
+    return dag.year == n.year && dag.month == n.month;
+  }
+
+  Map<String, dynamic> _operatorPayrollProfiel() =>
+      Map<String, dynamic>.from(_gebruikerPayrollRow ?? {});
+
+  ({
+    double uurTarief,
+    double contractVastSalaris,
+    double contractVasteUren,
+    bool heeftVastContract,
+  }) _payrollFinancien() {
+    final operatorData = _operatorPayrollProfiel();
+
+    final ruwUurloon =
+        operatorData['standaard_uurloon']?.toString().replaceAll(',', '.') ??
+        '0';
+    final uurTarief = double.tryParse(ruwUurloon) ?? 0.0;
+
+    final ruwVastSalaris =
+        operatorData['contract_vast_salaris']?.toString().replaceAll(',', '.') ??
+        '0';
+    final contractVastSalaris = double.tryParse(ruwVastSalaris) ?? 0.0;
+
+    final ruwVasteUren =
+        operatorData['contract_vaste_uren']?.toString().replaceAll(',', '.') ??
+        '0';
+    final contractVasteUren = double.tryParse(ruwVasteUren) ?? 0.0;
+
+    final heeftVastContract = contractVasteUren > 0;
+
+    return (
+      uurTarief: uurTarief,
+      contractVastSalaris: contractVastSalaris,
+      contractVasteUren: contractVasteUren,
+      heeftVastContract: heeftVastContract,
+    );
+  }
+
+  double _berekenTaakDuurInUren(Map<String, dynamic> taak) =>
+      _urenUitTaakOfTijden(taak);
+
+  ({double uren, double bruto}) _berekenSalarisVoorTaken(
+    List<Map<String, dynamic>> taken, {
+    bool sluitHuidigeMaandUit = false,
+  }) {
+    final fin = _payrollFinancien();
+    var berekendTotaalSalaris = 0.0;
+    var berekendTotaalUren = 0.0;
+    final urenPerMaand = <String, double>{};
+    final huidigeMaandSleutel = _currentKalenderMaandKey();
+
+    for (final taak in taken) {
+      final datumString = taak['geplande_datum']?.toString() ?? '';
+      if (datumString.length >= 7) {
+        final monthKey = datumString.substring(0, 7);
+        final duur = _berekenTaakDuurInUren(taak);
+        urenPerMaand[monthKey] = (urenPerMaand[monthKey] ?? 0.0) + duur;
+        if (!sluitHuidigeMaandUit || monthKey != huidigeMaandSleutel) {
+          berekendTotaalUren += duur;
+        }
+      }
+    }
+
+    for (final entry in urenPerMaand.entries) {
+      if (sluitHuidigeMaandUit && entry.key == huidigeMaandSleutel) {
+        continue;
+      }
+
+      final maandUren = entry.value;
+
+      if (fin.heeftVastContract) {
+        final overwerkUren = maandUren > fin.contractVasteUren
+            ? (maandUren - fin.contractVasteUren)
+            : 0.0;
+        berekendTotaalSalaris +=
+            fin.contractVastSalaris + (overwerkUren * fin.uurTarief);
+      } else {
+        berekendTotaalSalaris += maandUren * fin.uurTarief;
+      }
+    }
+
+    return (uren: berekendTotaalUren, bruto: berekendTotaalSalaris);
+  }
+
+  List<Map<String, dynamic>> _alleGeaccordeerdeTaken() {
+    return _shiftsLijst
+        .where((r) => _urenStatusNorm(r) == 'geaccordeerd')
+        .toList();
+  }
+
   String _currentKalenderMaandKey() {
     final n = DateTime.now();
     return '${n.year}-${n.month.toString().padLeft(2, '0')}';
-  }
-
-  String _kalenderMaandKey(dynamic v) {
-    if (v == null) return '';
-    if (v is DateTime) {
-      return '${v.year}-${v.month.toString().padLeft(2, '0')}';
-    }
-    var s = v.toString().trim();
-    if (s.length >= 7 && s.contains('-')) {
-      s = s.substring(0, 7);
-    }
-    return s;
-  }
-
-  String _formatMaand(dynamic kalenderMaand) {
-    final s = _kalenderMaandKey(kalenderMaand);
-    final parts = s.split('-');
-    if (parts.length != 2) return s.isEmpty ? '—' : s;
-    final maanden = {
-      '01': 'Januari',
-      '02': 'Februari',
-      '03': 'Maart',
-      '04': 'April',
-      '05': 'Mei',
-      '06': 'Juni',
-      '07': 'Juli',
-      '08': 'Augustus',
-      '09': 'September',
-      '10': 'Oktober',
-      '11': 'November',
-      '12': 'December',
-    };
-    final mm = parts[1].length == 1 ? '0${parts[1]}' : parts[1];
-    return '${maanden[mm] ?? parts[1]} ${parts[0]}';
-  }
-
-  String _formatMaandLongNl(dynamic kalenderMaand) {
-    final d = _parseKalenderMaand(kalenderMaand);
-    if (d == null) return _formatMaand(kalenderMaand);
-    return DateFormat.yMMMM('nl_NL').format(DateTime(d.year, d.month));
-  }
-
-  DateTime? _parseKalenderMaand(dynamic v) {
-    if (v == null) return null;
-    if (v is DateTime) return DateTime(v.year, v.month);
-    final s = v.toString().trim();
-    if (s.isEmpty) return null;
-    final dt = DateTime.tryParse(s);
-    if (dt != null) return DateTime(dt.year, dt.month);
-    final m = RegExp(r'^(\d{4})-(\d{2})').firstMatch(s);
-    if (m != null) {
-      final y = int.tryParse(m.group(1)!);
-      final mo = int.tryParse(m.group(2)!);
-      if (y != null && mo != null && mo >= 1 && mo <= 12) {
-        return DateTime(y, mo);
-      }
-    }
-    return null;
   }
 
   String _formatBruto(dynamic v) => _eur.format(_parseLoonDouble(v));
@@ -256,13 +290,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
       return double.tryParse(s.replaceAll('.', '').replaceAll(',', '.')) ?? 0;
     }
     return 0;
-  }
-
-  double? _parseNullableDouble(dynamic v) {
-    if (v == null) return null;
-    final s = v.toString().trim();
-    if (s.isEmpty) return null;
-    return _asDouble(v);
   }
 
   /// Parser voor loon-kolommen: eerst `double.tryParse(.toString())` (int-safe),
@@ -304,164 +331,155 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   String _urenStatusNorm(Map<String, dynamic> r) =>
       (r['uren_status'] ?? '').toString().toLowerCase().trim();
 
-  double _taakDuurInUren(Map<String, dynamic> taak) =>
-      _asDouble(taak['gewerkte_uren_decimaal']);
-
-  /// Totaal Overzicht: geaccordeerde uren per kalendermaand, salaris met vast
-  /// contract (vast maandsalaris + overwerk) of uurbasis per maand.
-  ({double bruto, double uren}) _geaccordeerdAllTimeAnalytics() {
-    var berekendTotaalSalaris = 0.0;
-    var berekendTotaalUren = 0.0;
-
-    final alleGeaccordeerdeTaken = _shiftsLijst
-        .where((r) => _urenStatusNorm(r) == 'geaccordeerd')
-        .toList();
-
-    final urenPerMaand = <String, double>{};
-    var totaalBrutoLoonkosten = 0.0;
-
-    for (final taak in alleGeaccordeerdeTaken) {
-      final date = _parseShiftDay(taak['geplande_datum']);
-      if (date == null) continue;
-
-      final monthKey =
-          '${date.year}-${date.month.toString().padLeft(2, '0')}';
-      final duur = _taakDuurInUren(taak);
-
-      urenPerMaand[monthKey] = (urenPerMaand[monthKey] ?? 0.0) + duur;
-      berekendTotaalUren += duur;
-      totaalBrutoLoonkosten += _parseLoonDouble(taak['bruto_loonkosten']);
-    }
-
-    final uurtarief = berekendTotaalUren > 0
-        ? totaalBrutoLoonkosten / berekendTotaalUren
-        : 20.0;
-
-    final heeftVastContract = _heeftVastContractVoorMaandDashboard();
-    final contractVasteUren = _contractVasteUren;
-    final contractVastSalaris = _contractVastSalaris;
-
-    for (final entry in urenPerMaand.entries) {
-      final maandUren = entry.value;
-      if (heeftVastContract &&
-          contractVasteUren != null &&
-          contractVastSalaris != null) {
-        final overwerkUren = math.max(0.0, maandUren - contractVasteUren);
-        berekendTotaalSalaris +=
-            contractVastSalaris + (overwerkUren * uurtarief);
-      } else {
-        berekendTotaalSalaris += maandUren * uurtarief;
-      }
-    }
-
-    return (bruto: berekendTotaalSalaris, uren: berekendTotaalUren);
+  double _urenUitTaakOfTijden(Map<String, dynamic> taak) {
+    final uitTijden = PayrollCalculation.gewerkteUrenUitTaak(taak);
+    if (uitTijden > 0) return uitTijden;
+    return _asDouble(taak['gewerkte_uren_decimaal']);
   }
 
-  double _pendingSubmittedHours() {
+  List<Map<String, dynamic>> _geaccordeerdeTakenHuidigeMaand() {
+    return _shiftsLijst.where((r) {
+      if (_urenStatusNorm(r) != 'geaccordeerd') return false;
+      return _isInHuidigeKalenderMaand(_parseShiftDay(r['geplande_datum']));
+    }).toList();
+  }
+
+  double _pendingSubmittedHoursDezeMaand() {
     var u = 0.0;
     for (final row in _shiftsLijst) {
-      if (_urenStatusNorm(row) == 'ingediend') {
-        u += _asDouble(row['gewerkte_uren_decimaal']);
+      if (_urenStatusNorm(row) != 'ingediend') continue;
+      if (!_isInHuidigeKalenderMaand(_parseShiftDay(row['geplande_datum']))) {
+        continue;
       }
+      u += _urenUitTaakOfTijden(row);
     }
     return u;
   }
 
-  List<Map<String, dynamic>> _overviewShiftsRows() {
-    return _shiftsLijst.where((r) => _urenStatusNorm(r) != 'open').toList();
-  }
-
-  /// Overzicht-tab: gefilterd op kalenderhuidige maand (ingediend + geaccordeerd).
-  List<Map<String, dynamic>> _overzichtLijstVoorModus() {
-    final base = _overviewShiftsRows();
-    if (!_overzichtMaandModus) return base;
-    final n = DateTime.now();
-    return base.where((r) {
-      final d = _parseShiftDay(r['geplande_datum']);
-      if (d == null) return false;
-      return d.year == n.year && d.month == n.month;
+  List<Map<String, dynamic>> _overzichtDezeMaandLijst() {
+    return _shiftsLijst.where((r) {
+      if (_urenStatusNorm(r) == 'open') return false;
+      return _isInHuidigeKalenderMaand(_parseShiftDay(r['geplande_datum']));
     }).toList();
   }
 
-  ({double uren, double bruto}) _geaccordeerdUrenEnBrutoDezeMaand() {
-    final n = DateTime.now();
-    var u = 0.0;
-    var b = 0.0;
-    for (final row in _shiftsLijst) {
-      if (_urenStatusNorm(row) != 'geaccordeerd') continue;
-      final d = _parseShiftDay(row['geplande_datum']);
-      if (d == null || d.year != n.year || d.month != n.month) continue;
-      u += _asDouble(row['gewerkte_uren_decimaal']);
-      b += _parseLoonDouble(row['bruto_loonkosten']);
-    }
-    return (uren: u, bruto: b);
-  }
-
-  bool _heeftVastContractVoorMaandDashboard() {
-    final u = _contractVasteUren;
-    final s = _contractVastSalaris;
-    return u != null && u > 0 && s != null && s > 0;
-  }
-
-  Widget _buildOverzichtSegmentToggle() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-      child: SegmentedButton<bool>(
-        segments: const [
-          ButtonSegment<bool>(
-            value: false,
-            label: Text('Totaal overzicht'),
-            icon: Icon(Icons.dashboard_outlined),
-          ),
-          ButtonSegment<bool>(
-            value: true,
-            label: Text('Deze maand'),
-            icon: Icon(Icons.calendar_month_rounded),
-          ),
-        ],
-        emptySelectionAllowed: false,
-        multiSelectionEnabled: false,
-        selected: {_overzichtMaandModus},
-        onSelectionChanged: (Set<bool> next) {
-          if (next.isEmpty) return;
-          setState(() => _overzichtMaandModus = next.first);
-        },
-      ),
+  ({double uren, double bruto, double uurtarief, bool isGeldigVastContract})
+  _verwachtSalarisHuidigeMaand() {
+    final fin = _payrollFinancien();
+    final result = _berekenSalarisVoorTaken(_geaccordeerdeTakenHuidigeMaand());
+    return (
+      uren: result.uren,
+      bruto: result.bruto,
+      uurtarief: fin.uurTarief,
+      isGeldigVastContract: fin.heeftVastContract,
     );
   }
 
+  ({double uren, double bruto, double uurtarief, bool isGeldigVastContract})
+  _verwachtSalarisHistorie() {
+    final fin = _payrollFinancien();
+    final result = _berekenSalarisVoorTaken(
+      _alleGeaccordeerdeTaken(),
+      sluitHuidigeMaandUit: true,
+    );
+    return (
+      uren: result.uren,
+      bruto: result.bruto,
+      uurtarief: fin.uurTarief,
+      isGeldigVastContract: fin.heeftVastContract,
+    );
+  }
+
+  bool _isOverzichtIngediendOfGeaccordeerd(Map<String, dynamic> r) {
+    final s = _urenStatusNorm(r);
+    return s == 'ingediend' || s == 'geaccordeerd';
+  }
+
+  String _monthKeyFromTaak(Map<String, dynamic> taak) {
+    final datumString = taak['geplande_datum']?.toString() ?? '';
+    if (datumString.length >= 7) return datumString.substring(0, 7);
+    return '';
+  }
+
+  Map<String, List<Map<String, dynamic>>> _takenPerHistorischeMaand() {
+    final huidige = _currentKalenderMaandKey();
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (final r in _shiftsLijst) {
+      if (!_isOverzichtIngediendOfGeaccordeerd(r)) continue;
+      final monthKey = _monthKeyFromTaak(r);
+      if (monthKey.isEmpty || monthKey == huidige) continue;
+      map.putIfAbsent(monthKey, () => []).add(r);
+    }
+    for (final list in map.values) {
+      list.sort((a, b) {
+        final da = _parseShiftDay(a['geplande_datum']);
+        final db = _parseShiftDay(b['geplande_datum']);
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db.compareTo(da);
+      });
+    }
+    return map;
+  }
+
+  List<String> _historischeMaandSleutelsGesorteerd() {
+    final keys = _takenPerHistorischeMaand().keys.toList();
+    keys.sort((a, b) => b.compareTo(a));
+    return keys;
+  }
+
+  Map<String, dynamic>? _uitbetalingVoorMaandSleutel(String monthKey) {
+    for (final row in _afgeslotenMaanden) {
+      if (_text(row['maand_sleutel']) == monthKey) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  String _maandSleutelNaarLabel(String monthKey) {
+    final parts = monthKey.split('-');
+    if (parts.length == 2) {
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (y != null && m != null && m >= 1 && m <= 12) {
+        return DateFormat.yMMMM('nl_NL').format(DateTime(y, m));
+      }
+    }
+    return monthKey;
+  }
+
   Widget _buildMaandHrDashboard() {
-    final g = _geaccordeerdUrenEnBrutoDezeMaand();
-    final geacc = g.uren;
-    final brutoAcc = g.bruto;
-    final uurtarief = geacc > 0 ? brutoAcc / geacc : 20.0;
+    final salaris = _verwachtSalarisHuidigeMaand();
+    final fin = _payrollFinancien();
+    final geacc = salaris.uren;
+    final uurtarief = salaris.uurtarief;
     final voorschot = _voorschotBedrag;
-    final vU = _contractVasteUren;
-    final vS = _contractVastSalaris;
-    final heeftContract = _heeftVastContractVoorMaandDashboard();
+    final vU = fin.contractVasteUren;
+    final vS = fin.contractVastSalaris;
+    final heeftContract = salaris.isGeldigVastContract;
 
-    final salarisUurbasis = geacc * uurtarief;
-    final nogUurbasis = salarisUurbasis - voorschot;
+    final brutoGewerkt = salaris.bruto;
+    final nogUurbasis = brutoGewerkt - voorschot;
 
-    final overwerkUren = heeftContract && vU != null
-        ? math.max(0.0, geacc - vU)
+    final overwerkUren = heeftContract && vU > 0
+        ? (geacc > vU ? (geacc - vU) : 0.0)
         : 0.0;
     final extraVerdiensten = heeftContract ? overwerkUren * uurtarief : 0.0;
-    final totaalBrutoContract = heeftContract && vS != null
-        ? vS + extraVerdiensten
-        : 0.0;
+    final totaalBrutoContract =
+        heeftContract ? vS + extraVerdiensten : 0.0;
     final nogContract = heeftContract
         ? totaalBrutoContract - voorschot
         : nogUurbasis;
 
-    final denom = (vU != null && vU > 0) ? vU : 1.0;
+    final denom = vU > 0 ? vU : 1.0;
     final progressRaw = geacc / denom;
     final progress = progressRaw.isFinite ? progressRaw.clamp(0.0, 1.0) : 0.0;
 
     final hoofdBedrag = heeftContract ? nogContract : nogUurbasis;
-    final sub1Links = heeftContract
-        ? _eur.format(vS ?? 0)
-        : _eur.format(salarisUurbasis);
+    final sub1Links =
+        heeftContract ? _eur.format(vS) : _eur.format(brutoGewerkt);
     final sub2 = _eur.format(voorschot);
 
     return Padding(
@@ -633,28 +651,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     return false;
   }
 
-  Map<String, dynamic>? _approvedHeroRow() {
-    final t = _geaccordeerdAllTimeAnalytics();
-    if (t.bruto == 0 && t.uren == 0) return null;
-    return {'totaal_bruto_verdiend': t.bruto, 'totaal_gewerkte_uren': t.uren};
-  }
-
-  double _urenDezeWeek() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final windowStart = today.subtract(const Duration(days: 6));
-    double sum = 0;
-    for (final row in _shiftsLijst) {
-      if (_urenStatusNorm(row) != 'geaccordeerd') continue;
-      final day = _parseShiftDay(row['geplande_datum']);
-      if (day == null) continue;
-      if (!day.isBefore(windowStart) && !day.isAfter(today)) {
-        sum += _asDouble(row['gewerkte_uren_decimaal']);
-      }
-    }
-    return sum;
-  }
-
   Map<String, dynamic>? _opdrachtEmbed(Map<String, dynamic> row) {
     final a = row['opdracht'];
     if (a is Map<String, dynamic>) return a;
@@ -723,29 +719,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     return t.isEmpty ? '—' : t;
   }
 
-  ({Color bg, Color fg, String label}) _statusPillUi(String? raw) {
-    final s = (raw ?? '').toLowerCase().trim();
-    if (s == 'uitbetaald') {
-      return (
-        bg: const Color(0xFFDCFCE7),
-        fg: const Color(0xFF166534),
-        label: 'Uitbetaald',
-      );
-    }
-    return (
-      bg: const Color(0xFFF3F4F6),
-      fg: const Color(0xFF4B5563),
-      label: 'Open',
-    );
-  }
-
-  List<Map<String, dynamic>> _maandenHistorieZonderHuidigeMaand() {
-    final key = _currentKalenderMaandKey();
-    return _maandenLijst
-        .where((row) => _kalenderMaandKey(row['kalender_maand']) != key)
-        .toList();
-  }
-
   BoxDecoration _cardDecoration({Border? border}) {
     return BoxDecoration(
       color: Colors.white,
@@ -772,106 +745,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
           offset: const Offset(0, 8),
         ),
       ],
-    );
-  }
-
-  Widget _heroCard(Map<String, dynamic>? row) {
-    final double displayAmount;
-    final double displayHours;
-    if (row != null) {
-      final rawAmount = row['totaal_bruto_verdiend'];
-      final rawHours = row['totaal_gewerkte_uren'];
-      displayAmount =
-          double.tryParse(rawAmount?.toString().trim() ?? '') ??
-          _parseLoonDouble(rawAmount);
-      displayHours =
-          double.tryParse(rawHours?.toString().trim() ?? '') ??
-          _parseLoonDouble(rawHours);
-    } else {
-      displayAmount = 0.0;
-      displayHours = 0.0;
-    }
-
-    final brutoText = _eur.format(displayAmount);
-    final urenText = displayHours == displayHours.roundToDouble()
-        ? displayHours.toInt().toString()
-        : NumberFormat.decimalPattern('nl_NL').format(displayHours);
-
-    final emptyMonthRows = row == null;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 26),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_deepNavy, _brightBlue],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _brightBlue.withValues(alpha: 0.35),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Totaal Verdiend (All-Time)',
-            style: GoogleFonts.lato(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-              color: Colors.white.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (emptyMonthRows)
-            Text(
-              'Nog geen uren geregistreerd.',
-              style: GoogleFonts.lato(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                height: 1.35,
-                color: Colors.white.withValues(alpha: 0.92),
-              ),
-            )
-          else ...[
-            Text(
-              brutoText,
-              style: GoogleFonts.lato(
-                fontSize: 40,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.5,
-                color: Colors.white,
-                height: 1.05,
-              ),
-            ),
-            const SizedBox(height: 22),
-            Row(
-              children: [
-                Text('🕒', style: GoogleFonts.lato(fontSize: 20)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '$urenText uur geregistreerd',
-                    style: GoogleFonts.lato(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
     );
   }
 
@@ -922,29 +795,274 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     );
   }
 
-  Widget _buildKpiRow() {
-    final weekUren = _urenDezeWeek();
-    final weekLabel = weekUren == weekUren.roundToDouble()
-        ? '${weekUren.toInt()} u'
-        : '${weekUren.toStringAsFixed(1)} u';
+  Widget _buildOverzichtSegmentToggle() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment<bool>(
+            value: true,
+            label: Text('Deze Maand'),
+            icon: Icon(Icons.calendar_month_rounded),
+          ),
+          ButtonSegment<bool>(
+            value: false,
+            label: Text('Historie'),
+            icon: Icon(Icons.history_rounded),
+          ),
+        ],
+        emptySelectionAllowed: false,
+        multiSelectionEnabled: false,
+        selected: {_overzichtIsDezeMaand},
+        onSelectionChanged: (Set<bool> next) {
+          if (next.isEmpty) return;
+          setState(() => _overzichtIsDezeMaand = next.first);
+        },
+      ),
+    );
+  }
+
+  Widget _buildKpiRowDezeMaand() {
+    final salarisMaand = _verwachtSalarisHuidigeMaand();
+    final urenMaandLabel = salarisMaand.uren == salarisMaand.uren.roundToDouble()
+        ? '${salarisMaand.uren.toInt()} u'
+        : '${salarisMaand.uren.toStringAsFixed(1)} u';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       child: Row(
         children: [
           _kpiChip(
-            title: 'Totaal diensten',
-            value: '${_overviewShiftsRows().length}',
-            icon: Icons.calendar_month_rounded,
+            title: 'Verwacht salaris',
+            value: _eur.format(salarisMaand.bruto),
+            icon: Icons.payments_outlined,
           ),
           const SizedBox(width: 12),
           _kpiChip(
-            title: 'Uren deze week',
-            value: weekLabel,
+            title: 'Uren deze maand',
+            value: urenMaandLabel,
             icon: Icons.schedule_rounded,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildKpiRowHistorie() {
+    final salaris = _verwachtSalarisHistorie();
+    final urenLabel = salaris.uren == salaris.uren.roundToDouble()
+        ? '${salaris.uren.toInt()} u'
+        : '${salaris.uren.toStringAsFixed(1)} u';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Row(
+        children: [
+          _kpiChip(
+            title: 'Totaal verdiend (historie)',
+            value: _eur.format(salaris.bruto),
+            icon: Icons.savings_outlined,
+          ),
+          const SizedBox(width: 12),
+          _kpiChip(
+            title: 'Uren (excl. deze maand)',
+            value: urenLabel,
+            icon: Icons.schedule_rounded,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMaandafsluitingCard(Map<String, dynamic> uitbetaling) {
+    final bruto = _parseLoonDouble(uitbetaling['berekend_bruto']);
+    final voorschot = _parseLoonDouble(uitbetaling['verrekend_voorschot']);
+    final isBetaald = uitbetaling['is_betaald'] == true;
+    final statusLabel = isBetaald
+        ? 'Betaald'
+        : 'In afwachting van uitbetaling';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFA5D6A7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long_rounded, color: Colors.green.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Maandafsluiting beschikbaar',
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    color: const Color(0xFF1B5E20),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Berekend bruto: ${_eur.format(bruto)}',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              color: const Color(0xFF2E7D32),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Verrekend voorschot: ${_eur.format(voorschot)}',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              color: Colors.grey.shade800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isBetaald
+                  ? const Color(0xFFDCFCE7)
+                  : const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isBetaald
+                    ? const Color(0xFF166534)
+                    : Colors.orange.shade700,
+              ),
+            ),
+            child: Text(
+              statusLabel,
+              style: GoogleFonts.lato(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+                color: isBetaald
+                    ? const Color(0xFF166534)
+                    : Colors.orange.shade900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistorieMaandSectie(String monthKey) {
+    final taken = _takenPerHistorischeMaand()[monthKey] ?? [];
+    final uitbetaling = _uitbetalingVoorMaandSleutel(monthKey);
+    final maandLabel = _maandSleutelNaarLabel(monthKey);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 20),
+        childrenPadding: EdgeInsets.zero,
+        initiallyExpanded: false,
+        title: Text(
+          maandLabel,
+          style: GoogleFonts.lato(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            color: _deepNavy,
+            letterSpacing: -0.3,
+          ),
+        ),
+        subtitle: Text(
+          '${taken.length} dienst${taken.length == 1 ? '' : 'en'}',
+          style: GoogleFonts.lato(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        children: [
+          if (uitbetaling != null) _buildMaandafsluitingCard(uitbetaling),
+          if (taken.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Text(
+                'Geen ingediende of geaccordeerde diensten in deze maand.',
+                style: GoogleFonts.lato(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Column(
+                children: [
+                  for (final row in taken) _shiftTile(row),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistorieInhoud() {
+    final maandSleutels = _historischeMaandSleutelsGesorteerd();
+    final uitbetalingenZonderTaken = _afgeslotenMaanden
+        .map((r) => _text(r['maand_sleutel']))
+        .where(
+          (k) =>
+              k.isNotEmpty &&
+              k != _currentKalenderMaandKey() &&
+              !maandSleutels.contains(k),
+        )
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    if (maandSleutels.isEmpty && uitbetalingenZonderTaken.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+        child: Text(
+          'Nog geen historie beschikbaar. Oudere maanden verschijnen hier '
+          'zodra je uren hebt ingediend of geaccordeerd.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.lato(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Colors.grey.shade700,
+            height: 1.45,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final key in maandSleutels) _buildHistorieMaandSectie(key),
+        for (final key in uitbetalingenZonderTaken) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Text(
+              _maandSleutelNaarLabel(key),
+              style: GoogleFonts.lato(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                color: _deepNavy,
+              ),
+            ),
+          ),
+          if (_uitbetalingVoorMaandSleutel(key) != null)
+            _buildMaandafsluitingCard(_uitbetalingVoorMaandSleutel(key)!),
+          const SizedBox(height: 16),
+        ],
+      ],
     );
   }
 
@@ -1076,164 +1194,11 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
 
   Widget _shiftTile(Map<String, dynamic> row) => _premiumShiftCard(row);
 
-  Widget _maandHistorieTile(Map<String, dynamic> row) {
-    final maand = _formatMaandLongNl(row['kalender_maand']);
-    final rawUren = row['totaal_gewerkte_uren'];
-    final rawBruto = row['totaal_bruto_verdiend'];
-    final urenVal =
-        double.tryParse(rawUren?.toString().trim() ?? '') ??
-        _parseLoonDouble(rawUren);
-    final brutoVal =
-        double.tryParse(rawBruto?.toString().trim() ?? '') ??
-        _parseLoonDouble(rawBruto);
-    final uren = urenVal == urenVal.roundToDouble()
-        ? urenVal.toInt().toString()
-        : NumberFormat.decimalPattern('nl_NL').format(urenVal);
-    final bruto = _eur.format(brutoVal);
-    final pill = _statusPillUi(row['status']?.toString());
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.white,
-        elevation: 2,
-        shadowColor: Colors.black.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: () => _showMonthDetails(row['kalender_maand']),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            maand,
-                            style: GoogleFonts.lato(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.5,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '$uren uur · $bruto',
-                            style: GoogleFonts.lato(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: pill.bg,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        pill.label,
-                        style: GoogleFonts.lato(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.2,
-                          color: pill.fg,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      'Bekijk specificatie',
-                      style: GoogleFonts.lato(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
-                        color: _brightBlue,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      size: 22,
-                      color: _brightBlue,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showMonthDetails(dynamic kalenderMaandRaw) async {
-    final kalenderMaand = _kalenderMaandKey(kalenderMaandRaw);
-    if (kalenderMaand.isEmpty || !mounted) return;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        final height = MediaQuery.sizeOf(sheetContext).height * 0.8;
-        return SelectionArea(
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            child: Container(
-              height: height,
-              color: _pageBg,
-              child: _MaandShiftsModal(
-                kalenderMaand: kalenderMaand,
-                headerTitle: _formatMaand(kalenderMaand),
-                shiftTile: _premiumShiftCard,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _emptyShifts() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 40, 24, 48),
       child: Text(
         'Je hebt nog geen diensten in dit overzicht.',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.lato(
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: Colors.grey.shade600,
-          height: 1.45,
-        ),
-      ),
-    );
-  }
-
-  Widget _emptyMaandenHistorie() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 40, 24, 48),
-      child: Text(
-        'Geen eerdere maanden beschikbaar.',
         textAlign: TextAlign.center,
         style: GoogleFonts.lato(
           fontSize: 15,
@@ -1560,10 +1525,8 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   }
 
   Widget _buildOverzichtTab() {
-    final overview = _overzichtLijstVoorModus();
-    final hist = _maandenHistorieZonderHuidigeMaand();
-    final pending = _pendingSubmittedHours();
-    final heroRow = _approvedHeroRow();
+    final overview = _overzichtDezeMaandLijst();
+    final pending = _pendingSubmittedHoursDezeMaand();
 
     return RefreshIndicator(
       color: _brightBlue,
@@ -1572,31 +1535,10 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(child: _buildOverzichtSegmentToggle()),
-          if (!_overzichtMaandModus) ...[
+          if (_overzichtIsDezeMaand) ...[
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                child: _heroCard(heroRow),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                child: Text(
-                  'In afwachting: ${_formatUrenNl(pending)} uur',
-                  style: GoogleFonts.lato(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(child: _buildKpiRow()),
-          ] else ...[
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                 child: Text(
                   'In afwachting: ${_formatUrenNl(pending)} uur',
                   style: GoogleFonts.lato(
@@ -1608,61 +1550,51 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
               ),
             ),
             SliverToBoxAdapter(child: _buildMaandHrDashboard()),
+            SliverToBoxAdapter(child: _buildKpiRowDezeMaand()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                child: Text(
+                  'Diensten deze maand',
+                  style: GoogleFonts.lato(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: _deepNavy,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+            ),
+            if (overview.isEmpty)
+              SliverToBoxAdapter(child: _emptyShifts())
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _shiftTile(overview[index]),
+                    childCount: overview.length,
+                  ),
+                ),
+              ),
+          ] else ...[
+            SliverToBoxAdapter(child: _buildKpiRowHistorie()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                child: Text(
+                  'Archief per maand',
+                  style: GoogleFonts.lato(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: _deepNavy,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(child: _buildHistorieInhoud()),
           ],
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-              child: Text(
-                _overzichtMaandModus
-                    ? 'Diensten deze maand'
-                    : 'Recente diensten',
-                style: GoogleFonts.lato(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: _deepNavy,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ),
-          ),
-          if (overview.isEmpty)
-            SliverToBoxAdapter(child: _emptyShifts())
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _shiftTile(overview[index]),
-                  childCount: overview.length,
-                ),
-              ),
-            ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Text(
-                'Maandoverzichten',
-                style: GoogleFonts.lato(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: _deepNavy,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ),
-          ),
-          if (hist.isEmpty)
-            SliverToBoxAdapter(child: _emptyMaandenHistorie())
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _maandHistorieTile(hist[index]),
-                  childCount: hist.length,
-                ),
-              ),
-            ),
           const SliverToBoxAdapter(child: SizedBox(height: mobileNavBuffer)),
         ],
       ),
@@ -1949,160 +1881,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
         ),
         const SizedBox(height: mobileNavBuffer),
       ],
-    );
-  }
-}
-
-class _MaandShiftsModal extends StatefulWidget {
-  const _MaandShiftsModal({
-    required this.kalenderMaand,
-    required this.headerTitle,
-    required this.shiftTile,
-  });
-
-  final String kalenderMaand;
-  final String headerTitle;
-  final Widget Function(Map<String, dynamic> row) shiftTile;
-
-  @override
-  State<_MaandShiftsModal> createState() => _MaandShiftsModalState();
-}
-
-class _MaandShiftsModalState extends State<_MaandShiftsModal> {
-  List<Map<String, dynamic>> _rows = [];
-  bool _loading = true;
-  String _errorMessage = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _errorMessage = 'Niet ingelogd.';
-      });
-      return;
-    }
-
-    try {
-      final raw = await Supabase.instance.client
-          .from('view_operator_maand_shifts')
-          .select()
-          .eq('operator_id', uid)
-          .eq('kalender_maand', widget.kalenderMaand)
-          .order('geplande_datum', ascending: false);
-
-      final list = (raw as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-
-      if (!mounted) return;
-      setState(() {
-        _rows = list;
-        _loading = false;
-        _errorMessage = '';
-      });
-    } catch (e, st) {
-      debugPrint('_MaandShiftsModal._load error: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _errorMessage = e.toString();
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 10),
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 18, 8, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Diensten in ${widget.headerTitle}',
-                    style: GoogleFonts.lato(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                      color: const Color(0xFF0F172A),
-                      height: 1.25,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  color: Colors.grey.shade700,
-                  onPressed: () => Navigator.of(context).pop(),
-                  tooltip: 'Sluiten',
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CupertinoActivityIndicator(radius: 18))
-                : _errorMessage.isNotEmpty
-                ? Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Kon diensten niet laden.\n$_errorMessage',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.lato(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: Colors.red.shade800,
-                        height: 1.45,
-                      ),
-                    ),
-                  )
-                : _rows.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Text(
-                        'Geen diensten gevonden voor deze maand.',
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.lato(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade600,
-                          height: 1.45,
-                        ),
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-                    itemCount: _rows.length,
-                    itemBuilder: (context, index) =>
-                        widget.shiftTile(_rows[index]),
-                  ),
-          ),
-        ],
-      ),
     );
   }
 }

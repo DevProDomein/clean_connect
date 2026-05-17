@@ -62,7 +62,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   /// Ingeplande opdrachten voor de momenteel gekozen kalenderdag (query op `opdrachten`, status `ingepland`).
   List<Map<String, dynamic>> _reedsGeplandeTaken = [];
   bool _isLoadingReedsGeplande = false;
-  final Set<String> _reopeningOpdrachtIds = {};
   bool _isLoading = true;
 
   @override
@@ -1101,43 +1100,33 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     }
   }
 
-  Future<void> _opdrachtOpnieuwOpenen(String opdrachtId) async {
-    final id = _text(opdrachtId);
-    if (id.isEmpty || _reopeningOpdrachtIds.contains(id)) return;
-    setState(() => _reopeningOpdrachtIds.add(id));
+  Future<void> _opdrachtOpnieuwOpenen(Map<String, dynamic> dataObject) async {
     try {
-      await AppSupabase.client
-          .from('opdrachten')
-          .update({'status': 'open'})
-          .eq('id', id);
+      final opdrachtId =
+          dataObject['opdracht_id']?.toString() ??
+          dataObject['id']?.toString();
+
+      if (opdrachtId == null || opdrachtId.trim().isEmpty) {
+        throw Exception('Kan ID niet vinden in het object.');
+      }
+
+      await AppSupabase.client.rpc(
+        'reset_opdracht_naar_open',
+        params: {'p_opdracht_id': opdrachtId},
+      );
+
       if (!mounted) return;
+
+      Navigator.pop(context);
       await _loadTasks();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            'Opdracht opnieuw geopend. Je kunt deze weer handmatig inplannen.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
-        ),
-      );
     } catch (e) {
-      debugPrint('Planbord _opdrachtOpnieuwOpenen failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.red.shade800,
-          content: Text(
-            'Opnieuw openen mislukt: $e',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
+          content: Text('Fout bij openen: $e'),
+          backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      _reopeningOpdrachtIds.remove(id);
-      if (mounted) setState(() {});
     }
   }
 
@@ -3029,14 +3018,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         ),
                         const SizedBox(height: 8),
                         FilledButton.icon(
-                          onPressed:
-                              (opdrachtId.isEmpty ||
-                                  _reopeningOpdrachtIds.contains(opdrachtId))
+                          onPressed: opdrachtId.isEmpty
                               ? null
-                              : () async {
-                                  Navigator.of(ctx).pop();
-                                  await _opdrachtOpnieuwOpenen(opdrachtId);
-                                },
+                              : () => _opdrachtOpnieuwOpenen(item),
                           icon: const Icon(Icons.undo_rounded, size: 20),
                           style: FilledButton.styleFrom(
                             minimumSize: const Size.fromHeight(52),
@@ -3577,7 +3561,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 if (id.isEmpty) return;
                 _openManualPlanModal(id);
               },
-              onPlannedTap: _openReedsGeplandeInfoModal,
+              onPlannedTap: (task) {
+                final id = _text(task['id']);
+                if (id.isEmpty) return;
+                _openManualPlanModal(id);
+              },
             ),
           ),
         ),

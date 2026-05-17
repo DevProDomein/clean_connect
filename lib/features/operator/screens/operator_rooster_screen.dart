@@ -1,14 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/app_drawer.dart';
-import '../../../services/live_activity_service.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
-import 'active_work_order_screen.dart';
 import '../widgets/packing_list_modal.dart';
 
 class OperatorRoosterScreen extends StatefulWidget {
@@ -31,9 +27,6 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   int _kpiTakenVandaag = 0;
   int _kpiDezeWeek = 0;
 
-  Timer? _liveTimer;
-  DateTime _now = DateTime.now();
-
   String _getGreeting() {
     final hour = DateTime.now().hour;
     if (hour >= 5 && hour <= 11) return 'Goedemorgen';
@@ -45,15 +38,6 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   void initState() {
     super.initState();
     _loadData();
-    _liveTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
-    });
-  }
-
-  @override
-  void dispose() {
-    _liveTimer?.cancel();
-    super.dispose();
   }
 
   Future<void> _loadData({bool silent = false}) async {
@@ -260,33 +244,6 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     );
   }
 
-  String _getLiveDuration(dynamic startTimeStr) {
-    if (startTimeStr == null) return '00:00:00';
-    final s = startTimeStr.toString().trim();
-    if (s.isEmpty) return '00:00:00';
-    try {
-      final now = DateTime.now();
-      final parts = s.split(':');
-      if (parts.length < 2) return '00:00:00';
-      final start = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        int.parse(parts[0]),
-        int.parse(parts[1]),
-        parts.length > 2 ? int.parse(parts[2].split('.').first) : 0,
-      );
-
-      final diff = _now.difference(start);
-      if (diff.isNegative) return '00:00:00';
-
-      String twoDigits(int n) => n.toString().padLeft(2, '0');
-      return '${twoDigits(diff.inHours)}:${twoDigits(diff.inMinutes.remainder(60))}:${twoDigits(diff.inSeconds.remainder(60))}';
-    } catch (_) {
-      return '--:--:--';
-    }
-  }
-
   String _safeTime(dynamic timeValue) {
     if (timeValue == null) return '00:00';
     String t = timeValue.toString();
@@ -313,69 +270,39 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     );
   }
 
-  void _openActieveOpdracht(Map<String, dynamic> task) {
-    Navigator.push<void>(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => ActiveWorkOrderScreen(
-          opdrachtId: task['opdracht_id'].toString(),
-          planningId: task['planning_id'].toString(),
-          startTime: task['werkelijke_starttijd']?.toString(),
-        ),
-      ),
-    ).then((_) {
-      if (mounted) _loadData(silent: true);
-    });
+  bool _isEindtijdVerstreken(Map<String, dynamic> task) {
+    var isEindtijdVerstreken = false;
+    final nu = DateTime.now();
+
+    try {
+      final rawDatum = task['geplande_datum']?.toString() ?? '';
+      final dateStr =
+          rawDatum.length >= 10 ? rawDatum.substring(0, 10) : rawDatum;
+      final taakDatum = DateTime.tryParse(dateStr) ?? nu;
+
+      final eindtijd = task['rooster_eindtijd']?.toString();
+      if (eindtijd != null && eindtijd.contains(':')) {
+        final timeParts = eindtijd.split(':');
+        final uren = int.parse(timeParts[0]);
+        final minuten = int.parse(timeParts[1]);
+        final exactEindMoment = DateTime(
+          taakDatum.year,
+          taakDatum.month,
+          taakDatum.day,
+          uren,
+          minuten,
+        );
+        isEindtijdVerstreken = nu.isAfter(exactEindMoment);
+      }
+    } catch (e) {
+      debugPrint('Kon eindtijd niet parsen voor uren-knop: $e');
+    }
+
+    return isEindtijdVerstreken;
   }
 
-  Future<void> _startOpdracht(Map<String, dynamic> task) async {
-    setState(() => _isLoading = true);
-    try {
-      final nowString = DateTime.now().toIso8601String().substring(11, 19);
-
-      debugPrint('X-RAY: Attempting to Clock In for planning_id: ${task['planning_id']}');
-
-      final updateResponse = await _supabase.from('opdracht_planning').update({
-        'status': 'in_uitvoering',
-        'werkelijke_starttijd': nowString,
-      }).eq('id', task['planning_id'].toString()).select();
-
-      debugPrint('X-RAY: Clock In Success! Response: $updateResponse');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ingeklokt!'), backgroundColor: Colors.green),
-        );
-        final taakNaam =
-            (task['bedrijfsnaam'] ?? task['project_naam'] ?? 'Actieve opdracht')
-                .toString();
-        LiveActivityService.startLiveTimer(
-          taakNaam,
-          DateTime.now().millisecondsSinceEpoch,
-        );
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => ActiveWorkOrderScreen(
-              opdrachtId: task['opdracht_id'].toString(),
-              planningId: task['planning_id'].toString(),
-              startTime: nowString,
-            ),
-          ),
-        );
-        _loadData();
-      }
-    } catch (e, st) {
-      debugPrint('X-RAY FATAL: Clock In Failed: $e');
-      debugPrint('$st');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fout bij inklokken: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  void _openMijnUren() {
+    Navigator.of(context).pushNamed('/operator/uren');
   }
 
   @override
@@ -518,14 +445,14 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
   Widget _buildTodayCard(Map<String, dynamic> task) {
     final String status = _normStatus(task['mijn_persoonlijke_status']);
-    final isActive = status == 'in_uitvoering';
     final isGepland = status == 'gepland';
     final isVoltooid = status == 'voltooid';
+    final isEindtijdVerstreken = _isEindtijdVerstreken(task);
 
     String badgeLabel;
     Color badgeColor;
     Color bgChip;
-    if (isActive) {
+    if (status == 'in_uitvoering') {
       badgeLabel = 'Nu Bezig';
       badgeColor = Colors.blueAccent;
       bgChip = Colors.blue.shade50;
@@ -548,7 +475,6 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: isActive ? Border.all(color: Colors.blueAccent, width: 2) : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -603,86 +529,34 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
             ],
           ),
           const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1)),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _openPaklijst(task['opdracht_id'].toString()),
-                icon: const Text('📦', style: TextStyle(fontSize: 16)),
-                label: const Text('Paklijst'),
-                style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: _buildTodayPrimaryActions(task, status)),
-            ],
+          OutlinedButton.icon(
+            onPressed: () => _openPaklijst(task['opdracht_id'].toString()),
+            icon: const Text('📦', style: TextStyle(fontSize: 16)),
+            label: const Text('Paklijst'),
+            style: OutlinedButton.styleFrom(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
           ),
-          if (isActive) ...[
+          if (isEindtijdVerstreken) ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => _openActieveOpdracht(task),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.access_time),
+                label: const Text('Uren indienen'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                child: const Text('Open opdracht details'),
+                onPressed: _openMijnUren,
               ),
             ),
           ],
         ],
       ),
     );
-  }
-
-  Widget _buildTodayPrimaryActions(Map<String, dynamic> task, String status) {
-    if (status == 'gepland') {
-      return ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-        onPressed: () => _startOpdracht(task),
-        child: const Text('▶ INKLOKKEN', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-      );
-    } else if (status == 'in_uitvoering') {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(16)),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.timer, color: Colors.red.shade700, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                _getLiveDuration(task['werkelijke_starttijd']),
-                style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else if (status == 'voltooid') {
-      return ElevatedButton(
-        onPressed: null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.grey.shade400,
-          disabledBackgroundColor: Colors.grey.shade400,
-          foregroundColor: Colors.white,
-          disabledForegroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-        child: const Text('Afgerond', style: TextStyle(fontWeight: FontWeight.bold)),
-      );
-    }
-    return const SizedBox.shrink();
   }
 
   Widget _buildUpcomingCard(Map<String, dynamic> task) {

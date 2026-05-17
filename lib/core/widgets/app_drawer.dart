@@ -18,7 +18,7 @@ import '../../features/admin/screens/bank_dashboard_screen.dart';
 import '../../features/admin/screens/article_management_screen.dart';
 import '../../features/admin/screens/debtor_dashboard_screen.dart';
 import '../../features/admin/screens/financial_master_data_screen.dart';
-import '../../features/admin/screens/payroll_month_overview_screen.dart';
+import '../../features/admin/screens/salaris_administratie_screen.dart';
 import '../../features/admin/screens/uren_accorderen_screen.dart';
 import '../../features/admin/screens/period_close_screen.dart';
 import '../../features/admin/screens/factuur_editor_screen.dart';
@@ -342,10 +342,10 @@ class AppDrawerContent extends StatelessWidget {
                         ),
                       if (canPeriodClose)
                         navTile(
-                          name: '/admin/settings/payroll-month',
-                          icon: Icons.payments_outlined,
-                          title: 'Loonadministratie',
-                          screen: const PayrollMonthOverviewScreen(),
+                          name: '/admin/salaris-administratie',
+                          icon: Icons.account_balance_wallet_outlined,
+                          title: 'Salarisadministratie',
+                          screen: const SalarisAdministratieScreen(),
                         ),
                       if (isEnterpriseAdmin)
                         navTile(
