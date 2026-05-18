@@ -3245,31 +3245,30 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        Expanded(
-          child: weergaveLijst.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      leegBericht,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w700,
-                        color: cs.onSurface.withValues(alpha: 0.62),
-                      ),
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  itemCount: weergaveLijst.length,
-                  itemBuilder: (context, index) => _buildManualOpenTaskCard(
-                    weergaveLijst[index],
-                    cs,
-                    isDark,
-                  ),
-                ),
-        ),
+        if (weergaveLijst.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+            child: Text(
+              leegBericht,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface.withValues(alpha: 0.62),
+              ),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 8),
+            itemCount: weergaveLijst.length,
+            itemBuilder: (context, index) => _buildManualOpenTaskCard(
+              weergaveLijst[index],
+              cs,
+              isDark,
+            ),
+          ),
       ],
     );
   }
@@ -3293,30 +3292,32 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        Expanded(
-          child: isLoadingReedsGeplande
-              ? const Center(child: CircularProgressIndicator())
-              : reedsGeplande.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      'Geen planningen voor deze dag',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w700,
-                        color: cs.onSurface.withValues(alpha: 0.62),
-                      ),
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  itemCount: reedsGeplande.length,
-                  itemBuilder: (context, index) =>
-                      _buildReedsGeplandeCard(reedsGeplande[index], cs, isDark),
-                ),
-        ),
+        if (isLoadingReedsGeplande)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (reedsGeplande.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+            child: Text(
+              'Geen planningen voor deze dag',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface.withValues(alpha: 0.62),
+              ),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 8),
+            itemCount: reedsGeplande.length,
+            itemBuilder: (context, index) =>
+                _buildReedsGeplandeCard(reedsGeplande[index], cs, isDark),
+          ),
       ],
     );
   }
@@ -3327,8 +3328,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final weergaveLijst = _getZichtbareOpenTaken();
     final openLeegBericht = _openTakenLeegBericht();
 
-    return Column(
-      children: [
+    return SingleChildScrollView(
+      child: Column(
+        children: [
         if (isMobile)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -3569,111 +3571,105 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             ),
           ),
         ),
-        Expanded(
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF12121A) : Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
-                  blurRadius: 22,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Agenda — ${DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(_manualSelectedDay)}',
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Kalender: ${_calendarViewMode.toLowerCase()} · Open (rood) versus ingepland (blauw) voor de geselecteerde dag',
-                        style: GoogleFonts.lato(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface.withValues(alpha: 0.72),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: isMobile
-                            ? Column(
-                                children: [
-                                  Expanded(
-                                    child: _manualSplitOpenColumn(
-                                      cs,
-                                      isDark,
-                                      weergaveLijst,
-                                      openLeegBericht,
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                    child: Divider(
-                                      height: 1,
-                                      color: cs.onSurface.withValues(
-                                        alpha: 0.12,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: _manualSplitPlannedColumn(
-                                      cs,
-                                      isDark,
-                                      _reedsGeplandeTaken,
-                                      _isLoadingReedsGeplande,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: _manualSplitOpenColumn(
-                                      cs,
-                                      isDark,
-                                      weergaveLijst,
-                                      openLeegBericht,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  VerticalDivider(
-                                    width: 1,
-                                    thickness: 1,
-                                    color: cs.onSurface.withValues(alpha: 0.12),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: _manualSplitPlannedColumn(
-                                      cs,
-                                      isDark,
-                                      _reedsGeplandeTaken,
-                                      _isLoadingReedsGeplande,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ],
-                  ),
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF12121A) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
+                blurRadius: 22,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
+          child: _isLoading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 48),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Agenda — ${DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(_manualSelectedDay)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Kalender: ${_calendarViewMode.toLowerCase()} · Open (rood) versus ingepland (blauw) voor de geselecteerde dag',
+                      style: GoogleFonts.lato(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface.withValues(alpha: 0.72),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (isMobile)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _manualSplitOpenColumn(
+                            cs,
+                            isDark,
+                            weergaveLijst,
+                            openLeegBericht,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Divider(
+                              height: 1,
+                              color: cs.onSurface.withValues(alpha: 0.12),
+                            ),
+                          ),
+                          _manualSplitPlannedColumn(
+                            cs,
+                            isDark,
+                            _reedsGeplandeTaken,
+                            _isLoadingReedsGeplande,
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _manualSplitOpenColumn(
+                              cs,
+                              isDark,
+                              weergaveLijst,
+                              openLeegBericht,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          VerticalDivider(
+                            width: 1,
+                            thickness: 1,
+                            color: cs.onSurface.withValues(alpha: 0.12),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _manualSplitPlannedColumn(
+                              cs,
+                              isDark,
+                              _reedsGeplandeTaken,
+                              _isLoadingReedsGeplande,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
         ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -4268,7 +4264,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                 daysParam: daysParam,
                 onMonthChange: widget.onMonthStickyChanged,
                 pinchToZoomParam: PinchToZoom(pinchToZoom: false),
-                verticalScrollPhysics: const ClampingScrollPhysics(),
+                verticalScrollPhysics: const NeverScrollableScrollPhysics(),
               ),
             ),
           ),
@@ -4461,8 +4457,6 @@ class _ExtraOpdrachtModal extends StatefulWidget {
 }
 
 class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
-  final TextEditingController _urenCtrl = TextEditingController();
-
   bool _loadingProjects = true;
 
   bool _saving = false;
@@ -4472,6 +4466,10 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
   List<Map<String, dynamic>> _projects = const [];
 
   Map<String, dynamic>? _selectedProject;
+
+  int _benodigdeOperators = 1;
+
+  double _benodigdeUren = 1.0;
 
   DateTime? _date;
 
@@ -4488,8 +4486,6 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   @override
   void dispose() {
-    _urenCtrl.dispose();
-
     super.dispose();
   }
 
@@ -4567,6 +4563,26 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
   String _timeToDb(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
 
+  String _projectLabel(Map<String, dynamic> project) {
+    final naam = _t(project['project_naam']);
+    return naam.isEmpty ? 'Naamloos project' : naam;
+  }
+
+  TimeOfDay? _berekendeEindtijdBijEenOperator() {
+    if (_start == null) return null;
+    var totaalMinuten = _start!.hour * 60 + _start!.minute;
+    totaalMinuten += (_benodigdeUren * 60).round();
+    return TimeOfDay(
+      hour: (totaalMinuten ~/ 60) % 24,
+      minute: totaalMinuten % 60,
+    );
+  }
+
+  TimeOfDay? _definitieveEindtijd() {
+    if (_benodigdeOperators >= 2) return _end;
+    return _berekendeEindtijdBijEenOperator();
+  }
+
   Future<void> _save() async {
     if (_saving) return;
 
@@ -4582,15 +4598,26 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
       return;
     }
 
-    if (_start == null || _end == null) {
-      setState(() => _error = 'Kies start- en eindtijd.');
+    if (_start == null) {
+      setState(() => _error = 'Kies een starttijd.');
 
       return;
     }
 
-    final uren = double.tryParse(_urenCtrl.text.trim().replaceAll(',', '.'));
+    if (_benodigdeOperators >= 2 && _end == null) {
+      setState(() => _error = 'Kies een eindtijd (meerdere operators).');
 
-    if (uren == null || uren <= 0) {
+      return;
+    }
+
+    final eind = _definitieveEindtijd();
+    if (eind == null) {
+      setState(() => _error = 'Kon eindtijd niet bepalen.');
+
+      return;
+    }
+
+    if (_benodigdeUren <= 0) {
       setState(() => _error = 'Vul geldige benodigde uren in.');
 
       return;
@@ -4622,11 +4649,13 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
         'tijdslot_start': _timeToDb(_start!),
 
-        'tijdslot_eind': _timeToDb(_end!),
+        'tijdslot_eind': _timeToDb(eind),
 
-        'benodigde_uren_totaal': uren,
+        'benodigde_operators': _benodigdeOperators,
 
-        'verwachte_uren_totaal': uren,
+        'benodigde_uren_totaal': _benodigdeUren,
+
+        'verwachte_uren_totaal': _benodigdeUren,
 
         'status': 'open',
       });
@@ -4715,39 +4744,67 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                   const SizedBox(height: 10),
                 ],
 
-                DropdownButtonFormField<Map<String, dynamic>>(
-                  key: ValueKey(
-                    _selectedProject == null
-                        ? 'none'
-                        : _t(_selectedProject!['id']),
-                  ),
-
-                  initialValue: _selectedProject,
-
-                  items: _projects
-                      .map(
-                        (p) => DropdownMenuItem<Map<String, dynamic>>(
-                          value: p,
-
-                          child: Text(
-                            _t(p['project_naam']).isEmpty
-                                ? 'Project'
-                                : _t(p['project_naam']),
-
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                if (_loadingProjects)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: LinearProgressIndicator(),
+                  )
+                else
+                  Autocomplete<Map<String, dynamic>>(
+                    key: ValueKey(
+                      _selectedProject == null
+                          ? 'project-none'
+                          : _t(_selectedProject!['id']),
+                    ),
+                    displayStringForOption: _projectLabel,
+                    optionsBuilder: (textEditingValue) {
+                      if (textEditingValue.text.isEmpty) {
+                        return _projects;
+                      }
+                      final q = textEditingValue.text.toLowerCase();
+                      return _projects.where((project) {
+                        final naam =
+                            project['project_naam']?.toString().toLowerCase() ??
+                            '';
+                        return naam.contains(q);
+                      });
+                    },
+                    onSelected: (option) {
+                      if (_loadingProjects || _saving) return;
+                      setState(() => _selectedProject = option);
+                    },
+                    fieldViewBuilder:
+                        (context, controller, focusNode, onFieldSubmitted) {
+                      return TextFormField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        enabled: !_loadingProjects && !_saving,
+                        onChanged: (_) {
+                          if (_selectedProject != null) {
+                            setState(() => _selectedProject = null);
+                          }
+                        },
+                        decoration: InputDecoration(
+                          labelText: 'Zoek en selecteer een project',
+                          prefixIcon: const Icon(Icons.search),
+                          border: const OutlineInputBorder(),
+                          suffixIcon: _selectedProject != null
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: _saving
+                                      ? null
+                                      : () {
+                                          setState(() {
+                                            _selectedProject = null;
+                                            controller.clear();
+                                          });
+                                        },
+                                )
+                              : null,
                         ),
-                      )
-                      .toList(),
-
-                  onChanged: (_loadingProjects || _saving)
-                      ? null
-                      : (v) => setState(() => _selectedProject = v),
-
-                  decoration: const InputDecoration(
-                    labelText: 'Selecteer Project',
+                      );
+                    },
                   ),
-                ),
 
                 const SizedBox(height: 12),
 
@@ -4784,35 +4841,117 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                         ),
                       ),
                     ),
+                    if (_benodigdeOperators >= 2) ...[
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _saving
+                              ? null
+                              : () => _pickTime(start: false),
 
-                    const SizedBox(width: 10),
-
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _saving
-                            ? null
-                            : () => _pickTime(start: false),
-
-                        child: Text(
-                          _end == null ? 'Eindtijd' : _end!.format(context),
+                          child: Text(
+                            _end == null ? 'Eindtijd' : _end!.format(context),
+                          ),
                         ),
                       ),
+                    ],
+                  ],
+                ),
+                if (_benodigdeOperators == 1 && _start != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Eindtijd wordt automatisch berekend: '
+                    '${_berekendeEindtijdBijEenOperator()?.format(context) ?? '—'}',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 16),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Benodigde operators:',
+                      style: GoogleFonts.inter(fontSize: 16),
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.remove_circle_outline,
+                            color: Colors.blue,
+                          ),
+                          onPressed: _saving || _benodigdeOperators <= 1
+                              ? null
+                              : () => setState(() => _benodigdeOperators--),
+                        ),
+                        Text(
+                          '$_benodigdeOperators',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.add_circle_outline,
+                            color: Colors.blue,
+                          ),
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() => _benodigdeOperators++),
+                        ),
+                      ],
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
-                TextField(
-                  controller: _urenCtrl,
-
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-
-                  decoration: const InputDecoration(
-                    labelText: 'Benodigde uren',
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Benodigde uren:',
+                      style: GoogleFonts.inter(fontSize: 16),
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.remove_circle_outline,
+                            color: Colors.blue,
+                          ),
+                          onPressed: _saving || _benodigdeUren <= 0.25
+                              ? null
+                              : () => setState(
+                                  () => _benodigdeUren -= 0.25,
+                                ),
+                        ),
+                        Text(
+                          '${_benodigdeUren.toStringAsFixed(2)} u',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.add_circle_outline,
+                            color: Colors.blue,
+                          ),
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() => _benodigdeUren += 0.25),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 18),
