@@ -40,6 +40,8 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
   double _duurUren = 1.5; // basis_uren_per_opdracht (quarter-hour steps)
   final Set<String> _days = {};
   String _looptijd = '1_jaar';
+  bool _isDatumOnbepaald = false;
+  int _aantalOperators = 1;
   bool _loadingKlanten = true;
   bool _saving = false;
 
@@ -147,6 +149,51 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
     });
   }
 
+  bool get _isIncidenteel => _frequentieType == 'incidenteel';
+
+  double get _totaleBerekendeUren =>
+      _isIncidenteel ? _duurUren * _aantalOperators : _duurUren;
+
+  Map<String, String?> _datumVeldenVoorPayload() {
+    if (_isIncidenteel && _isDatumOnbepaald) {
+      return {
+        'start_datum': null,
+        'eind_datum': null,
+        'contract_startdatum': null,
+        'contract_einddatum': null,
+      };
+    }
+    if (_start == null || _eind == null) {
+      return {
+        'start_datum': null,
+        'eind_datum': null,
+        'contract_startdatum': null,
+        'contract_einddatum': null,
+      };
+    }
+    final start = _fmtDateDb(_start!);
+    final eind = _fmtDateDb(_eind!);
+    return {
+      'start_datum': start,
+      'eind_datum': eind,
+      'contract_startdatum': start,
+      'contract_einddatum': eind,
+    };
+  }
+
+  bool _valideerDatumsVoorOpslag() {
+    if (_isIncidenteel && _isDatumOnbepaald) return true;
+    if (_start == null || _eind == null) {
+      _toast('Kies start- en einddatum project.', err: true);
+      return false;
+    }
+    if (_eind!.isBefore(_start!)) {
+      _toast('Eind moet na start liggen.', err: true);
+      return false;
+    }
+    return true;
+  }
+
   void _applyLooptijdFromStart() {
     final s = _start;
     if (s == null) return;
@@ -245,14 +292,7 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
         return;
       }
     }
-    if (_start == null || _eind == null) {
-      _toast('Kies start- en einddatum project.', err: true);
-      return;
-    }
-    if (_eind!.isBefore(_start!)) {
-      _toast('Eind moet na start liggen.', err: true);
-      return;
-    }
+    if (!_valideerDatumsVoorOpslag()) return;
     if (_tStart == null || _tEnd == null) {
       _toast('Kies starttijd en eindtijd.', err: true);
       return;
@@ -326,12 +366,12 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
       'contact_telefoon': _text(b['contact_telefoon'] ?? b['telefoon'] ?? b['vast_telefoonnummer']),
       'frequentie_type': _frequentieType,
       'periodieke_frequentie': _frequentieType == 'periodiek' ? _periodiek : null,
-      'contract_startdatum': _fmtDateDb(_start!), // db column name kept
-      'contract_einddatum': _fmtDateDb(_eind!),   // db column name kept
+      'contract_startdatum': _datumVeldenVoorPayload()['contract_startdatum'],
+      'contract_einddatum': _datumVeldenVoorPayload()['contract_einddatum'],
       'reguliere_weekdagen': _days.map((d) => d.toLowerCase()).toList(),
       'tijdslot_start': _fmtTimeDb(_tStart!),
       'tijdslot_eind': _fmtTimeDb(_tEnd!),
-      'basis_uren_per_opdracht': _duurUren,
+      'basis_uren_per_opdracht': _totaleBerekendeUren,
       'uitvoer_adres_volledig': definitiefAdres,
       'facilitator_id': currentUserId,
       'klant_id': klantId,
@@ -401,14 +441,7 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
         return;
       }
     }
-    if (_start == null || _eind == null) {
-      _toast('Kies start- en einddatum project.', err: true);
-      return;
-    }
-    if (_eind!.isBefore(_start!)) {
-      _toast('Eind moet na start liggen.', err: true);
-      return;
-    }
+    if (!_valideerDatumsVoorOpslag()) return;
     if (_tStart == null || _tEnd == null) {
       _toast('Kies starttijd en eindtijd.', err: true);
       return;
@@ -500,15 +533,11 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
           _text(b['bedrijfsnaam']).isEmpty ? 'Project' : _text(b['bedrijfsnaam']),
       'werk_regio': _werkRegio,
       'frequentie_type': _frequentieType,
-      // Required by projecten table (NOT NULL constraints).
-      'start_datum': _fmtDateDb(_start!),
-      'eind_datum': _fmtDateDb(_eind!),
-      'contract_startdatum': _fmtDateDb(_start!),
-      'contract_einddatum': _fmtDateDb(_eind!),
+      ..._datumVeldenVoorPayload(),
       'reguliere_weekdagen': null,
       'tijdslot_start': _fmtTimeDb(_tStart!),
       'tijdslot_eind': _fmtTimeDb(_tEnd!),
-      'basis_uren_per_opdracht': _duurUren,
+      'basis_uren_per_opdracht': _totaleBerekendeUren,
       'uitvoer_adres_volledig': definitiefAdres,
       'facilitator_id': currentUserId,
       'klant_id': klantId,
@@ -646,6 +675,10 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
                               if (_frequentieType != 'periodiek') {
                                 _periodiek = '1_keer_per_jaar';
                               }
+                              if (_frequentieType != 'incidenteel') {
+                                _isDatumOnbepaald = false;
+                                _aantalOperators = 1;
+                              }
                             }),
                           ),
                           const SizedBox(height: 12),
@@ -692,78 +725,107 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
                             validator: (v) =>
                                 v == null || v.isEmpty ? 'Verplicht' : null,
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _dateTile(
-                                  'Start project',
-                                  _start,
-                                  (d) => setState(() {
-                                    _start = d;
-                                    _applyLooptijdFromStart();
-                                  }),
+                          if (_isIncidenteel) ...[
+                            CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                'Datum onbepaald',
+                                style: GoogleFonts.lato(
+                                  fontWeight: FontWeight.w800,
+                                  color: _navy,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              ChoiceChip(
-                                label: const Text('6 maanden'),
-                                selected: _looptijd == '6_maanden',
-                                onSelected: (v) => setState(() {
-                                  _looptijd = '6_maanden';
-                                  _applyLooptijdFromStart();
-                                }),
-                              ),
-                              ChoiceChip(
-                                label: const Text('1 jaar'),
-                                selected: _looptijd == '1_jaar',
-                                onSelected: (v) => setState(() {
-                                  _looptijd = '1_jaar';
-                                  _applyLooptijdFromStart();
-                                }),
-                              ),
-                              ChoiceChip(
-                                label: const Text('2 jaar'),
-                                selected: _looptijd == '2_jaar',
-                                onSelected: (v) => setState(() {
-                                  _looptijd = '2_jaar';
-                                  _applyLooptijdFromStart();
-                                }),
-                              ),
-                              ChoiceChip(
-                                label: const Text('Kies einddatum'),
-                                selected: _looptijd == 'anders',
-                                onSelected: (v) => setState(() {
-                                  _looptijd = 'anders';
-                                }),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          if (_looptijd == 'anders')
-                            _dateTile(
-                              'Eind project',
-                              _eind,
-                              (d) => setState(() => _eind = d),
-                            )
-                          else
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'Eind project: ${_fmtDateUi(_eind).isEmpty ? '—' : _fmtDateUi(_eind)}',
+                              subtitle: Text(
+                                'Er is nog geen vaste start- en einddatum voor deze klus.',
                                 style: GoogleFonts.lato(
-                                  fontWeight: FontWeight.w700,
+                                  fontWeight: FontWeight.w600,
                                   color: _muted,
                                 ),
                               ),
+                              value: _isDatumOnbepaald,
+                              onChanged: (value) {
+                                setState(() {
+                                  _isDatumOnbepaald = value ?? false;
+                                });
+                              },
+                              controlAffinity: ListTileControlAffinity.leading,
                             ),
-                          const SizedBox(height: 12),
+                            const SizedBox(height: 8),
+                          ],
+                          if (!_isDatumOnbepaald) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _dateTile(
+                                    'Start project',
+                                    _start,
+                                    (d) => setState(() {
+                                      _start = d;
+                                      _applyLooptijdFromStart();
+                                    }),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('6 maanden'),
+                                  selected: _looptijd == '6_maanden',
+                                  onSelected: (v) => setState(() {
+                                    _looptijd = '6_maanden';
+                                    _applyLooptijdFromStart();
+                                  }),
+                                ),
+                                ChoiceChip(
+                                  label: const Text('1 jaar'),
+                                  selected: _looptijd == '1_jaar',
+                                  onSelected: (v) => setState(() {
+                                    _looptijd = '1_jaar';
+                                    _applyLooptijdFromStart();
+                                  }),
+                                ),
+                                ChoiceChip(
+                                  label: const Text('2 jaar'),
+                                  selected: _looptijd == '2_jaar',
+                                  onSelected: (v) => setState(() {
+                                    _looptijd = '2_jaar';
+                                    _applyLooptijdFromStart();
+                                  }),
+                                ),
+                                ChoiceChip(
+                                  label: const Text('Kies einddatum'),
+                                  selected: _looptijd == 'anders',
+                                  onSelected: (v) => setState(() {
+                                    _looptijd = 'anders';
+                                  }),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            if (_looptijd == 'anders')
+                              _dateTile(
+                                'Eind project',
+                                _eind,
+                                (d) => setState(() => _eind = d),
+                              )
+                            else
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Eind project: ${_fmtDateUi(_eind).isEmpty ? '—' : _fmtDateUi(_eind)}',
+                                  style: GoogleFonts.lato(
+                                    fontWeight: FontWeight.w700,
+                                    color: _muted,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(height: 12),
+                          ],
                           Row(
                             children: [
                               Expanded(
@@ -783,6 +845,51 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
                               ),
                             ],
                           ),
+                          if (_isIncidenteel) ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Aantal operators:',
+                                  style: GoogleFonts.lato(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: _navy,
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.remove_circle_outline,
+                                        color: Colors.blue,
+                                      ),
+                                      onPressed: _aantalOperators > 1
+                                          ? () => setState(() => _aantalOperators--)
+                                          : null,
+                                    ),
+                                    Text(
+                                      '$_aantalOperators',
+                                      style: GoogleFonts.lato(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: _navy,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.add_circle_outline,
+                                        color: Colors.blue,
+                                      ),
+                                      onPressed: () =>
+                                          setState(() => _aantalOperators++),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                          ],
                           const SizedBox(height: 10),
                           Row(
                             children: [
@@ -813,6 +920,19 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
                               ),
                             ],
                           ),
+                          if (_isIncidenteel && _aantalOperators > 1)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8, bottom: 16),
+                              child: Text(
+                                'Totale klus duur: ${_totaleBerekendeUren.toStringAsFixed(2)} uur '
+                                '($_aantalOperators x ${_duurUren.toStringAsFixed(2)}u)',
+                                style: GoogleFonts.lato(
+                                  color: Colors.grey.shade700,
+                                  fontStyle: FontStyle.italic,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 12),
                           Align(
                             alignment: Alignment.centerLeft,
