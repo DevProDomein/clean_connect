@@ -845,51 +845,105 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     setState(() => _saving = true);
     try {
       final item = _opdracht ?? <String, dynamic>{'id': widget.opdrachtId};
-      final bestaandePlanningId = _text(
-        _bestaandePlanningId ?? item['huidige_planning_id'],
-      );
-      final isBestaandePlanning =
-          _text(item['status']) == 'ingepland' && bestaandePlanningId.isNotEmpty;
+      final opdrachtId = _text(item['id']).isEmpty
+          ? widget.opdrachtId
+          : _text(item['id']);
 
-      final nieuweDatum = geselecteerdeHandmatigeDatum!
+      final String? bestaandePlanningIdRaw =
+          _text(_bestaandePlanningId ?? item['huidige_planning_id']).isEmpty
+              ? null
+              : _text(_bestaandePlanningId ?? item['huidige_planning_id']);
+      final bool isBestaandePlanning =
+          _text(item['status']) == 'ingepland' && bestaandePlanningIdRaw != null;
+
+      final String nieuweDatum = geselecteerdeHandmatigeDatum!
           .toIso8601String()
           .split('T')
           .first;
+      final String gekozenOperatorId = _gekozenOperatorIds.first;
+      final int operatorsNodig =
+          int.tryParse(item['benodigde_operators']?.toString() ?? '1') ?? 1;
+      final double benodigdeUren = hours;
+      final double berekendeTotaalUren = benodigdeUren * operatorsNodig;
 
       if (isBestaandePlanning) {
-        final currentOpId = _gekozenOperatorIds.first;
         await Supabase.instance.client.from('opdracht_planning').update({
-          'operator_id': currentOpId,
+          'operator_id': gekozenOperatorId,
           'geplande_datum': nieuweDatum,
           'starttijd': startDb,
           'eindtijd': berekendeEindTijd,
           'toegewezen_uren': hours,
-        }).eq('id', bestaandePlanningId);
+          'status': 'gepland',
+        }).eq('id', bestaandePlanningIdRaw);
 
-        await Supabase.instance.client.from('opdrachten').update({
+        final Map<String, dynamic> opdrachtUpdate = {
           'geplande_datum': nieuweDatum,
-        }).eq('id', widget.opdrachtId);
+          'status': 'ingepland',
+          'huidige_operator_id': gekozenOperatorId,
+        };
+
+        final double origineleUren =
+            double.tryParse(item['benodigde_uren_totaal']?.toString() ?? '0') ??
+                0.0;
+        if (berekendeTotaalUren != origineleUren) {
+          opdrachtUpdate['benodigde_uren_totaal'] = berekendeTotaalUren;
+          opdrachtUpdate['verwachte_uren_totaal'] = berekendeTotaalUren;
+          opdrachtUpdate['afwijkende_uren'] = true;
+        }
+
+        await Supabase.instance.client
+            .from('opdrachten')
+            .update(opdrachtUpdate)
+            .eq('id', opdrachtId);
       } else {
-        for (var i = 0; i < _gekozenOperatorIds.length; i++) {
-          final currentOpId = _gekozenOperatorIds[i];
+        final planningRes = await Supabase.instance.client
+            .from('opdracht_planning')
+            .insert({
+              'opdracht_id': opdrachtId,
+              'operator_id': gekozenOperatorId,
+              'geplande_datum': nieuweDatum,
+              'starttijd': startDb,
+              'eindtijd': berekendeEindTijd,
+              'toegewezen_uren': hours,
+              'status': 'gepland',
+            })
+            .select('id')
+            .single();
+
+        final String nieuwePlanningId = planningRes['id'].toString();
+
+        final Map<String, dynamic> opdrachtUpdate = {
+          'geplande_datum': nieuweDatum,
+          'status': 'ingepland',
+          'huidige_planning_id': nieuwePlanningId,
+          'huidige_operator_id': gekozenOperatorId,
+        };
+
+        final double origineleUren =
+            double.tryParse(item['benodigde_uren_totaal']?.toString() ?? '0') ??
+                0.0;
+        if (berekendeTotaalUren != origineleUren) {
+          opdrachtUpdate['benodigde_uren_totaal'] = berekendeTotaalUren;
+          opdrachtUpdate['verwachte_uren_totaal'] = berekendeTotaalUren;
+          opdrachtUpdate['afwijkende_uren'] = true;
+        }
+
+        await Supabase.instance.client
+            .from('opdrachten')
+            .update(opdrachtUpdate)
+            .eq('id', opdrachtId);
+
+        for (var i = 1; i < _gekozenOperatorIds.length; i++) {
+          final extraOpId = _gekozenOperatorIds[i];
           await Supabase.instance.client.from('opdracht_planning').insert({
-            'opdracht_id': widget.opdrachtId,
-            'operator_id': currentOpId,
+            'opdracht_id': opdrachtId,
+            'operator_id': extraOpId,
             'geplande_datum': nieuweDatum,
             'starttijd': startDb,
             'eindtijd': berekendeEindTijd,
             'toegewezen_uren': hours,
             'status': 'gepland',
           });
-        }
-
-        try {
-          await Supabase.instance.client.from('opdrachten').update({
-            'geplande_datum': nieuweDatum,
-          }).eq('id', widget.opdrachtId);
-        } catch (e) {
-          // ignore: avoid_print
-          print('Kon opdracht-datum niet bijwerken: $e');
         }
       }
 
