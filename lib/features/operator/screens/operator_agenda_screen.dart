@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/widgets/app_drawer.dart';
-import '../../../shared/layouts/mobile_nav_buffer.dart';
+import '../../shared/agenda_personalia_helpers.dart';
 
 /// Kalenderoverzicht voor operators ([app_operator_agenda]).
 class OperatorAgendaScreen extends StatefulWidget {
@@ -36,6 +36,8 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
   String? _selectedProject;
   List<String> _beschikbareKlanten = [];
   List<String> _beschikbareProjecten = [];
+
+  List<Map<String, dynamic>> _inboxUitnodigingen = [];
 
   @override
   void initState() {
@@ -113,6 +115,22 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
+      List<Map<String, dynamic>> persoonlijkRaw = const [];
+      try {
+        persoonlijkRaw =
+            await AgendaPersonaliaHelpers.fetchAgendaItemsVoorGebruiker(uid);
+      } catch (_) {
+        persoonlijkRaw = const [];
+      }
+
+      final inbox =
+          AgendaPersonaliaHelpers.inboxUitgenodigd(persoonlijkRaw, uid);
+      final teTonen =
+          AgendaPersonaliaHelpers.filterVoorWeergave(persoonlijkRaw, uid);
+      for (final row in teTonen) {
+        raw.add(AgendaPersonaliaHelpers.normaliseerVoorOperatorAgenda(row));
+      }
+
       final grouped = <DateTime, List<dynamic>>{};
       for (final row in raw) {
         final day = _dayFromRow(row);
@@ -144,6 +162,7 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
 
       setState(() {
         _groupedTasks = grouped;
+        _inboxUitnodigingen = inbox;
         _beschikbareKlanten = klanten.toList()..sort();
         _beschikbareProjecten = projecten.toList()..sort();
         if (_selectedKlant != null && !_beschikbareKlanten.contains(_selectedKlant)) {
@@ -159,6 +178,7 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
       setState(() {
         _loadError = e;
         _groupedTasks = {};
+        _inboxUitnodigingen = [];
         _beschikbareKlanten = [];
         _beschikbareProjecten = [];
         _isLoading = false;
@@ -368,6 +388,190 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
       _selectedKlant = null;
       _selectedProject = null;
     });
+  }
+
+  Future<void> _acceptUitnodiging(Map<String, dynamic> item) async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final itemId = _t(item['id']);
+    if (uid == null || itemId.isEmpty) return;
+    try {
+      await AgendaPersonaliaHelpers.updateDeelnemerStatus(
+        itemId: itemId,
+        gebruikerId: uid,
+        status: 'geaccepteerd',
+      );
+      if (mounted) await _loadAgenda();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Accepteren mislukt: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _weigerUitnodiging(Map<String, dynamic> item) async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    final itemId = _t(item['id']);
+    if (uid == null || itemId.isEmpty) return;
+    try {
+      await AgendaPersonaliaHelpers.updateDeelnemerStatus(
+        itemId: itemId,
+        gebruikerId: uid,
+        status: 'afgewezen',
+      );
+      if (mounted) await _loadAgenda();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Weigeren mislukt: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildInboxBanner(ColorScheme cs) {
+    if (_inboxUitnodigingen.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.orange.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Nieuwe Uitnodigingen',
+              style: GoogleFonts.lato(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+                color: Colors.orange.shade900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ..._inboxUitnodigingen.map((item) {
+              final titel = _t(item['titel']).isEmpty ? 'Agenda-item' : _t(item['titel']);
+              final start = _hhmm(item['starttijd']);
+              final eind = _hhmm(item['eindtijd']);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      titel,
+                      style: GoogleFonts.lato(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        color: _navy,
+                      ),
+                    ),
+                    Text(
+                      '$start – $eind',
+                      style: GoogleFonts.lato(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: _muted,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        IconButton.filledTonal(
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.green.shade100,
+                          ),
+                          onPressed: _isLoading ? null : () => _acceptUitnodiging(item),
+                          icon: Icon(Icons.check_rounded, color: Colors.green.shade800),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.red.shade50,
+                          ),
+                          onPressed: _isLoading ? null : () => _weigerUitnodiging(item),
+                          icon: Icon(Icons.close_rounded, color: Colors.red.shade800),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPersoonlijkItemSheet(
+    Map<String, dynamic> task, {
+    required bool alleenLezen,
+  }) async {
+    final titel = _t(task['project_naam']).isEmpty ? _t(task['titel']) : _t(task['project_naam']);
+    final start = _hhmm(task['starttijd']);
+    final eind = _hhmm(task['eindtijd']);
+    final desc = _t(task['beschrijving']);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            24 + MediaQuery.paddingOf(ctx).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                titel.isEmpty ? 'Agenda-item' : titel,
+                style: GoogleFonts.lato(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                  color: _navy,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$start – $eind',
+                style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+              ),
+              if (desc.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(desc, style: GoogleFonts.lato(fontWeight: FontWeight.w600)),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                alleenLezen
+                    ? 'Alleen-lezen (item van een collega).'
+                    : 'Persoonlijk agenda-item.',
+                style: GoogleFonts.lato(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: _muted,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'Sluiten',
+                  style: GoogleFonts.lato(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildFiltersPanel(ColorScheme cs) {
@@ -656,8 +860,11 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
                       ),
                     ),
                   )
-              : Column(
-                  children: [
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                    _buildInboxBanner(cs),
                     _buildFiltersPanel(cs),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -740,9 +947,11 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
                         ),
                       ),
                     ),
-                    Expanded(child: _dayList(cs)),
+                    _dayList(cs),
+                    const SizedBox(height: 120),
                   ],
                 ),
+              ),
       ),
     );
   }
@@ -826,7 +1035,9 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24 + mobileNavBuffer),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       itemCount: list.length,
       separatorBuilder: (context, _) => const SizedBox(height: 12),
       itemBuilder: (context, i) {
@@ -844,6 +1055,16 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
           child: InkWell(
             borderRadius: BorderRadius.circular(_radiusCard),
             onTap: () {
+              if (task['_persoonlijk_agenda'] == true) {
+                final uid = Supabase.instance.client.auth.currentUser?.id;
+                final maker = _t(task['maker_id']);
+                final readOnly = uid != null &&
+                    maker.isNotEmpty &&
+                    maker != uid;
+                _openPersoonlijkItemSheet(task, alleenLezen: readOnly);
+                return;
+              }
+
               final DateTime nu = DateTime.now();
               final DateTime vandaag = DateTime(nu.year, nu.month, nu.day);
 

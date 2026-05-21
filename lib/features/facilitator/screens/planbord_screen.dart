@@ -100,6 +100,36 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return double.tryParse(_text(value).replaceAll(',', '.')) ?? fallback;
   }
 
+  /// Totaal uren voor planbord-kaarten (DB-kolommen, string-parse).
+  double _totaalUrenVoorOpdrachtKaart(Map<String, dynamic> item) {
+    return double.tryParse(
+          item['benodigde_uren_totaal']?.toString() ??
+              item['verwachte_uren_totaal']?.toString() ??
+              '0',
+        ) ??
+        0.0;
+  }
+
+  /// Operators: eerst [benodigde_operators] uit DB; alleen bij 0 oude /3-fallback.
+  int _safeOperatorsVoorOpdracht(Map<String, dynamic> item) {
+    final dbOperators =
+        int.tryParse(item['benodigde_operators']?.toString() ?? '0') ?? 0;
+    final totaalUren = _totaalUrenVoorOpdrachtKaart(item);
+    var safeOperators = dbOperators > 0
+        ? dbOperators
+        : (totaalUren > 0 ? (totaalUren / 3).ceil() : 1);
+    if (safeOperators == 0) {
+      safeOperators = 1;
+    }
+    return safeOperators;
+  }
+
+  bool _isTruthyDynamic(dynamic v) {
+    if (v is bool) return v;
+    final s = _text(v).toLowerCase();
+    return s == 'true' || s == '1' || s == 'ja';
+  }
+
   TimeOfDay? _timeFromRaw(dynamic value) {
     final raw = _text(value);
     if (raw.isEmpty) return null;
@@ -1055,7 +1085,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return bedrijf;
   }
 
-  /// `uitvoerder_info` / `planning` = expliciete aliases; `projecten` = zelfde subregel als open kaarten.
+  /// `*` incl. [benodigde_operators]; embeds voor planning/uitvoerder.
   static const String _reedsGeplandeSelect =
       '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),planning:opdracht_planning!huidige_planning_id(starttijd,eindtijd)';
 
@@ -1139,8 +1169,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       var openQuery = AppSupabase.client
           .from('opdrachten')
           .select(
-            'id, project_id, geplande_datum, tijdslot_start, tijdslot_eind, '
-            'bedrijfsnaam, werk_regio, status, benodigde_operators, projecten(project_naam)',
+            '*, '
+            'benodigde_operators, benodigde_uren_totaal, verwachte_uren_totaal, '
+            'toegewezen_uren_totaal, '
+            'projecten(project_naam)',
           )
           .eq('status', 'open');
 
@@ -1252,7 +1284,40 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     }
   }
 
+  Map<String, dynamic>? _opdrachtMapUitPlanbordState(String opdrachtId) {
+    for (final tasks in _groupedOpenTaken.values) {
+      for (final t in tasks) {
+        if (_text(t['id']) == opdrachtId) {
+          return t;
+        }
+      }
+    }
+    for (final tasks in _groupedGeplandeTaken.values) {
+      for (final t in tasks) {
+        if (_text(t['id']) == opdrachtId) {
+          return t;
+        }
+      }
+    }
+    for (final t in _reedsGeplandeTaken) {
+      if (_text(t['id']) == opdrachtId) {
+        return t;
+      }
+    }
+    return null;
+  }
+
   Future<void> _openManualPlanModal(String opdrachtId) async {
+    final item = _opdrachtMapUitPlanbordState(opdrachtId);
+    final int dbOperators =
+        int.tryParse(item?['benodigde_operators']?.toString() ?? '0') ?? 0;
+    // ignore: avoid_print
+    print('Uitlezen in UI - item dbOperators: $dbOperators');
+    // ignore: avoid_print
+    print(
+      'Uitlezen in UI - raw benodigde_operators: ${item?['benodigde_operators']}',
+    );
+
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -1647,6 +1712,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     ),
                   )
                 : ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
                     itemCount: visibleProjects.length,
                     itemBuilder: (context, index) {
                   final project = Map<String, dynamic>.from(
@@ -2192,37 +2259,49 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Expanded(
-                    child: _isCalculating
-                        ? const Center(child: CircularProgressIndicator())
-                        : !_hasCalculated
-                            ? Center(
-                                child: Text(
-                                  'Klik op "Slim Inplannen" om operator matches te berekenen.',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                              ),
-                                ),
-                              )
-                            : filteredResults.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'Geen plannerresultaten gevonden voor de huidige filters.',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                              ),
-                                    ),
-                                  )
-                                : ListView.builder(
-                                    itemCount: filteredResults.length,
-                                    itemBuilder: (context, index) {
-                              return _buildResultCard(
-                                filteredResults[index],
-                                index: index,
-                              );
-                                    },
-                                  ),
-                  ),
+                  if (_isCalculating)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (!_hasCalculated)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          'Klik op "Slim Inplannen" om operator matches te berekenen.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (filteredResults.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          'Geen plannerresultaten gevonden voor de huidige filters.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: filteredResults.length,
+                      itemBuilder: (context, index) {
+                        return _buildResultCard(
+                          filteredResults[index],
+                          index: index,
+                        );
+                      },
+                    ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -2267,11 +2346,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
               tooltip: 'Terug',
             ),
             const SizedBox(height: 4),
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                     Text(
                       'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
                       style: GoogleFonts.inter(
@@ -2671,30 +2748,49 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 120),
                   ],
                 ),
-              ),
-            ),
           ],
         ),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: isMobile
-          ? (_selectedProject == null
-                ? buildLeftColumn()
-                : buildRightColumnMobile())
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(flex: 1, child: buildLeftColumn()),
-                const SizedBox(width: 14),
-                Expanded(flex: 2, child: buildRightColumnDesktop()),
-              ],
-            ),
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: isMobile
+                ? (_selectedProject == null
+                      ? buildLeftColumn()
+                      : buildRightColumnMobile())
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final w = constraints.maxWidth;
+                      const gap = 14.0;
+                      final leftW = (w - gap) / 3.0;
+                      final rightW = w - gap - leftW;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: leftW,
+                            child: buildLeftColumn(),
+                          ),
+                          const SizedBox(width: gap),
+                          SizedBox(
+                            width: rightW,
+                            child: buildRightColumnDesktop(),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+          const SizedBox(height: 120),
+        ],
+      ),
     );
   }
 
@@ -2711,7 +2807,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final start = _timeLabel(task['tijdslot_start']);
     final end = _timeLabel(task['tijdslot_eind']);
     final date = _toDate(task['geplande_datum']);
-    final needed = _asInt(task['benodigde_operators'], fallback: 1);
+    final totaalUrenKaart = _totaalUrenVoorOpdrachtKaart(task);
+    final safeOperators = _safeOperatorsVoorOpdracht(task);
+    final urenPerPersoon = totaalUrenKaart / safeOperators;
     final title = project.isNotEmpty ? project : company;
     final isSelectedDay = DateUtils.isSameDay(
       _selectedDay ?? _focusedDay,
@@ -2844,15 +2942,16 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Nodig: $needed operators',
+                        'Nodig: $safeOperators operators · '
+                        'ca. ${formatHoursToText(urenPerPersoon)} per persoon',
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w800,
                           color: accent.withValues(alpha: 0.92),
-          ),
-        ),
-            ],
-          ),
-        ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 Icon(
                   Icons.chevron_right_rounded,
                   color: cs.onSurface.withValues(alpha: 0.45),
@@ -2865,8 +2964,91 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
   }
 
+  Future<void> _geefKortingDialog(String opdrachtId) async {
+    if (opdrachtId.trim().isEmpty) return;
+    final ctrl = TextEditingController();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dCtx) {
+          return AlertDialog(
+            title: Text(
+              'Korting / crediteren',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+            ),
+            content: TextFormField(
+              controller: ctrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Korting ex. btw (€)',
+                hintText: 'Bijv. 25,50',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dCtx).pop(),
+                child: const Text('Annuleren'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final raw = ctrl.text.trim().replaceAll(',', '.');
+                  final ingevuld = double.tryParse(raw) ?? 0.0;
+                  try {
+                    await AppSupabase.client.from('opdrachten').update({
+                      'korting_bedrag': ingevuld,
+                    }).eq('id', opdrachtId);
+                    if (dCtx.mounted) Navigator.of(dCtx).pop();
+                    if (!mounted) return;
+                    await _loadTasks();
+                    await _fetchReedsGeplandeTakenVoorDag(
+                      _selectedDay ?? _focusedDay,
+                    );
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        content: Text(
+                          'Korting opgeslagen.',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Colors.red.shade800,
+                        content: Text(
+                          'Opslaan mislukt: $e',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Opslaan'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      ctrl.dispose();
+    }
+  }
+
   Future<void> _openReedsGeplandeInfoModal(Map<String, dynamic> item) async {
     final opdrachtId = _text(item['id']);
+    final meta = () {
+      final o = item['opdracht'];
+      if (o is Map) return Map<String, dynamic>.from(o);
+      return Map<String, dynamic>.from(item);
+    }();
+    final isExtraWerk = _isTruthyDynamic(meta['is_buiten_abonnement']);
+    final waardeEx = _asDouble(meta['opdracht_waarde_ex_btw']);
+    final kortingEx = _asDouble(meta['korting_bedrag']);
     final bedrijf = _text(item['bedrijfsnaam']).isEmpty
         ? 'Onbekende klant'
         : _text(item['bedrijfsnaam']);
@@ -3016,6 +3198,46 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           title: 'Operator',
                           value: weergaveNaam,
                         ),
+                        if (isExtraWerk) ...[
+                          const Divider(height: 28),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(
+                              Icons.receipt_long,
+                              color: Color(0xFF2E7D32),
+                            ),
+                            title: Text(
+                              'Extra werk (facturabel)',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                'Waarde: €${waardeEx.toStringAsFixed(2)} ex. btw | '
+                                'Korting toegepast: €${kortingEx.toStringAsFixed(2)}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            trailing: TextButton(
+                              onPressed: opdrachtId.isEmpty
+                                  ? null
+                                  : () {
+                                      Navigator.of(ctx).pop();
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                        if (!mounted) return;
+                                        _geefKortingDialog(opdrachtId);
+                                      });
+                                    },
+                              child: const Text('Korting / crediteren'),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         FilledButton.icon(
                           onPressed: opdrachtId.isEmpty
@@ -3070,6 +3292,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
     final accent = Colors.red.shade400;
     final weergaveNaam = _extractIngeplandWeergaveNaam(item);
+    final totaalUrenKaart = _totaalUrenVoorOpdrachtKaart(item);
+    final safeOperators = _safeOperatorsVoorOpdracht(item);
+    final urenPerPersoon = totaalUrenKaart / safeOperators;
 
                                   return Padding(
                                     padding: const EdgeInsets.only(bottom: 10),
@@ -3184,6 +3409,15 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                                       ),
                                                     ),
                                                     const SizedBox(height: 2),
+                      Text(
+                        'Nodig: $safeOperators operators · '
+                        'ca. ${formatHoursToText(urenPerPersoon)} per persoon',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800,
+                          color: accent.withValues(alpha: 0.92),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
                       Row(
                         children: [
                           Icon(
@@ -3668,6 +3902,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   ],
                 ),
         ),
+        const SizedBox(height: 120),
         ],
       ),
     );
@@ -4467,7 +4702,9 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   Map<String, dynamic>? _selectedProject;
 
-  int _benodigdeOperators = 1;
+  String? _geselecteerdeProjectNaam;
+
+  int aantalOperators = 1;
 
   double _benodigdeUren = 1.0;
 
@@ -4475,7 +4712,13 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   TimeOfDay? _start;
 
-  TimeOfDay? _end;
+  bool _isAnderAdres = false;
+
+  final TextEditingController _anderAdresController = TextEditingController();
+
+  bool _isAfwijkendePrijs = false;
+
+  final TextEditingController _afwijkendePrijsController = TextEditingController();
 
   @override
   void initState() {
@@ -4486,6 +4729,8 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   @override
   void dispose() {
+    _anderAdresController.dispose();
+    _afwijkendePrijsController.dispose();
     super.dispose();
   }
 
@@ -4541,31 +4786,140 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
     setState(() => _date = picked);
   }
 
-  Future<void> _pickTime({required bool start}) async {
+  Future<void> _pickStartTime() async {
     final picked = await showTimePicker(
       context: context,
 
-      initialTime:
-          (start ? _start : _end) ?? const TimeOfDay(hour: 8, minute: 0),
+      initialTime: _start ?? const TimeOfDay(hour: 8, minute: 0),
     );
 
     if (picked == null || !mounted) return;
 
-    setState(() {
-      if (start) {
-        _start = picked;
-      } else {
-        _end = picked;
-      }
-    });
+    setState(() => _start = picked);
   }
 
   String _timeToDb(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
 
-  String _projectLabel(Map<String, dynamic> project) {
-    final naam = _t(project['project_naam']);
-    return naam.isEmpty ? 'Naamloos project' : naam;
+  Future<void> _toonProjectZoekModal() async {
+    if (_loadingProjects || _saving) return;
+
+    String zoekTerm = '';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final q = zoekTerm.toLowerCase().trim();
+            final gefilterdeLijst = _projects.where((p) {
+              if (q.isEmpty) return true;
+              final pNaam = p['project_naam']?.toString().toLowerCase() ?? '';
+              final bNaam = p['bedrijven'] is Map
+                  ? (p['bedrijven'] as Map)['bedrijfsnaam']
+                        ?.toString()
+                        .toLowerCase() ??
+                      ''
+                  : p['bedrijfsnaam']?.toString().toLowerCase() ??
+                      p['bedrijfsnaam_klant']?.toString().toLowerCase() ??
+                      '';
+              return pNaam.contains(q) || bNaam.contains(q);
+            }).toList();
+
+            return AlertDialog(
+              title: Text(
+                'Zoek project',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Zoek op project of klant',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) {
+                        setModalState(() {
+                          zoekTerm = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: gefilterdeLijst.isEmpty
+                          ? Center(
+                              child: Text(
+                                'Geen resultaten',
+                                style: GoogleFonts.inter(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: gefilterdeLijst.length,
+                              itemBuilder: (context, index) {
+                                final project = gefilterdeLijst[index];
+                                final pNaam =
+                                    project['project_naam']?.toString() ??
+                                    'Onbekend project';
+                                final bNaam = project['bedrijven'] is Map
+                                    ? (project['bedrijven'] as Map)['bedrijfsnaam']
+                                          ?.toString() ??
+                                      ''
+                                    : project['bedrijfsnaam']?.toString() ??
+                                        project['bedrijfsnaam_klant']
+                                            ?.toString() ??
+                                        '';
+
+                                return ListTile(
+                                  title: Text(
+                                    pNaam,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  subtitle: bNaam.isEmpty
+                                      ? null
+                                      : Text(
+                                          bNaam,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                  onTap: () {
+                                    Navigator.of(dialogContext).pop();
+                                    if (!mounted) return;
+                                    final label = bNaam.isEmpty
+                                        ? pNaam
+                                        : '$pNaam ($bNaam)';
+                                    setState(() {
+                                      _selectedProject = project;
+                                      _geselecteerdeProjectNaam = label;
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Sluiten'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   TimeOfDay? _berekendeEindtijdBijEenOperator() {
@@ -4576,11 +4930,6 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
       hour: (totaalMinuten ~/ 60) % 24,
       minute: totaalMinuten % 60,
     );
-  }
-
-  TimeOfDay? _definitieveEindtijd() {
-    if (_benodigdeOperators >= 2) return _end;
-    return _berekendeEindtijdBijEenOperator();
   }
 
   Future<void> _save() async {
@@ -4604,13 +4953,7 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
       return;
     }
 
-    if (_benodigdeOperators >= 2 && _end == null) {
-      setState(() => _error = 'Kies een eindtijd (meerdere operators).');
-
-      return;
-    }
-
-    final eind = _definitieveEindtijd();
+    final eind = _berekendeEindtijdBijEenOperator();
     if (eind == null) {
       setState(() => _error = 'Kon eindtijd niet bepalen.');
 
@@ -4638,27 +4981,68 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
           ? _t(bedrijven['bedrijfsnaam'])
           : 'Onbekend Bedrijf';
 
-      await Supabase.instance.client.from('opdrachten').insert({
+      final double benodigdeUren = _benodigdeUren;
+      final berekendeEindTijd = _timeToDb(eind);
+
+      final Map<String, dynamic> payload = {
         'project_id': p['id'],
-
         'bedrijfsnaam': bedrijfsnaam,
-
         'werk_regio': p['werk_regio'],
-
         'geplande_datum': _date!.toIso8601String().substring(0, 10),
-
         'tijdslot_start': _timeToDb(_start!),
-
-        'tijdslot_eind': _timeToDb(eind),
-
-        'benodigde_operators': _benodigdeOperators,
-
-        'benodigde_uren_totaal': _benodigdeUren,
-
-        'verwachte_uren_totaal': _benodigdeUren,
-
+        'tijdslot_eind': berekendeEindTijd,
+        'benodigde_operators': aantalOperators,
+        'benodigde_uren_totaal': benodigdeUren * aantalOperators,
+        'verwachte_uren_totaal': benodigdeUren * aantalOperators,
+        'afwijkende_uren': true,
         'status': 'open',
-      });
+        'is_buiten_abonnement': true,
+      };
+
+      if (_isAnderAdres && _anderAdresController.text.trim().isNotEmpty) {
+        payload['uitvoer_adres_volledig'] = _anderAdresController.text.trim();
+      }
+
+      if (_isAfwijkendePrijs &&
+          _afwijkendePrijsController.text.trim().isNotEmpty) {
+        final vastePrijs = double.tryParse(
+              _afwijkendePrijsController.text.replaceAll(',', '.'),
+            ) ??
+            0.0;
+        payload['opdracht_waarde_ex_btw'] = vastePrijs;
+      }
+
+      // ignore: avoid_print
+      print('--- X-RAY PAYLOAD VOOR SUPABASE ---');
+      // ignore: avoid_print
+      print(
+        'Aantal operators geselecteerd: ${payload['benodigde_operators']}',
+      );
+      // ignore: avoid_print
+      print('Totaal uren berekend: ${payload['benodigde_uren_totaal']}');
+      // ignore: avoid_print
+      print('-----------------------------------');
+
+      // ignore: avoid_print
+      print('--- START INSERT NAAR SUPABASE ---');
+      try {
+        final response = await Supabase.instance.client
+            .from('opdrachten')
+            .insert(payload)
+            .select('id, benodigde_operators, benodigde_uren_totaal')
+            .single();
+
+        // ignore: avoid_print
+        print('--- SUPABASE HEEFT DIT OPGESLAGEN ---');
+        // ignore: avoid_print
+        print(response);
+        // ignore: avoid_print
+        print('------------------------------------');
+      } catch (e) {
+        // ignore: avoid_print
+        print('SUPABASE INSERT ERROR: $e');
+        rethrow;
+      }
 
       if (!mounted) return;
 
@@ -4675,6 +5059,13 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
   @override
   Widget build(BuildContext context) {
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+
+    final benodigdeUren = _benodigdeUren;
+    final int urenInt = benodigdeUren.floor();
+    final int minutenInt = ((benodigdeUren - urenInt) * 60).round();
+    final String urenTekst = minutenInt > 0
+        ? '$urenInt uur en $minutenInt min'
+        : '$urenInt uur';
 
     return AnimatedPadding(
       duration: const Duration(milliseconds: 150),
@@ -4750,60 +5141,70 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                     child: LinearProgressIndicator(),
                   )
                 else
-                  Autocomplete<Map<String, dynamic>>(
-                    key: ValueKey(
-                      _selectedProject == null
-                          ? 'project-none'
-                          : _t(_selectedProject!['id']),
-                    ),
-                    displayStringForOption: _projectLabel,
-                    optionsBuilder: (textEditingValue) {
-                      if (textEditingValue.text.isEmpty) {
-                        return _projects;
-                      }
-                      final q = textEditingValue.text.toLowerCase();
-                      return _projects.where((project) {
-                        final naam =
-                            project['project_naam']?.toString().toLowerCase() ??
-                            '';
-                        return naam.contains(q);
-                      });
-                    },
-                    onSelected: (option) {
-                      if (_loadingProjects || _saving) return;
-                      setState(() => _selectedProject = option);
-                    },
-                    fieldViewBuilder:
-                        (context, controller, focusNode, onFieldSubmitted) {
-                      return TextFormField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        enabled: !_loadingProjects && !_saving,
-                        onChanged: (_) {
-                          if (_selectedProject != null) {
-                            setState(() => _selectedProject = null);
-                          }
-                        },
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: (_loadingProjects || _saving)
+                          ? null
+                          : _toonProjectZoekModal,
+                      borderRadius: BorderRadius.circular(8),
+                      child: InputDecorator(
                         decoration: InputDecoration(
-                          labelText: 'Zoek en selecteer een project',
-                          prefixIcon: const Icon(Icons.search),
+                          labelText: 'Geselecteerd project',
                           border: const OutlineInputBorder(),
-                          suffixIcon: _selectedProject != null
+                          suffixIcon: _geselecteerdeProjectNaam != null && !_saving
                               ? IconButton(
                                   icon: const Icon(Icons.clear),
-                                  onPressed: _saving
+                                  onPressed: _loadingProjects
                                       ? null
                                       : () {
                                           setState(() {
                                             _selectedProject = null;
-                                            controller.clear();
+                                            _geselecteerdeProjectNaam = null;
                                           });
                                         },
                                 )
-                              : null,
+                              : const Icon(Icons.search),
                         ),
-                      );
-                    },
+                        child: Text(
+                          _geselecteerdeProjectNaam ??
+                              'Klik hier om een project te zoeken',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            color: _geselecteerdeProjectNaam == null
+                                ? Colors.grey.shade600
+                                : Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                CheckboxListTile(
+                  title: const Text('Ander uitvoer adres'),
+                  subtitle: const Text('Wijk af van het standaard project adres'),
+                  value: _isAnderAdres,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: (bool? value) {
+                    setState(() {
+                      _isAnderAdres = value ?? false;
+                    });
+                  },
+                ),
+                if (_isAnderAdres)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: TextFormField(
+                      controller: _anderAdresController,
+                      decoration: const InputDecoration(
+                        labelText:
+                            'Volledig adres (Straat, Postcode, Stad)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.location_on),
+                      ),
+                    ),
                   ),
 
                 const SizedBox(height: 12),
@@ -4830,9 +5231,7 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: _saving
-                            ? null
-                            : () => _pickTime(start: true),
+                        onPressed: _saving ? null : _pickStartTime,
 
                         child: Text(
                           _start == null
@@ -4841,23 +5240,9 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                         ),
                       ),
                     ),
-                    if (_benodigdeOperators >= 2) ...[
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _saving
-                              ? null
-                              : () => _pickTime(start: false),
-
-                          child: Text(
-                            _end == null ? 'Eindtijd' : _end!.format(context),
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-                if (_benodigdeOperators == 1 && _start != null) ...[
+                if (_start != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Eindtijd wordt automatisch berekend: '
@@ -4875,9 +5260,9 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Benodigde operators:',
-                      style: GoogleFonts.inter(fontSize: 16),
+                    const Text(
+                      'Aantal operators:',
+                      style: TextStyle(fontSize: 16),
                     ),
                     Row(
                       children: [
@@ -4886,13 +5271,17 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                             Icons.remove_circle_outline,
                             color: Colors.blue,
                           ),
-                          onPressed: _saving || _benodigdeOperators <= 1
-                              ? null
-                              : () => setState(() => _benodigdeOperators--),
+                          onPressed: aantalOperators > 1
+                              ? () {
+                                  setState(() {
+                                    aantalOperators--;
+                                  });
+                                }
+                              : null,
                         ),
                         Text(
-                          '$_benodigdeOperators',
-                          style: GoogleFonts.inter(
+                          '$aantalOperators',
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -4902,9 +5291,11 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                             Icons.add_circle_outline,
                             color: Colors.blue,
                           ),
-                          onPressed: _saving
-                              ? null
-                              : () => setState(() => _benodigdeOperators++),
+                          onPressed: () {
+                            setState(() {
+                              aantalOperators++;
+                            });
+                          },
                         ),
                       ],
                     ),
@@ -4934,8 +5325,8 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                                 ),
                         ),
                         Text(
-                          '${_benodigdeUren.toStringAsFixed(2)} u',
-                          style: GoogleFonts.inter(
+                          urenTekst,
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -4953,6 +5344,48 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                     ),
                   ],
                 ),
+
+                if (aantalOperators > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
+                    child: Text(
+                      'Totale werkuren: ${(benodigdeUren * aantalOperators).toStringAsFixed(2)} uur (Fysieke dienst: $urenTekst per operator)',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+
+                CheckboxListTile(
+                  title: const Text('Afwijkende opdracht prijs'),
+                  subtitle: const Text(
+                    'Overschrijf de berekende prijs (Uren x Tarief) met een vaste prijs',
+                  ),
+                  value: _isAfwijkendePrijs,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: (bool? value) {
+                    setState(() {
+                      _isAfwijkendePrijs = value ?? false;
+                    });
+                  },
+                ),
+                if (_isAfwijkendePrijs)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: TextFormField(
+                      controller: _afwijkendePrijsController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Vaste prijs (ex. BTW)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.euro),
+                      ),
+                    ),
+                  ),
 
                 const SizedBox(height: 18),
 

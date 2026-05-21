@@ -2,10 +2,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../shared/agenda_personalia_helpers.dart';
+import '../../shared/widgets/agenda_item_add_modal.dart';
 
 class PlanningAgendaScreen extends StatefulWidget {
   const PlanningAgendaScreen({super.key});
@@ -22,6 +25,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
 
   bool _isLoading = true;
   Object? _loadError;
+
+  List<Map<String, dynamic>> _inboxUitnodigingen = [];
+
+  String? _currentUserId;
 
   @override
   void initState() {
@@ -75,6 +82,8 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     });
 
     try {
+      final uid = Supabase.instance.client.auth.currentUser?.id ?? '';
+
       final response = await AppSupabase.client
           .from('app_facilitator_agenda')
           .select()
@@ -88,15 +97,42 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         grouped.putIfAbsent(day, () => <dynamic>[]).add(task);
       }
 
+      List<Map<String, dynamic>> persoonlijkRaw = const [];
+      if (uid.isNotEmpty) {
+        try {
+          persoonlijkRaw =
+              await AgendaPersonaliaHelpers.fetchAgendaItemsVoorGebruiker(uid);
+        } catch (_) {
+          persoonlijkRaw = const [];
+        }
+      }
+
+      final inbox = uid.isEmpty
+          ? const <Map<String, dynamic>>[]
+          : AgendaPersonaliaHelpers.inboxUitgenodigd(persoonlijkRaw, uid);
+
+      final teTonen = uid.isEmpty
+          ? const <Map<String, dynamic>>[]
+          : AgendaPersonaliaHelpers.filterVoorWeergave(persoonlijkRaw, uid);
+
+      for (final row in teTonen) {
+        final task = AgendaPersonaliaHelpers.normaliseerVoorControlRoom(row);
+        final day = _normalizeDate(_parseDate(task['geplande_datum']));
+        grouped.putIfAbsent(day, () => <dynamic>[]).add(task);
+      }
+
       if (!mounted) return;
       setState(() {
         _groupedTasks = grouped;
+        _inboxUitnodigingen = inbox;
+        _currentUserId = uid.isEmpty ? null : uid;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _groupedTasks = {};
+        _inboxUitnodigingen = [];
         _loadError = e;
         _isLoading = false;
       });
@@ -195,6 +231,191 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     );
   }
 
+  Future<void> _openPersoonlijkAlleenLezen(Map<String, dynamic> task) async {
+    final titel = _text(task['project_naam']).isEmpty
+        ? _text(task['titel'])
+        : _text(task['project_naam']);
+    final start = _formatTime(task['starttijd']);
+    final end = _formatTime(task['eindtijd']);
+    final datum = _parseDate(task['geplande_datum']);
+    final datumStr = _fmtAgendaDate(datum);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 16,
+            bottom: 16 + MediaQuery.paddingOf(ctx).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                titel.isEmpty ? 'Agenda-item' : titel,
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$datumStr · $start – $end',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Dit item is door een collega aangemaakt. Alleen-lezen.',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.72),
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'Sluiten',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _acceptUitnodiging(Map<String, dynamic> item) async {
+    final uid = _currentUserId ?? Supabase.instance.client.auth.currentUser?.id;
+    final itemId = _text(item['id']);
+    if (uid == null || uid.isEmpty || itemId.isEmpty) return;
+    try {
+      await AgendaPersonaliaHelpers.updateDeelnemerStatus(
+        itemId: itemId,
+        gebruikerId: uid,
+        status: 'geaccepteerd',
+      );
+      if (mounted) await _loadAgenda();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Accepteren mislukt: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _weigerUitnodiging(Map<String, dynamic> item) async {
+    final uid = _currentUserId ?? Supabase.instance.client.auth.currentUser?.id;
+    final itemId = _text(item['id']);
+    if (uid == null || uid.isEmpty || itemId.isEmpty) return;
+    try {
+      await AgendaPersonaliaHelpers.updateDeelnemerStatus(
+        itemId: itemId,
+        gebruikerId: uid,
+        status: 'afgewezen',
+      );
+      if (mounted) await _loadAgenda();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Weigeren mislukt: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildInboxBanner(ColorScheme cs, bool isDark) {
+    if (_inboxUitnodigingen.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.orange.shade900.withValues(alpha: 0.35)
+              : Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: Colors.orange.shade300.withValues(alpha: 0.85),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Nieuwe Uitnodigingen',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+                color: isDark ? Colors.orange.shade100 : Colors.orange.shade900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ..._inboxUitnodigingen.map((item) {
+              final titel = _text(item['titel']).isEmpty ? 'Agenda-item' : _text(item['titel']);
+              final start = _formatTime(item['starttijd']);
+              final end = _formatTime(item['eindtijd']);
+              final d = _parseDate(item['datum'] ?? item['geplande_datum']);
+              final dLabel = _fmtAgendaDate(d);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      titel,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$dLabel · $start – $end',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                        color: cs.onSurface.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        IconButton.filledTonal(
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.green.shade100,
+                          ),
+                          onPressed: _isLoading ? null : () => _acceptUitnodiging(item),
+                          icon: Icon(Icons.check_rounded, color: Colors.green.shade800),
+                          tooltip: 'Accepteren',
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.red.shade50,
+                          ),
+                          onPressed: _isLoading ? null : () => _weigerUitnodiging(item),
+                          icon: Icon(Icons.close_rounded, color: Colors.red.shade800),
+                          tooltip: 'Weigeren',
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -211,6 +432,15 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     return Scaffold(
       backgroundColor: bg,
       drawer: const AppDrawer(),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _isLoading
+            ? null
+            : () async {
+                final ok = await AgendaItemAddModal.show(context);
+                if (ok == true && mounted) await _loadAgenda();
+              },
+        child: const Icon(Icons.add),
+      ),
       appBar: AppBar(
         backgroundColor: bg,
         elevation: 0,
@@ -227,8 +457,11 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         ],
       ),
       body: SelectionArea(
-        child: Column(
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+            _buildInboxBanner(cs, isDark),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Container(
@@ -394,8 +627,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                 ),
               ),
             ),
-            Expanded(
-              child: Container(
+            Container(
                 margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
                 decoration: BoxDecoration(
@@ -452,7 +684,17 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                                     topRight: Radius.circular(12),
                                     bottomRight: Radius.circular(12),
                                   ),
-                                  onTap: () => _openAgendaDetailModal(item),
+                                  onTap: () {
+                                    final pers =
+                                        item['_persoonlijk_agenda'] == true;
+                                    final maker = _text(item['maker_id']);
+                                    final uid = _text(_currentUserId);
+                                    if (pers && maker.isNotEmpty && maker != uid) {
+                                      _openPersoonlijkAlleenLezen(item);
+                                      return;
+                                    }
+                                    _openAgendaDetailModal(item);
+                                  },
                                   child: Container(
                                     margin: const EdgeInsets.only(bottom: 12),
                                     padding: const EdgeInsets.all(16),
@@ -597,48 +839,77 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                               final periodLabel =
                                   _calendarFormat == CalendarFormat.week ? 'week' : 'maand';
 
-                              return SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
-                                      decoration: BoxDecoration(
-                                        color: isDark
-                                            ? const Color(0xFF0F172A)
-                                            : Colors.blue.shade50,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: cs.onSurface.withValues(alpha: 0.08),
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      14,
+                                      14,
+                                      14,
+                                      6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF0F172A)
+                                          : Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: cs.onSurface.withValues(
+                                          alpha: 0.08,
                                         ),
                                       ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                                        children: [
-                                          sectionTitle(
-                                            'Opdrachten voor ${_fmtDateHuman(selectedDay)}',
-                                          ),
-                                          if (dayTasks.isEmpty)
-                                            emptyHint('Geen definitieve planning op deze dag.')
-                                          else
-                                            for (final t in dayTasks) taskTile(t),
-                                        ],
-                                      ),
                                     ),
-                                    const SizedBox(height: 14),
-                                    sectionTitle('Opdrachten voor deze $periodLabel'),
-                                    if (periodTasks.isEmpty)
-                                      emptyHint('Geen opdrachten in deze $periodLabel.')
-                                    else
-                                      for (final t in periodTasks) taskTile(t),
-                                  ],
-                                ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        sectionTitle(
+                                          'Opdrachten voor ${_fmtDateHuman(selectedDay)}',
+                                        ),
+                                        if (dayTasks.isEmpty)
+                                          emptyHint(
+                                            'Geen definitieve planning op deze dag.',
+                                          )
+                                        else
+                                          ListView.builder(
+                                            shrinkWrap: true,
+                                            physics:
+                                                const NeverScrollableScrollPhysics(),
+                                            itemCount: dayTasks.length,
+                                            itemBuilder: (context, index) {
+                                              return taskTile(dayTasks[index]);
+                                            },
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  sectionTitle(
+                                    'Opdrachten voor deze $periodLabel',
+                                  ),
+                                  if (periodTasks.isEmpty)
+                                    emptyHint(
+                                      'Geen opdrachten in deze $periodLabel.',
+                                    )
+                                  else
+                                    ListView.builder(
+                                      shrinkWrap: true,
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      itemCount: periodTasks.length,
+                                      itemBuilder: (context, index) {
+                                        return taskTile(periodTasks[index]);
+                                      },
+                                    ),
+                                ],
                               );
                             },
                           ),
               ),
-            ),
-          ],
+            const SizedBox(height: 120),
+            ],
+          ),
         ),
       ),
     );

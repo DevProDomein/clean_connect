@@ -32,9 +32,26 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
   Map<String, dynamic>? _opdracht;
 
   List<dynamic> _availableOperators = <dynamic>[];
-  String? _selectedOperatorId;
+  List<String> _gekozenOperatorIds = [];
+  List<String> _gekozenOperatorNamen = [];
   String? _bestaandePlanningId;
   double _shiftHours = 0.25;
+
+  /// Bron: uitsluitend kolommen op de hoofdopdracht (geen venster-/schatting-math).
+  double _totaalUrenHoofdopdracht = 0;
+
+  /// Effectief aantal operators (DB of fallback); gebruikt in restant-formule.
+  int _safeOperatorsHoofdopdracht = 1;
+
+  double _standaardUurPerPersoon = 1.0;
+
+  double _reedsGeplandeUren = 0;
+
+  int _reedsGeplandeOperators = 0;
+
+  double _resterendeUren = 0;
+
+  int _resterendeOperators = 0;
 
   @override
   void initState() {
@@ -50,15 +67,106 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
 
   String _text(dynamic value) => (value ?? '').toString().trim();
 
-  int _asInt(dynamic value, {int fallback = 0}) {
-    if (value is int) return value;
-    if (value is num) return value.round();
-    return int.tryParse(_text(value)) ?? fallback;
+  /// Totaal uren volgens klant-spec: parse-keten op string-niveau.
+  double _totaalUrenKlantFormule(Map<String, dynamic> item) {
+    return double.tryParse(
+          item['benodigde_uren_totaal']?.toString() ??
+              item['verwachte_uren_totaal']?.toString() ??
+              '0',
+        ) ??
+        0.0;
   }
 
-  double _asDouble(dynamic value, {double fallback = 0}) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(_text(value).replaceAll(',', '.')) ?? fallback;
+  /// Ruw aantal uit [benodigde_operators] (mag 0 zijn voor oude rijen).
+  int _dbOperatorsUitHoofdopdrachtRow(Map<String, dynamic> row) {
+    return int.tryParse(row['benodigde_operators']?.toString() ?? '0') ?? 0;
+  }
+
+  /// Minuten sedert middernacht voor DB-tijd (HH:mm, HH:mm:ss of fragment in ISO-string).
+  int? _dbTijdStringNaarMinuten(String raw) {
+    final s = _text(raw);
+    if (s.isEmpty) return null;
+    var head = s;
+    if (s.contains('T')) {
+      final i = s.indexOf('T');
+      head = s.substring(i + 1).split('+').first.split('-').first;
+    }
+    head = head.length >= 8
+        ? head.substring(0, 8).trim()
+        : head.split('.').first.trim();
+    final parts = head.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = int.tryParse(parts[1]) ?? 0;
+    return h * 60 + m.clamp(0, 59);
+  }
+
+  /// Uren tussen planning [starttijd] en [eindtijd] (nachtdienst: eind < start → +24u).
+  double _urenTussenPlanningTijden(dynamic startV, dynamic eindV) {
+    final startMin = _dbTijdStringNaarMinuten(startV.toString());
+    final eindMin = _dbTijdStringNaarMinuten(eindV.toString());
+    if (startMin == null || eindMin == null) return 0;
+    var e = eindMin;
+    if (e < startMin) e += 24 * 60;
+    return (e - startMin) / 60.0;
+  }
+
+  /// Realtime geplande uren en aantal planning-rijen voor deze opdracht (excl. geannuleerd).
+  /// Bij bewerken van bestaande planning: [excludePlanningId] telt niet mee in som en aantal.
+  Future<void> _berekenRestant({required String excludePlanningId}) async {
+    double somUren = 0;
+    var count = 0;
+    try {
+      final res = await Supabase.instance.client
+          .from('opdracht_planning')
+          .select('id, starttijd, eindtijd, status')
+          .eq('opdracht_id', widget.opdrachtId);
+
+      final list = List<dynamic>.from((res as List?) ?? const <dynamic>[]);
+      for (final raw in list) {
+        if (raw is! Map) continue;
+        final m = Map<String, dynamic>.from(raw);
+        if (_text(m['status']) == 'geannuleerd') continue;
+        final id = _text(m['id']);
+        if (excludePlanningId.isNotEmpty && id == excludePlanningId) {
+          continue;
+        }
+        count++;
+        if (m['starttijd'] != null && m['eindtijd'] != null) {
+          somUren += _urenTussenPlanningTijden(m['starttijd'], m['eindtijd']);
+        }
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('Fout bij berekenen reeds geplande uren: $e');
+    }
+    if (!mounted) return;
+    final safeOps = _safeOperatorsHoofdopdracht;
+    final totaal = _totaalUrenHoofdopdracht;
+    setState(() {
+      _reedsGeplandeUren = somUren;
+      _reedsGeplandeOperators = count;
+      _resterendeOperators = (safeOps - count).clamp(0, 99);
+      _resterendeUren = (totaal - somUren).clamp(0.0, 999.0);
+    });
+  }
+
+  double get _maxUrenVoorRegelaar {
+    if (_resterendeUren > 0) return math.min(24.0, _resterendeUren);
+    return 24.0;
+  }
+
+  String _operatorDisplayNaam(Map<String, dynamic> op) {
+    final n = _text(op['naam']);
+    if (n.isNotEmpty) return n;
+    final on = _text(op['operator_naam']);
+    return on.isNotEmpty ? on : 'Operator';
+  }
+
+  String _berekenEindTijdDb(String startHuman, double uren) {
+    final startMin = _timeStringToMinutes(startHuman);
+    final endMin = startMin + (uren * 60).round();
+    return _minutesToDb(endMin);
   }
 
   DateTime _dateFromValue(dynamic value) {
@@ -112,9 +220,14 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           DateTime.now();
       geselecteerdeHandmatigeDatum = DateTime(pd.year, pd.month, pd.day);
       _bestaandePlanningId = _text(item['huidige_planning_id']);
-      _selectedOperatorId = _text(item['huidige_operator_id']).isEmpty
-          ? null
-          : _text(item['huidige_operator_id']);
+      final hid = _text(item['huidige_operator_id']);
+      if (hid.isNotEmpty) {
+        _gekozenOperatorIds = [hid];
+        _gekozenOperatorNamen = ['Operator'];
+      } else {
+        _gekozenOperatorIds = [];
+        _gekozenOperatorNamen = [];
+      }
 
       final planningDetails = item['planning_details'] ?? item['planning'];
       String? startRaw;
@@ -143,14 +256,15 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
         }
       }
 
-      if (_selectedOperatorId != null && _selectedOperatorId!.isNotEmpty) {
+      if (_gekozenOperatorIds.isNotEmpty) {
         _hasSearchedOperators = true;
       }
     } else {
       final pd = _dateFromValue(item['geplande_datum']);
       geselecteerdeHandmatigeDatum = DateTime(pd.year, pd.month, pd.day);
       _bestaandePlanningId = null;
-      _selectedOperatorId = null;
+      _gekozenOperatorIds = [];
+      _gekozenOperatorNamen = [];
       geselecteerdeHandmatigeTijd = null;
       _hasSearchedOperators = false;
       _availableOperators = <dynamic>[];
@@ -232,7 +346,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           .select(
             'id, project_id, status, geplande_datum, tijdslot_start, tijdslot_eind, '
             'huidige_operator_id, huidige_planning_id, '
-            'benodigde_uren_totaal, toegewezen_uren_totaal, resterende_uren, '
+            'benodigde_uren_totaal, verwachte_uren_totaal, toegewezen_uren_totaal, resterende_uren, '
             'benodigde_operators, werk_regio, uitvoer_adres_volledig, '
             'toelichting_planning, bedrijfsnaam, '
             'projecten(project_naam), '
@@ -242,14 +356,55 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           .single();
 
       final map = Map<String, dynamic>.from(row as Map);
-      final totalHours = _asDouble(map['benodigde_uren_totaal'], fallback: 0);
-      final neededOperators = _asInt(map['benodigde_operators'], fallback: 1);
-      final standardPerPerson = totalHours / math.max(1, neededOperators);
-      final remainingHours = _asDouble(map['resterende_uren'], fallback: 0);
-      _shiftHours = (remainingHours > 0 ? remainingHours : standardPerPerson)
-          .clamp(0.25, 24.0);
+
+      // 1. Haal totalen op (exacte klant-logica op string-niveau)
+      final double totaalUren = _totaalUrenKlantFormule(map);
+      final int dbOperators = _dbOperatorsUitHoofdopdrachtRow(map);
+      // ignore: avoid_print
+      print('Uitlezen in UI (ManualPlanModal) - item dbOperators: $dbOperators');
+      // ignore: avoid_print
+      print(
+        'Uitlezen in UI (ManualPlanModal) - raw benodigde_operators: ${map['benodigde_operators']}',
+      );
+
+      // 2. Kogelvrije fallback: alleen bij DB 0 → /3; anders altijd DB
+      var safeOperators = dbOperators > 0
+          ? dbOperators
+          : (totaalUren > 0 ? (totaalUren / 3).ceil() : 1);
+      if (safeOperators == 0) {
+        safeOperators = 1;
+      }
+
+      // 3. Standaard per persoon (bijv. 24 uur / 4 man = 6.0 uur)
+      final double standaardUurPerPersoon = totaalUren / safeOperators;
+
+      _totaalUrenHoofdopdracht = totaalUren;
+      _safeOperatorsHoofdopdracht = safeOperators;
+      _standaardUurPerPersoon = standaardUurPerPersoon;
+
+      final excludePlanningId =
+          _text(map['status']) == 'ingepland' &&
+                  _text(map['huidige_planning_id']).isNotEmpty
+              ? _text(map['huidige_planning_id'])
+              : '';
+
+      await _berekenRestant(excludePlanningId: excludePlanningId);
+
+      // 4. Startwaarde +/- regelaar
+      var benodigdeUren = standaardUurPerPersoon;
+      if (benodigdeUren > _resterendeUren && _resterendeUren > 0) {
+        benodigdeUren = _resterendeUren;
+      } else if (benodigdeUren == 0) {
+        benodigdeUren = 1.0;
+      }
+      _shiftHours = benodigdeUren.clamp(0.25, _maxUrenVoorRegelaar);
 
       _prefillHandmatigePlannerState(map);
+
+      if (_text(map['status']) == 'ingepland' &&
+          _text(_bestaandePlanningId).isNotEmpty) {
+        _shiftHours = _shiftHours.clamp(0.25, _maxUrenVoorRegelaar);
+      }
 
       final slotStartRaw = _text(geselecteerdeHandmatigeTijd);
       if (slotStartRaw.isEmpty) {
@@ -275,7 +430,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       });
 
       await _berekenHandmatigeTijden(
-        _selectedOperatorId ?? '',
+        _gekozenOperatorIds.isNotEmpty ? _gekozenOperatorIds.first : '',
         pdDay,
         _shiftHours,
       );
@@ -391,7 +546,8 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     if (start == null || hours <= 0 || _regio.isEmpty) {
       setState(() {
         _availableOperators = <dynamic>[];
-        _selectedOperatorId = null;
+        _gekozenOperatorIds = [];
+        _gekozenOperatorNamen = [];
         _hasSearchedOperators = false;
       });
       return;
@@ -406,7 +562,8 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
 
     setState(() {
       _isSearching = true;
-      _selectedOperatorId = null;
+      _gekozenOperatorIds = [];
+      _gekozenOperatorNamen = [];
     });
     void logRpc(Object message) {
       assert(() {
@@ -441,13 +598,6 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       setState(() {
         _availableOperators = rows;
         _hasSearchedOperators = true;
-        if (_selectedOperatorId != null &&
-            !_availableOperators.any((o) {
-              if (o is! Map) return false;
-              return _text(o['id']) == _selectedOperatorId;
-            })) {
-          _selectedOperatorId = null;
-        }
       });
     } catch (e) {
       logRpc('--- RPC ERROR ---');
@@ -455,7 +605,8 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       if (!mounted) return;
       setState(() {
         _availableOperators = <dynamic>[];
-        _selectedOperatorId = null;
+        _gekozenOperatorIds = [];
+        _gekozenOperatorNamen = [];
         _hasSearchedOperators = true;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -474,6 +625,174 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     }
   }
 
+  Future<void> _toonOperatorZoekModal(
+    List<dynamic> operatorLijst,
+    int maxAantal,
+  ) async {
+    if (!mounted) return;
+    var zoekTerm = '';
+    var tempIds = List<String>.from(_gekozenOperatorIds);
+    var tempNamen = List<String>.from(_gekozenOperatorNamen);
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final q = zoekTerm.toLowerCase().trim();
+            final gefilterdeLijst = operatorLijst.where((op) {
+              if (op is! Map) return false;
+              final m = Map<String, dynamic>.from(op);
+              if (q.isEmpty) return true;
+              final naam = _operatorDisplayNaam(m).toLowerCase();
+              return naam.contains(q);
+            }).toList();
+
+            return AlertDialog(
+              title: Text(
+                maxAantal > 1
+                    ? 'Kies operators (max $maxAantal)'
+                    : 'Kies een operator',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Zoek operator',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) =>
+                          setModalState(() => zoekTerm = val),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: gefilterdeLijst.isEmpty
+                          ? Center(
+                              child: Text(
+                                'Geen resultaten',
+                                style: GoogleFonts.inter(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: gefilterdeLijst.length,
+                              itemBuilder: (context, index) {
+                                final raw = gefilterdeLijst[index];
+                                if (raw is! Map) return const SizedBox.shrink();
+                                final operator =
+                                    Map<String, dynamic>.from(raw);
+                                final opId = _text(operator['id']);
+                                final opNaam = _operatorDisplayNaam(operator);
+                                if (opId.isEmpty) return const SizedBox.shrink();
+                                final isSelected = tempIds.contains(opId);
+
+                                return ListTile(
+                                  title: Text(
+                                    opNaam,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  trailing: maxAantal > 1
+                                      ? Icon(
+                                          isSelected
+                                              ? Icons.check_box_rounded
+                                              : Icons.check_box_outline_blank_rounded,
+                                          color: isSelected
+                                              ? Theme.of(context).colorScheme.primary
+                                              : Colors.grey.shade500,
+                                        )
+                                      : null,
+                                  selected: isSelected,
+                                  selectedTileColor: Colors.blue.shade50,
+                                  onTap: () {
+                                    if (maxAantal == 1) {
+                                      setState(() {
+                                        _gekozenOperatorIds = [opId];
+                                        _gekozenOperatorNamen = [opNaam];
+                                      });
+                                      Navigator.pop(dialogContext);
+                                      _berekenHandmatigeTijden(
+                                        opId,
+                                        _effectieveHandmatigePlanningDatum,
+                                        _shiftHours,
+                                      );
+                                    } else {
+                                      setModalState(() {
+                                        if (isSelected) {
+                                          final i = tempIds.indexOf(opId);
+                                          if (i >= 0) {
+                                            tempIds.removeAt(i);
+                                            if (i < tempNamen.length) {
+                                              tempNamen.removeAt(i);
+                                            }
+                                          }
+                                        } else if (tempIds.length <
+                                            maxAantal) {
+                                          tempIds.add(opId);
+                                          tempNamen.add(opNaam);
+                                        } else {
+                                          ScaffoldMessenger.of(
+                                            dialogContext,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Je kunt maximaal $maxAantal operators kiezen.',
+                                                style: GoogleFonts.inter(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      });
+                                    }
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Annuleren'),
+                ),
+                if (maxAantal > 1)
+                  FilledButton(
+                    onPressed: () {
+                      setState(() {
+                        _gekozenOperatorIds = List<String>.from(tempIds);
+                        _gekozenOperatorNamen = List<String>.from(tempNamen);
+                      });
+                      Navigator.pop(dialogContext);
+                      if (_gekozenOperatorIds.isNotEmpty) {
+                        _berekenHandmatigeTijden(
+                          _gekozenOperatorIds.first,
+                          _effectieveHandmatigePlanningDatum,
+                          _shiftHours,
+                        );
+                      }
+                    },
+                    child: const Text('Bevestigen'),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _pickHandmatigeDatum() async {
     final initial = _effectieveHandmatigePlanningDatum;
     final DateTime? picked = await showDatePicker(
@@ -490,7 +809,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       return;
     }
 
-    final opId = _text(_selectedOperatorId);
+    final opId = _gekozenOperatorIds.isNotEmpty ? _gekozenOperatorIds.first : '';
     setState(() {
       geselecteerdeHandmatigeDatum = pickedDay;
       geselecteerdeHandmatigeTijd = null;
@@ -500,12 +819,28 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
   }
 
   Future<void> _submitPlan() async {
-    if (_saving || _selectedOperatorId == null) return;
+    if (_saving) return;
+    if (_gekozenOperatorIds.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Kies minimaal één operator.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+      return;
+    }
+
     final hours = _shiftHours;
     final startHuman = _text(geselecteerdeHandmatigeTijd);
     if (startHuman.isEmpty || hours <= 0) return;
+
     final startMinutes = _timeStringToMinutes(startHuman);
-    final endMinutes = startMinutes + (hours * 60).round();
+    final startDb = _minutesToDb(startMinutes);
+    final berekendeEindTijd = _berekenEindTijdDb(startHuman, hours);
 
     setState(() => _saving = true);
     try {
@@ -520,12 +855,11 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           .toIso8601String()
           .split('T')
           .first;
-      final berekendeEindTijd = _minutesToDb(endMinutes);
-      final startDb = _minutesToDb(startMinutes);
 
       if (isBestaandePlanning) {
+        final currentOpId = _gekozenOperatorIds.first;
         await Supabase.instance.client.from('opdracht_planning').update({
-          'operator_id': _selectedOperatorId,
+          'operator_id': currentOpId,
           'geplande_datum': nieuweDatum,
           'starttijd': startDb,
           'eindtijd': berekendeEindTijd,
@@ -536,15 +870,18 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           'geplande_datum': nieuweDatum,
         }).eq('id', widget.opdrachtId);
       } else {
-        await Supabase.instance.client.from('opdracht_planning').insert({
-          'opdracht_id': widget.opdrachtId,
-          'operator_id': _selectedOperatorId,
-          'geplande_datum': nieuweDatum,
-          'starttijd': startDb,
-          'eindtijd': berekendeEindTijd,
-          'toegewezen_uren': hours,
-          'status': 'gepland',
-        });
+        for (var i = 0; i < _gekozenOperatorIds.length; i++) {
+          final currentOpId = _gekozenOperatorIds[i];
+          await Supabase.instance.client.from('opdracht_planning').insert({
+            'opdracht_id': widget.opdrachtId,
+            'operator_id': currentOpId,
+            'geplande_datum': nieuweDatum,
+            'starttijd': startDb,
+            'eindtijd': berekendeEindTijd,
+            'toegewezen_uren': hours,
+            'status': 'gepland',
+          });
+        }
 
         try {
           await Supabase.instance.client.from('opdrachten').update({
@@ -557,16 +894,19 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       }
 
       try {
-        final gekozenOperatorId = _text(_selectedOperatorId);
         final datumString = nieuweDatum.isNotEmpty ? nieuweDatum : 'binnenkort';
-        await AppSupabase.client.functions.invoke(
-          'send-push-notification',
-          body: {
-            'operator_id': gekozenOperatorId,
-            'aantal': 1,
-            'datum_string': datumString,
-          },
-        );
+        for (final opId in _gekozenOperatorIds) {
+          final id = _text(opId);
+          if (id.isEmpty) continue;
+          await AppSupabase.client.functions.invoke(
+            'send-push-notification',
+            body: {
+              'operator_id': id,
+              'aantal': 1,
+              'datum_string': datumString,
+            },
+          );
+        }
       } catch (e) {
         // ignore: avoid_print
         print('Kon pushmelding niet versturen: $e');
@@ -716,74 +1056,118 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
   }
 
   Widget _buildInfoTab(ScrollController controller, ColorScheme cs, bool isDark) {
-    final address = _text(_opdracht?['uitvoer_adres_volledig']);
-    final instructions = _text(_opdracht?['toelichting_planning']).isNotEmpty
-        ? _text(_opdracht?['toelichting_planning'])
-        : 'Geen toelichting';
+    final item = _opdracht ?? <String, dynamic>{};
+    final totaalUren = _totaalUrenHoofdopdracht > 0
+        ? _totaalUrenHoofdopdracht
+        : (double.tryParse(
+              item['benodigde_uren_totaal']?.toString() ?? '0',
+            ) ??
+            0.0);
+    final operators = _safeOperatorsHoofdopdracht > 0
+        ? _safeOperatorsHoofdopdracht
+        : (int.tryParse(item['benodigde_operators']?.toString() ?? '1') ?? 1);
+    final urenPerPersoon = operators > 0 ? (totaalUren / operators) : totaalUren;
+
+    final klant = _text(item['bedrijfsnaam']).isEmpty
+        ? _clientName
+        : _text(item['bedrijfsnaam']);
+    final datumLabel = _formatDate(_effectieveHandmatigePlanningDatum);
+    final startSlot = _timeToHuman(_windowStart);
+    final endSlot = _timeToHuman(_windowEnd);
+
+    Widget buildInfoRow(IconData icon, String label, String waarde) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: Colors.grey.shade500),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    waarde,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: Colors.black87,
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return ListView(
       controller: controller,
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 22),
       children: [
-        _infoCard(
-          cs,
-          isDark,
-          title: 'Project',
-          value: _projectName,
-        ),
-        const SizedBox(height: 10),
-        _infoCard(
-          cs,
-          isDark,
-          title: 'Klant',
-          value: _clientName,
-        ),
-        const SizedBox(height: 10),
-        _infoCard(
-          cs,
-          isDark,
-          title: 'Geplande datum',
-          value: _formatDate(_effectieveHandmatigePlanningDatum),
-        ),
-        const SizedBox(height: 10),
-        _infoCard(
-          cs,
-          isDark,
-          title: 'Tijdslot',
-          value: '${_timeToHuman(_windowStart)} - ${_timeToHuman(_windowEnd)}',
-        ),
-        const SizedBox(height: 10),
-        _infoCard(
-          cs,
-          isDark,
-          title: 'Werkregio',
-          value: _regio.isEmpty ? '-' : _regio,
-        ),
-        const SizedBox(height: 10),
-        _infoCard(
-          cs,
-          isDark,
-          title: 'Adres',
-          value: address.isEmpty ? '-' : address,
-        ),
-        const SizedBox(height: 10),
-        _infoCard(
-          cs,
-          isDark,
-          title: 'Instructies',
-          value: instructions,
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              buildInfoRow(
+                Icons.business,
+                'Klant / Bedrijf',
+                klant.isEmpty ? 'Onbekend' : klant,
+              ),
+              Divider(height: 1, color: Colors.grey.shade300),
+              buildInfoRow(Icons.calendar_today, 'Datum', datumLabel),
+              Divider(height: 1, color: Colors.grey.shade300),
+              buildInfoRow(
+                Icons.access_time,
+                'Tijdslot',
+                '$startSlot tot $endSlot',
+              ),
+              Divider(height: 1, color: Colors.grey.shade300),
+              buildInfoRow(
+                Icons.people_outline,
+                'Aantal operators',
+                '$operators geadviseerd',
+              ),
+              Divider(height: 1, color: Colors.grey.shade300),
+              buildInfoRow(
+                Icons.timer_outlined,
+                'Standaard per persoon',
+                '${urenPerPersoon.toStringAsFixed(2)} uur',
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
   Widget _buildPlanTab(ScrollController controller, ColorScheme cs, bool isDark) {
-    final neededOperators = _asInt(_opdracht?['benodigde_operators'], fallback: 1);
+    final opdracht = _opdracht;
+    final totaalUren = _totaalUrenHoofdopdracht;
+    final safeOperators = _safeOperatorsHoofdopdracht;
+    final reedsGeplandeUren = _reedsGeplandeUren;
+    final reedsGeplandeOperators = _reedsGeplandeOperators;
+    final standaardUurPerPersoon = _standaardUurPerPersoon;
+    final resterendeUren = _resterendeUren;
+    final resterendeOperators = _resterendeOperators;
+    final isEditingIngepland = _text(opdracht?['status']) == 'ingepland' &&
+        _text(_bestaandePlanningId).isNotEmpty;
     final canLoadOperators = _selectedStartTime != null && _shiftHours > 0;
-    final totalHours = _asDouble(_opdracht?['benodigde_uren_totaal']);
-    final standardPerPerson = totalHours / math.max(1, neededOperators);
-    final assignedHours = _asDouble(_opdracht?['toegewezen_uren_totaal']);
-    final remainingHours = _asDouble(_opdracht?['resterende_uren']);
+    final maxTeKiezen = isEditingIngepland ? 1 : _resterendeOperators;
 
     return ListView(
       controller: controller,
@@ -799,99 +1183,134 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Nodig: $neededOperators operators • Mogelijk tussen ${_timeToHuman(_windowStart)} en ${_timeToHuman(_windowEnd)}',
+          'Nodig: $safeOperators operators (effectief) • Mogelijk tussen ${_timeToHuman(_windowStart)} en ${_timeToHuman(_windowEnd)}',
           style: GoogleFonts.inter(
             fontWeight: FontWeight.w700,
             color: cs.onSurface.withValues(alpha: 0.72),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         Container(
-          width: double.infinity,
           padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(16),
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Totaal benodigd',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: cs.onSurface.withValues(alpha: 0.66),
-                      ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Totaal benodigd',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${totaalUren.toStringAsFixed(2)} uur\n($safeOperators operators)',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      formatHoursToText(totalHours),
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Reeds toegewezen',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${reedsGeplandeUren.toStringAsFixed(2)} uur\n($reedsGeplandeOperators operators)',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Standaard per persoon',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: cs.onSurface.withValues(alpha: 0.66),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      formatHoursToText(standardPerPerson),
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Reeds toegewezen',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: cs.onSurface.withValues(alpha: 0.66),
-                      ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Standaard per persoon',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${standaardUurPerPersoon.toStringAsFixed(2)} uur',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      formatHoursToText(assignedHours),
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Nog in te vullen',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${resterendeUren.toStringAsFixed(2)} uur\n($resterendeOperators operators)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: resterendeUren > 0
+                                ? Colors.orange.shade700
+                                : Colors.green.shade700,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Nog in te vullen',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: cs.onSurface.withValues(alpha: 0.66),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      formatHoursToText(remainingHours),
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w900,
-                        color: cs.primary,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(Icons.calendar_today, color: cs.primary),
@@ -918,11 +1337,13 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
               icon: Icons.remove_rounded,
               onPressed: () {
                 setState(() {
-                  _shiftHours = (_shiftHours - 0.25).clamp(0.25, 24.0);
-                  _selectedOperatorId = null;
+                  _shiftHours =
+                      (_shiftHours - 0.25).clamp(0.25, _maxUrenVoorRegelaar).toDouble();
+                  _gekozenOperatorIds = [];
+                  _gekozenOperatorNamen = [];
                 });
                 _berekenHandmatigeTijden(
-                  _selectedOperatorId ?? '',
+                  _gekozenOperatorIds.isNotEmpty ? _gekozenOperatorIds.first : '',
                   _effectieveHandmatigePlanningDatum,
                   _shiftHours,
                 );
@@ -939,11 +1360,13 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
               icon: Icons.add_rounded,
               onPressed: () {
                 setState(() {
-                  _shiftHours = (_shiftHours + 0.25).clamp(0.25, 24.0);
-                  _selectedOperatorId = null;
+                  _shiftHours =
+                      (_shiftHours + 0.25).clamp(0.25, _maxUrenVoorRegelaar).toDouble();
+                  _gekozenOperatorIds = [];
+                  _gekozenOperatorNamen = [];
                 });
                 _berekenHandmatigeTijden(
-                  _selectedOperatorId ?? '',
+                  _gekozenOperatorIds.isNotEmpty ? _gekozenOperatorIds.first : '',
                   _effectieveHandmatigePlanningDatum,
                   _shiftHours,
                 );
@@ -985,7 +1408,8 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                   setState(() {
                     geselecteerdeHandmatigeTijd = val;
                     if (val != null) _startTimeController.text = val;
-                    _selectedOperatorId = null;
+                    _gekozenOperatorIds = [];
+                    _gekozenOperatorNamen = [];
                     _availableOperators = <dynamic>[];
                     _hasSearchedOperators = false;
                   });
@@ -1030,6 +1454,27 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
         ),
+        if (!isEditingIngepland && maxTeKiezen <= 0) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Alle geplande operator-plekken voor deze opdracht zijn ingevuld.',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.orange.shade800,
+            ),
+          ),
+        ] else if (maxTeKiezen > 1) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Je kunt nog tot $maxTeKiezen operator(s) selecteren voor deze opdracht.',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: cs.onSurface.withValues(alpha: 0.68),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         if (_availableOperators.isEmpty)
           Padding(
@@ -1047,43 +1492,69 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
             ),
           )
         else
-          DropdownButtonFormField<String>(
-            initialValue: _selectedOperatorId,
-            decoration: _fieldDecoration(
-              isDark,
-              cs,
-              'Beschikbare operator',
-              Icons.person_outline_rounded,
-            ),
-            items: _availableOperators
-                .whereType<Map>()
-                .map((raw) => Map<String, dynamic>.from(raw))
-                .map(
-                  (op) => DropdownMenuItem<String>(
-                    value: _text(op['id']),
-                    child: Text(
-                      _text(op['naam']).isEmpty
-                          ? (_text(op['operator_naam']).isEmpty ? 'Onbekende operator' : _text(op['operator_naam']))
-                          : _text(op['naam']),
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                    ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: (!canLoadOperators || _isSearching)
+                  ? null
+                  : () {
+                      if (!isEditingIngepland && maxTeKiezen <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            content: Text(
+                              'Er zijn geen vrije operator-plekken meer voor deze opdracht.',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      _toonOperatorZoekModal(_availableOperators, maxTeKiezen);
+                    },
+              borderRadius: BorderRadius.circular(16),
+              child: InputDecorator(
+                decoration: _fieldDecoration(
+                  isDark,
+                  cs,
+                  'Geselecteerde operator(s)',
+                  Icons.person_search_rounded,
+                ).copyWith(
+                  suffixIcon: _gekozenOperatorIds.isNotEmpty && !_isSearching
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded),
+                          onPressed: () {
+                            setState(() {
+                              _gekozenOperatorIds = [];
+                              _gekozenOperatorNamen = [];
+                            });
+                            _berekenHandmatigeTijden(
+                              '',
+                              _effectieveHandmatigePlanningDatum,
+                              _shiftHours,
+                            );
+                          },
+                        )
+                      : const Icon(Icons.search_rounded),
+                ),
+                child: Text(
+                  _gekozenOperatorIds.isNotEmpty
+                      ? _gekozenOperatorNamen.join(', ')
+                      : 'Klik hier om te zoeken…',
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: _gekozenOperatorIds.isNotEmpty
+                        ? cs.onSurface
+                        : cs.onSurface.withValues(alpha: 0.55),
                   ),
-                )
-                .toList(growable: false),
-            onChanged: !canLoadOperators || _isSearching
-                ? null
-                : (value) {
-                    setState(() => _selectedOperatorId = value);
-                    _berekenHandmatigeTijden(
-                      _selectedOperatorId ?? '',
-                      _effectieveHandmatigePlanningDatum,
-                      _shiftHours,
-                    );
-                  },
+                ),
+              ),
+            ),
           ),
         const SizedBox(height: 18),
         FilledButton(
-          onPressed: (_selectedOperatorId == null || _saving) ? null : _submitPlan,
+          onPressed: (_gekozenOperatorIds.isEmpty || _saving) ? null : _submitPlan,
           style: FilledButton.styleFrom(
             backgroundColor: cs.primary,
             foregroundColor: Colors.white,
@@ -1108,42 +1579,6 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                 ),
         ),
       ],
-    );
-  }
-
-  Widget _infoCard(
-    ColorScheme cs,
-    bool isDark, {
-    required String title,
-    required String value,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w800,
-              color: cs.onSurface.withValues(alpha: 0.68),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w900,
-              color: cs.onSurface,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

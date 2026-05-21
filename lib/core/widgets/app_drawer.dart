@@ -23,6 +23,7 @@ import '../../features/admin/screens/uren_accorderen_screen.dart';
 import '../../features/admin/screens/period_close_screen.dart';
 import '../../features/admin/screens/factuur_editor_screen.dart';
 import '../../features/admin/screens/invoice_bulk_run_screen.dart';
+import '../../features/admin/screens/facturatie_overview_screen.dart';
 import '../../features/admin/screens/invoice_overview_screen.dart';
 import '../../features/admin/screens/invoice_history_screen.dart';
 import '../../features/admin/screens/open_items_screen.dart';
@@ -231,6 +232,12 @@ class AppDrawerContent extends StatelessWidget {
                             icon: Icons.table_rows_rounded,
                             title: 'Overzicht',
                             screen: const InvoiceOverviewScreen(),
+                          ),
+                          navTile(
+                            name: '/admin/sales/facturatie-overzicht',
+                            icon: Icons.account_balance_wallet_outlined,
+                            title: 'Facturatie (klanten)',
+                            screen: const FacturatieOverzichtScreen(),
                           ),
                           navTile(
                             name: '/admin/sales/invoices/generate',
