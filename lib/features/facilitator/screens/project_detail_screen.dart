@@ -242,7 +242,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                                 nieuweCode;
                                             _artikelLabel = '$nieuweCode - $naam';
                                           });
-                                          ScaffoldMessenger.of(context)
+                                          ScaffoldMessenger.of(this.context)
                                               .showSnackBar(
                                             SnackBar(
                                               content: Text(
@@ -258,7 +258,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                           );
                                         } catch (e) {
                                           if (!mounted) return;
-                                          ScaffoldMessenger.of(context)
+                                          ScaffoldMessenger.of(this.context)
                                               .showSnackBar(
                                             SnackBar(
                                               content: Text(

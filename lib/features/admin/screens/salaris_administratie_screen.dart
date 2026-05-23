@@ -505,7 +505,8 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: DropdownButtonFormField<String?>(
-        value: _geselecteerdeOperatorFilterId,
+        key: ValueKey(_geselecteerdeOperatorFilterId),
+        initialValue: _geselecteerdeOperatorFilterId,
         decoration: InputDecoration(
           labelText: 'Filter op operator',
           filled: true,

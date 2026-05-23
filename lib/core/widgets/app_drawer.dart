@@ -28,6 +28,7 @@ import '../../features/admin/screens/invoice_overview_screen.dart';
 import '../../features/admin/screens/invoice_history_screen.dart';
 import '../../features/admin/screens/open_items_screen.dart';
 import '../../features/admin/screens/analyses_screen.dart';
+import '../../features/admin/screens/generator_dashboard_screen.dart';
 import '../../features/facilitator/facilitator_dashboard.dart';
 import '../../features/facilitator/screens/contract_management_screen.dart';
 import '../../features/facilitator/screens/project_overview_screen.dart';
@@ -186,6 +187,70 @@ class AppDrawerContent extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (canFacilitator) ...[
+                  Builder(
+                    builder: (context) {
+                      final dashboardRoute = isGen
+                          ? '/generator/dashboard'
+                          : '/facilitator/dashboard';
+                      final dashboardScreen = isGen
+                          ? const GeneratorDashboardScreen()
+                          : (isDesktop
+                              ? const FacilitatorDashboard()
+                              : const MobileBottomNavLayout(
+                                  initialKey: 'dashboard',
+                                ));
+                      final selected = routeName == dashboardRoute;
+
+                      return ListTile(
+                        leading: isDesktop
+                            ? null
+                            : const Icon(Icons.dashboard, color: Colors.blue),
+                        minLeadingWidth: isDesktop ? 0 : null,
+                        selected: selected,
+                        selectedColor: Theme.of(context).colorScheme.primary,
+                        selectedTileColor: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: isDark ? 0.18 : 0.10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        title: const Text(
+                          'Dashboard',
+                          style: TextStyle(
+                            fontSize: _fontSize,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.of(context).maybePop();
+                          final isMobile =
+                              MediaQuery.of(context).size.width < 600;
+
+                          if (isMobile) {
+                            Navigator.of(context).pushReplacement(
+                              MaterialPageRoute<void>(
+                                settings: RouteSettings(name: dashboardRoute),
+                                builder: (_) => dashboardScreen,
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (routeName == dashboardRoute) return;
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              settings: RouteSettings(name: dashboardRoute),
+                              builder: (_) => dashboardScreen,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  const Divider(height: 8),
+                ],
                 if (isEnterpriseAdmin) ...[
                   ExpansionTile(
                     leading: isDesktop ? null : const Icon(Icons.folder_open_rounded),
@@ -365,14 +430,6 @@ class AppDrawerContent extends StatelessWidget {
                     initiallyExpanded: canFacilitatorRole && !isEnterpriseAdmin,
                     childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                     children: [
-                      navTile(
-                        name: '/facilitator/dashboard',
-                        icon: Icons.dashboard_outlined,
-                        title: 'Dashboard',
-                        screen: isDesktop
-                            ? const FacilitatorDashboard()
-                            : const MobileBottomNavLayout(initialKey: 'dashboard'),
-                      ),
                       navTile(
                         name: '/facilitator/mijn-agenda',
                         icon: Icons.event_note_outlined,

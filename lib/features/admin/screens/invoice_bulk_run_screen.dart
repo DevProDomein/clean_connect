@@ -343,22 +343,6 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
     }
   }
 
-  String _bedrijfsnaamVanId(String bedrijfId) {
-    for (final k in _klantenStatusLijst) {
-      if (_text(k['id']) == bedrijfId) {
-        final naam = _text(k['naam']);
-        return naam.isNotEmpty ? naam : 'Onbekend';
-      }
-    }
-    for (final k in _klantenLijst) {
-      if (_text(k['id']) == bedrijfId) {
-        final naam = _text(k['bedrijfsnaam']);
-        return naam.isNotEmpty ? naam : 'Onbekend';
-      }
-    }
-    return 'Onbekend';
-  }
-
   void _berekenKlantenStatus({
     required List<Map<String, dynamic>> bedrijven,
     required List<Map<String, dynamic>> facturaties,

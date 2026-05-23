@@ -139,18 +139,6 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
     return percentage?.toString() ?? '2';
   }
 
-  String _btwLabelForLine(Map<String, dynamic> l) {
-    final pct = _asDouble(l['btw_percentage']);
-    final code = _text(l['btw_code']).toUpperCase();
-    if (code.contains('VRIJ') || l['btw_vrijgesteld'] == true) return 'Vrijgesteld van BTW';
-    if (pct == 21) return '21% (Hoog tarief)';
-    if (pct == 9) return '9% (Laag tarief)';
-    if (pct == 0 && (code.contains('VERLEG') || l['btw_verlegd'] == true)) return '0% (Verlegd)';
-    if (pct == 0) return '0% (Verlegd)';
-    if (pct > 0) return '${pct.toStringAsFixed(0)}%';
-    return 'BTW kiezen';
-  }
-
   String _resolveBtwCode({required double pct, bool vrijgesteld = false, bool verlegd = false}) {
     if (vrijgesteld) {
       for (final b in _btwCodes) {
@@ -909,22 +897,6 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
     return _text(op['bedrijfsnaam']);
   }
 
-  Map<String, dynamic>? _projectVanOpdracht(Map<String, dynamic> op) {
-    final raw = op['project'] ?? op['projecten'];
-    if (raw is Map) return Map<String, dynamic>.from(raw);
-    if (raw is List && raw.isNotEmpty) {
-      final first = raw.first;
-      if (first is Map) return Map<String, dynamic>.from(first);
-    }
-    return null;
-  }
-
-  String _projectNaamVanOpdracht(Map<String, dynamic> op) {
-    final proj = _projectVanOpdracht(op);
-    if (proj == null) return '';
-    return _text(proj['project_naam']);
-  }
-
   String _standaardArtikelCodeVanOpdracht(Map<String, dynamic> op) {
     final projectData = op['projecten'] ?? op['project'];
     dynamic proj = projectData;
@@ -957,14 +929,6 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
     }
   }
 
-  String _opdrachtTaakOmschrijving(Map<String, dynamic> op) {
-    for (final key in ['toelichting_planning', 'omschrijving', 'bedrijfsnaam']) {
-      final s = _text(op[key]);
-      if (s.isNotEmpty) return s;
-    }
-    return '';
-  }
-
   String _maandLabelVanOpdracht(Map<String, dynamic> op) {
     final d = _parseDateOnly(op['geplande_datum']);
     if (d == null) return 'Datum onbekend';
@@ -986,19 +950,6 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
       grouped.putIfAbsent(key, () => []).add(taak);
     }
     return grouped;
-  }
-
-  String _netteFactuurOmschrijvingVanOpdracht(Map<String, dynamic> op) {
-    final datum = _opdrachtDatumLabel(op['geplande_datum']);
-    final naam = _projectNaamVanOpdracht(op);
-    final taakOms = _opdrachtTaakOmschrijving(op);
-    final adres = _opdrachtAdresLabel(op);
-
-    final parts = <String>['Uitgevoerd op: $datum'];
-    if (naam.isNotEmpty) parts.add('Werk: $naam');
-    if (taakOms.isNotEmpty && taakOms != naam) parts.add('Omschrijving: $taakOms');
-    if (adres.isNotEmpty) parts.add('Locatie: $adres');
-    return parts.join('\n');
   }
 
   double _opdrachtBedragExBtw(Map<String, dynamic> opdracht) {
@@ -1593,7 +1544,7 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
           'btw_code': _text(l['btw_code']),
           'btw_percentage': _asDouble(l['btw_percentage']),
           'volgorde': volgorde++,
-          if (slotInfo != null) 'gekoppelde_opdrachten_info': slotInfo,
+          'gekoppelde_opdrachten_info': ?slotInfo,
         });
       }
 
