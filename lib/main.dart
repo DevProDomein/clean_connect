@@ -13,7 +13,7 @@ import 'core/supabase_client.dart';
 import 'core/models/user_role.dart';
 import 'core/translations.dart';
 import 'features/admin/admin_dashboard.dart';
-import 'features/admin/screens/user_management_screen.dart';
+import 'features/admin/screens/generator_dashboard_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/screens/set_password_screen.dart';
 import 'features/facilitator/facilitator_dashboard.dart';
@@ -621,7 +621,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
   Widget _homeForPermissions(BuildContext context, UserProvider userProvider) {
     final isDesktop = MediaQuery.of(context).size.width > 800;
     // Emergency: Generator always lands in administrator UI with navigation.
-    if (userProvider.isGenerator) return const UserManagementScreen();
+    if (userProvider.isGenerator) return const GeneratorDashboardScreen();
     if (userProvider.hasPermission('portal_admin') ||
         userProvider.hasPermission('finance')) {
       return const AdminDashboard();
@@ -642,7 +642,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     final isDesktop = MediaQuery.of(context).size.width > 800;
     switch (userProvider.role) {
       case UserRole.generator:
-        return const UserManagementScreen();
+        return const GeneratorDashboardScreen();
       case UserRole.administrator:
         return const AdminDashboard();
       case UserRole.facilitator:

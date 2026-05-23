@@ -15,11 +15,13 @@ class QuoteSurveyScreen extends StatefulWidget {
     super.key,
     required this.offerteId,
     this.isDirectProject = false,
+    this.standaardArtikelCode,
   });
 
   final String offerteId;
   /// When true, completion sets [offertes.status] to `signed` (direct project flow).
   final bool isDirectProject;
+  final String? standaardArtikelCode;
 
   @override
   State<QuoteSurveyScreen> createState() => _QuoteSurveyScreenState();
@@ -266,6 +268,15 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
         await AppSupabase.client
             .from('offertes')
             .update({'status': 'signed'}).eq('id', widget.offerteId);
+
+        final artikelCode = _text(widget.standaardArtikelCode);
+        if (artikelCode.isNotEmpty) {
+          await AppSupabase.client
+              .from('projecten')
+              .update({'standaard_artikel_code': artikelCode})
+              .eq('offerte_id', widget.offerteId);
+        }
+
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

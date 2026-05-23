@@ -54,6 +54,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   String? _bedrijfLogoUrl;
   String? _pandFotoUrl;
   String? _werkRegio;
+  String _artikelLabel = 'Geen artikel gekoppeld!';
   String _status = 'actief';
   String _aangemaaktLabel = '—';
   bool _uploadingPand = false;
@@ -88,6 +89,208 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void _markDirty() {
     if (_isDirty) return;
     setState(() => _isDirty = true);
+  }
+
+  Future<void> _resolveArtikelLabel(String code) async {
+    if (code.isEmpty) {
+      if (mounted) setState(() => _artikelLabel = 'Geen artikel gekoppeld!');
+      return;
+    }
+    try {
+      final row = await AppSupabase.client
+          .from('artikelen')
+          .select()
+          .eq('artikel_code', code)
+          .maybeSingle();
+      final naam = row?['artikel_naam']?.toString() ??
+          row?['omschrijving']?.toString() ??
+          row?['naam']?.toString() ??
+          '';
+      if (!mounted) return;
+      setState(() {
+        _artikelLabel = naam.isEmpty ? code : '$code — $naam';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _artikelLabel = code);
+    }
+  }
+
+  Future<void> _toonArtikelZoekModal() async {
+    final project = _project;
+    if (project == null) return;
+
+    var zoekTerm = '';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        List<dynamic> artikelenLijst = [];
+        var isLoading = true;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            if (isLoading && artikelenLijst.isEmpty) {
+              AppSupabase.client
+                  .from('artikelen')
+                  .select()
+                  .order('artikel_code', ascending: true)
+                  .then((data) {
+                if (!dialogContext.mounted) return;
+                setModalState(() {
+                  artikelenLijst = data;
+                  isLoading = false;
+                });
+              }).catchError((error) {
+                // ignore: avoid_print
+                print('Fout bij laden artikelen: $error');
+                if (!dialogContext.mounted) return;
+                setModalState(() => isLoading = false);
+              });
+            }
+
+            String artikelNaamUitRow(dynamic a) {
+              return a['artikel_naam']?.toString() ??
+                  a['omschrijving']?.toString() ??
+                  a['naam']?.toString() ??
+                  'Naamloos artikel';
+            }
+
+            final gefilterdeLijst = artikelenLijst.where((a) {
+              if (zoekTerm.isEmpty) return true;
+              final naam = artikelNaamUitRow(a).toLowerCase();
+              final code = a['artikel_code']?.toString().toLowerCase() ?? '';
+              final q = zoekTerm.toLowerCase();
+              return naam.contains(q) || code.contains(q);
+            }).toList();
+
+            return AlertDialog(
+              title: const Text('Selecteer een Artikel(groep)'),
+              content: SizedBox(
+                width: 500,
+                height: 400,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Zoek op naam of code',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) => setModalState(() => zoekTerm = val),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: isLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : gefilterdeLijst.isEmpty
+                              ? const Center(child: Text('Geen artikelen gevonden.'))
+                              : ListView.builder(
+                                  itemCount: gefilterdeLijst.length,
+                                  itemBuilder: (ctx, i) {
+                                    final artikel = gefilterdeLijst[i];
+                                    final code =
+                                        artikel['artikel_code']?.toString() ??
+                                            'Geen code';
+                                    final naam = artikelNaamUitRow(artikel);
+                                    final eenheid =
+                                        artikel['eenheid']?.toString() ??
+                                            'stuks';
+                                    final prijsRaw = artikel['standaard_prijs'] ??
+                                        artikel['verkoopprijs'] ??
+                                        artikel['stukprijs'] ??
+                                        artikel['verkoopprijs_ex_btw'] ??
+                                        0;
+                                    final prijs = double.tryParse(
+                                          prijsRaw.toString(),
+                                        ) ??
+                                        0.0;
+
+                                    return ListTile(
+                                      leading: const CircleAvatar(
+                                        backgroundColor: Colors.blue,
+                                        child: Icon(
+                                          Icons.inventory_2,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        '$code - $naam',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        'Eenheid: $eenheid | Prijs: €${prijs.toStringAsFixed(2)}',
+                                      ),
+                                      onTap: () async {
+                                        final nieuweCode = code;
+                                        Navigator.pop(dialogContext);
+
+                                        try {
+                                          await AppSupabase.client
+                                              .from('projecten')
+                                              .update({
+                                                'standaard_artikel_code': nieuweCode,
+                                              })
+                                              .eq('id', widget.projectId);
+
+                                          if (!mounted) return;
+                                          setState(() {
+                                            project['standaard_artikel_code'] =
+                                                nieuweCode;
+                                            _artikelLabel = '$nieuweCode - $naam';
+                                          });
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Artikel succesvol gewijzigd.',
+                                                style: GoogleFonts.lato(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              backgroundColor:
+                                                  Colors.green.shade700,
+                                              behavior: SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                        } catch (e) {
+                                          if (!mounted) return;
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Fout bij wijzigen: $e',
+                                                style: GoogleFonts.lato(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              backgroundColor: Colors.red,
+                                              behavior: SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Annuleren'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   String _formatTimeDb(TimeOfDay t) =>
@@ -304,6 +507,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         _loading = false;
         _isDirty = false;
       });
+      final artikelCode = _text(row['standaard_artikel_code']);
+      await _resolveArtikelLabel(artikelCode);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -897,6 +1102,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             style: GoogleFonts.lato(fontWeight: FontWeight.w600, color: _navy),
             decoration: deco('Omschrijving'),
             onChanged: (_) => _markDirty(),
+          ),
+          const SizedBox(height: 12),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.inventory_2, color: _blue),
+            title: Text(
+              'Gekoppeld Artikel',
+              style: GoogleFonts.lato(fontWeight: FontWeight.w800, color: _navy),
+            ),
+            subtitle: Text(
+              _artikelLabel,
+              style: GoogleFonts.lato(fontWeight: FontWeight.w600, color: _muted),
+            ),
+            trailing: OutlinedButton(
+              onPressed: _toonArtikelZoekModal,
+              child: Text(
+                'Wijzigen',
+                style: GoogleFonts.lato(fontWeight: FontWeight.w800),
+              ),
+            ),
           ),
           const SizedBox(height: 18),
           if (isIncidenteel && vastePrijs > 0) ...[

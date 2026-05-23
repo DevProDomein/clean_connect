@@ -151,6 +151,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
 
     if (!canOpen) {
       return Scaffold(
+        backgroundColor: const Color(0xFFF2F2F7),
         appBar: AppBar(title: const Text('Gebruikersbeheer')),
         body: const SelectionArea(
           child: Padding(
@@ -164,6 +165,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
+        backgroundColor: const Color(0xFFF2F2F7),
         drawer: const AppDrawer(),
         appBar: AppBar(
           title: Text(
@@ -1161,11 +1163,13 @@ class _UserList extends StatelessWidget {
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-      itemCount: filtered.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 14),
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+      itemCount: filtered.length + 1,
       itemBuilder: (context, index) {
+        if (index == filtered.length) {
+          return const SizedBox(height: 120);
+        }
         final u = filtered[index];
         return _UserCard(
           user: u,
@@ -1193,129 +1197,118 @@ class _UserCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? cs.surface.withValues(alpha: 0.92) : Colors.white;
+    final rol = user.roleString.trim().toLowerCase();
+    final displayRol = rol.isEmpty ? 'onbekend' : rol;
 
-    final role = user.roleString.trim().isEmpty ? 'onbekend' : user.roleString.trim();
+    Color rolKleur = Colors.grey;
+    if (displayRol == 'operator') rolKleur = Colors.blue;
+    if (displayRol == 'generator' || displayRol == 'facilitator') {
+      rolKleur = Colors.purple;
+    }
+    if (displayRol == 'klant') rolKleur = Colors.green;
+
+    var initial = '?';
+    final nameParts = user.name.trim().split(RegExp(r'\s+'));
+    if (nameParts.isNotEmpty && nameParts.first.isNotEmpty) {
+      initial = nameParts.first.substring(0, 1).toUpperCase();
+    }
+
+    final emailLabel =
+        user.email.trim().isEmpty ? 'Geen e-mail' : user.email.trim();
 
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(24),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 5),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
       ),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: cs.primary.withValues(alpha: 0.14),
-                  child: Icon(Icons.person, color: cs.primary),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.2,
-                          color: cs.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        user.email.isEmpty ? user.id : user.email,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: -0.1,
-                          color: cs.onSurface.withValues(alpha: 0.70),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _RolePill(role: role),
-                    if (isGenerator) ...[
-                      const SizedBox(height: 10),
-                      PopupMenuButton<String>(
-                        tooltip: 'Acties',
-                        onSelected: (v) {
-                          if (v == 'role') onShowRoleDialog();
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(
-                            value: 'role',
-                            child: Text('Rol wijzigen'),
-                          ),
-                        ],
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: cs.primary.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'Acties',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.2,
-                              color: cs.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: CircleAvatar(
+          radius: 24,
+          backgroundColor: rolKleur.withValues(alpha: 0.1),
+          child: Text(
+            initial,
+            style: TextStyle(
+              color: rolKleur,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
             ),
           ),
         ),
+        title: Text(
+          user.name.trim().isEmpty ? '(geen naam)' : user.name.trim(),
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              emailLabel,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: rolKleur.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                displayRol.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: rolKleur,
+                ),
+              ),
+            ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isGenerator)
+              PopupMenuButton<String>(
+                tooltip: 'Acties',
+                onSelected: (v) {
+                  if (v == 'role') onShowRoleDialog();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'role',
+                    child: Text('Rol wijzigen'),
+                  ),
+                ],
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: rolKleur.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Acties',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: rolKleur,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        onTap: onTap,
       ),
-    );
-  }
-}
-
-class _RolePill extends StatelessWidget {
-  const _RolePill({required this.role});
-
-  final String role;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return EnterprisePillBadge(
-      text: role,
-      backgroundColor: cs.primary.withValues(alpha: 0.14),
-      textColor: cs.primary,
-      borderColor: cs.primary.withValues(alpha: 0.25),
     );
   }
 }

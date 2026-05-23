@@ -7,6 +7,9 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:xml/xml.dart';
 
 class DocumentGenerationService {
+  /// Bruikbare inhoudsbreedte op A4 met standaard marges (36pt links/rechts).
+  static const double _pdfContentWidth = 523.28;
+
   static Future<Uint8List> generateInvoicePdf(
     Map<String, dynamic> invoice,
     List<dynamic> lines,
@@ -61,9 +64,9 @@ class DocumentGenerationService {
           final content = <pw.Widget>[
             pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Expanded(
+                pw.Container(
+                  width: _pdfContentWidth * 0.58,
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
@@ -84,6 +87,7 @@ class DocumentGenerationService {
                 ),
                 pw.SizedBox(width: 14),
                 pw.Container(
+                  width: _pdfContentWidth * 0.38,
                   padding: const pw.EdgeInsets.all(12),
                   decoration: pw.BoxDecoration(
                     color: PdfColors.grey200,
@@ -238,9 +242,9 @@ class DocumentGenerationService {
               ),
               child: pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Expanded(
+                  pw.Container(
+                    width: _pdfContentWidth - 24 - 92 - 12,
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
@@ -378,13 +382,11 @@ class DocumentGenerationService {
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(k, style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
-          pw.SizedBox(width: 12),
-          pw.Expanded(
-            child: pw.Text(
-              v,
-              textAlign: pw.TextAlign.right,
-              style: const pw.TextStyle(fontSize: 9),
-            ),
+          pw.SizedBox(width: 8),
+          pw.Text(
+            v,
+            textAlign: pw.TextAlign.right,
+            style: const pw.TextStyle(fontSize: 9),
           ),
         ],
       ),
@@ -423,13 +425,11 @@ class DocumentGenerationService {
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Expanded(
-            child: pw.Text(
-              label,
-              style: pw.TextStyle(
-                fontSize: 9,
-                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              ),
+          pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
             ),
           ),
           pw.SizedBox(width: 12),

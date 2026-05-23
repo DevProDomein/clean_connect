@@ -1,9 +1,7 @@
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/models/user_role.dart';
@@ -37,6 +35,12 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
   /// null = alle operators
   String? _filterOperatorId;
 
+  /// Operators met geaccordeerde uren die nog geen loonstrook hebben deze maand.
+  int _operatorsNogAfTeSluiten = 0;
+
+  /// Geselecteerde ingediende taak in master-detail split-view.
+  Map<String, dynamic>? _geselecteerdeTaak;
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +67,31 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
 
   String _urenStatusNorm(Map<String, dynamic> r) =>
       _text(r['uren_status']).toLowerCase();
+
+  bool _isOpenUrenStatus(Map<String, dynamic> r) {
+    final s = _urenStatusNorm(r);
+    return s.isEmpty || s == 'open';
+  }
+
+  DateTime get _vandaag => _dayOnly(DateTime.now());
+
+  /// Open uren, alleen als de dienst vandaag of in het verleden ligt.
+  bool _isVergetenOpenTaak(Map<String, dynamic> r) {
+    if (!_isOpenUrenStatus(r)) return false;
+    final d = _parseShiftDay(r['geplande_datum']);
+    if (d == null) return false;
+    return !_dayOnly(d).isAfter(_vandaag);
+  }
+
+  bool _dayHasOpenVergeten(DateTime day) {
+    final key = _dayOnly(day);
+    for (final r in _rows) {
+      if (!_isVergetenOpenTaak(r)) continue;
+      final d = _parseShiftDay(r['geplande_datum']);
+      if (d != null && _dayOnly(d) == key) return true;
+    }
+    return false;
+  }
 
   /// PK van `opdracht_planning` — nooit `opdracht_id` verwarren.
   String _planningIdFromRow(Map<String, dynamic> row) {
@@ -175,13 +204,12 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
           .select(
             'id, operator_id, opdracht_id, geplande_datum, starttijd, eindtijd, '
             'toegewezen_uren, werkelijke_starttijd, werkelijke_eindtijd, '
-            'gewerkte_uren_decimaal, uren_status, bedrijfsnaam, '
+            'gewerkte_uren_decimaal, uren_status, doorgeschoven_naar_maand, bedrijfsnaam, '
             'operator:gebruikers(id, voornaam, achternaam, standaard_uurloon, '
             'contract_vaste_uren, contract_vast_salaris, contract_startdatum, '
             'contract_einddatum), '
             'opdrachten!opdracht_planning_opdracht_id_fkey(bedrijfsnaam, projecten(project_naam))',
           )
-          .inFilter('uren_status', const ['open', 'ingediend', 'geaccordeerd'])
           .gte('geplande_datum', fromStr)
           .lte('geplande_datum', toStr)
           .order('geplande_datum', ascending: false)
@@ -189,6 +217,13 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
 
       final list = (planningRes as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
+          .where((r) {
+            final st = _urenStatusNorm(r);
+            return st.isEmpty ||
+                st == 'open' ||
+                st == 'ingediend' ||
+                st == 'geaccordeerd';
+          })
           .toList();
 
       final ids = list
@@ -221,10 +256,25 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
         }
       }
 
+      final nogAfTeSluiten = await _berekenOperatorsNogAfTeSluiten(list);
+
+      Map<String, dynamic>? behoudSelectie = _geselecteerdeTaak;
+      if (behoudSelectie != null) {
+        final selId = _planningIdFromRow(behoudSelectie);
+        final match = list.where((r) {
+          if (_planningIdFromRow(r) != selId) return false;
+          final st = _urenStatusNorm(r);
+          return st == 'ingediend' || st == 'geaccordeerd';
+        });
+        behoudSelectie = match.isNotEmpty ? match.first : null;
+      }
+
       if (!mounted) return;
       setState(() {
         _rows = list;
         _operatorNames = names;
+        _operatorsNogAfTeSluiten = nogAfTeSluiten;
+        _geselecteerdeTaak = behoudSelectie;
         _loading = false;
       });
     } catch (e) {
@@ -256,9 +306,6 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
         (_focusedDay.year == nu.year && _focusedDay.month < nu.month);
   }
 
-  bool _isInFocusedMonth(DateTime day) =>
-      day.year == _focusedDay.year && day.month == _focusedDay.month;
-
   bool _passesOperatorFilter(Map<String, dynamic> r) {
     if (_filterOperatorId == null) return true;
     return _text(r['operator_id']) == _filterOperatorId;
@@ -278,51 +325,82 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
       });
   }
 
-  List<Map<String, dynamic>> _rowsIngediendForSelectedDay() {
-    final sel = _selectedDay ?? _focusedDay;
-    final key = _dayOnly(sel);
-    return _sortRowsByDateTime(
-      _rows.where((r) {
-        if (_urenStatusNorm(r) != 'ingediend') return false;
-        final d = _parseShiftDay(r['geplande_datum']);
-        if (d == null || _dayOnly(d) != key) return false;
-        return _passesOperatorFilter(r);
-      }).toList(),
-    );
-  }
-
-  List<Map<String, dynamic>> _rowsIngediendForMonthExcludingSelectedDay() {
-    final selKey = _dayOnly(_selectedDay ?? _focusedDay);
-    return _sortRowsByDateTime(
-      _rows.where((r) {
-        if (_urenStatusNorm(r) != 'ingediend') return false;
-        final d = _parseShiftDay(r['geplande_datum']);
-        if (d == null || !_isInFocusedMonth(d)) return false;
-        if (_dayOnly(d) == selKey) return false;
-        return _passesOperatorFilter(r);
-      }).toList(),
-    );
-  }
-
   List<Map<String, dynamic>> _rowsInFocusedMonth() {
     return _takenDezeMaand();
   }
 
+  /// Taak hoort bij de focus-maand: oorspronkelijk gepland in die maand, of doorgeschoven naar die maand.
+  bool _hoortBijFocusMaand(Map<String, dynamic> taak) {
+    final huidigeMaandSleutel = _maandSleutel;
+    final doorgeschovenRaw = taak['doorgeschoven_naar_maand'];
+    final doorgeschoven = doorgeschovenRaw == null
+        ? null
+        : _text(doorgeschovenRaw);
+
+    final taakDatum = _parseShiftDay(taak['geplande_datum']) ??
+        DateTime.tryParse(taak['geplande_datum']?.toString() ?? '');
+    if (taakDatum == null) return false;
+
+    final isOrigineelDezeMaand = taakDatum.year == _focusedDay.year &&
+        taakDatum.month == _focusedDay.month;
+    final isDoorgeschovenNaarDezeMaand =
+        doorgeschoven != null && doorgeschoven == huidigeMaandSleutel;
+
+    if (isOrigineelDezeMaand &&
+        doorgeschoven != null &&
+        doorgeschoven.isNotEmpty &&
+        doorgeschoven != huidigeMaandSleutel) {
+      return true;
+    }
+
+    return isOrigineelDezeMaand || isDoorgeschovenNaarDezeMaand;
+  }
+
   /// Taken in de actieve kalendermaand ([_focusedDay]), lokaal gefilterd op [_rows].
   List<Map<String, dynamic>> _takenDezeMaand() {
-    return _rows.where((taak) {
-      final taakDatum = DateTime.tryParse(
-        taak['geplande_datum']?.toString() ?? '',
+    return _rows.where(_hoortBijFocusMaand).toList();
+  }
+
+  /// Oranje/rood label voor doorschuif-status (alleen lijstweergave).
+  Widget? _buildRolloverTag(Map<String, dynamic> taak) {
+    final doorgeschovenSleutel = _text(taak['doorgeschoven_naar_maand']);
+    if (doorgeschovenSleutel.isEmpty) return null;
+
+    final huidigeMaandSleutel = _maandSleutel;
+
+    if (doorgeschovenSleutel == huidigeMaandSleutel) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade100,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          'Meegenomen uit vorige maand',
+          style: GoogleFonts.inter(
+            color: Colors.orange.shade900,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       );
-      if (taakDatum == null) {
-        final parsed = _parseShiftDay(taak['geplande_datum']);
-        if (parsed == null) return false;
-        return parsed.year == _focusedDay.year &&
-            parsed.month == _focusedDay.month;
-      }
-      return taakDatum.year == _focusedDay.year &&
-          taakDatum.month == _focusedDay.month;
-    }).toList();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.red.shade100,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        'Doorgeschoven naar $doorgeschovenSleutel',
+        style: GoogleFonts.inter(
+          color: Colors.red.shade900,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 
   /// `status` ontbreekt soms in de payload → behandel als ingepland (actieve planning).
@@ -383,13 +461,38 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
     return (open: open, ingediend: ingediend, geaccordeerd: geacc);
   }
 
-  List<Map<String, dynamic>> _rowsGeaccordeerdForFocusedMonth() {
-    return _sortRowsByDateTime(
-      _rowsInFocusedMonth().where((r) {
-        if (_urenStatusNorm(r) != 'geaccordeerd') return false;
-        return _passesOperatorFilter(r);
-      }).toList(),
-    );
+  Future<int> _berekenOperatorsNogAfTeSluiten(
+    List<Map<String, dynamic>> rows,
+  ) async {
+    final geaccIds = <String>{};
+    for (final r in rows) {
+      if (!_hoortBijFocusMaand(r)) continue;
+      if (_urenStatusNorm(r) != 'geaccordeerd') continue;
+      final id = _text(r['operator_id']);
+      if (id.isNotEmpty) geaccIds.add(id);
+    }
+    if (geaccIds.isEmpty) return 0;
+
+    try {
+      final res = await AppSupabase.client
+          .from('operator_uitbetalingen')
+          .select('operator_id')
+          .eq('maand_sleutel', _maandSleutel)
+          .inFilter('operator_id', geaccIds.toList());
+      final afgesloten = (res as List)
+          .map((e) => _text(Map<String, dynamic>.from(e as Map)['operator_id']))
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      return geaccIds.where((id) => !afgesloten.contains(id)).length;
+    } catch (_) {
+      return geaccIds.length;
+    }
+  }
+
+  Future<void> _refreshAfsluitStatus() async {
+    if (_rows.isEmpty) return;
+    final count = await _berekenOperatorsNogAfTeSluiten(_rows);
+    if (mounted) setState(() => _operatorsNogAfTeSluiten = count);
   }
 
   Future<List<Map<String, dynamic>>> _operatorsMetGeaccordeerdeUrenDezeMaand() async {
@@ -495,10 +598,14 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
     final a = _maandUrenAnalytics();
     final aantalGeaccordeerd = _maandPlanningStatusCounts().geaccordeerd;
     final isMaandVoorbij = _isFocusedMaandVoorbij;
-    final kanAfsluiten = aantalGeaccordeerd > 0 && isMaandVoorbij;
+    final heeftNogTeSluiten = _operatorsNogAfTeSluiten > 0;
+    final kanAfsluiten =
+        aantalGeaccordeerd > 0 && isMaandVoorbij && heeftNogTeSluiten;
     final knopLabel = !isMaandVoorbij && aantalGeaccordeerd > 0
         ? 'Maand nog niet voorbij'
-        : 'Maand Afsluiten (Loonstrook genereren)';
+        : aantalGeaccordeerd > 0 && !heeftNogTeSluiten
+            ? 'Alle operators al afgesloten'
+            : 'Maand Afsluiten (Loonstrook genereren)';
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -595,25 +702,170 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
     }
   }
 
-  String _formatUrenNl(double d) {
-    if (d == d.roundToDouble()) return d.toInt().toString();
-    return NumberFormat.decimalPattern('nl_NL').format(d);
+  List<Map<String, dynamic>> _inTeDienenLijst() {
+    return _sortRowsByDateTime(
+      _rows.where((t) {
+        if (_urenStatusNorm(t) != 'ingediend') return false;
+        if (!_hoortBijFocusMaand(t)) return false;
+        return _passesOperatorFilter(t);
+      }).toList(),
+    );
   }
 
-  Future<void> _onRowTap(Map<String, dynamic> row) async {
-    final st = _urenStatusNorm(row);
-    if (st == 'ingediend') {
-      await _openAccordeerDialog(row);
-    } else {
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Geaccordeerd'),
-          content: Text(
-            '${_klantNaam(row)}\n${_operatorName(row)}\n'
-            'Gewerkte uren: ${_formatUrenNl(_asDouble(row['gewerkte_uren_decimaal']))} u\n'
-            'Werkelijk: ${_safeTime(row['werkelijke_starttijd'])} – ${_safeTime(row['werkelijke_eindtijd'])}',
+  List<Map<String, dynamic>> _geaccordeerdeLijst() {
+    return _sortRowsByDateTime(
+      _rows.where((t) {
+        if (_urenStatusNorm(t) != 'geaccordeerd') return false;
+        if (!_hoortBijFocusMaand(t)) return false;
+        return _passesOperatorFilter(t);
+      }).toList(),
+    );
+  }
+
+  List<Map<String, dynamic>> _vergetenTaken3PlusDagen() {
+    final nu = DateTime.now();
+    return _rows.where((t) {
+      if (!_isVergetenOpenTaak(t)) return false;
+      if (!_hoortBijFocusMaand(t)) return false;
+      if (!_passesOperatorFilter(t)) return false;
+      final taakDatum = _parseShiftDay(t['geplande_datum']);
+      if (taakDatum == null) return false;
+      return nu.difference(_dayOnly(taakDatum)).inDays >= 3;
+    }).toList();
+  }
+
+  String _geplandeDatumDisplay(Map<String, dynamic> row) {
+    final d = _parseShiftDay(row['geplande_datum']);
+    if (d != null) {
+      return DateFormat('dd-MM-yyyy').format(d);
+    }
+    return _text(row['geplande_datum']);
+  }
+
+  Future<void> _stuurPushReminder(String operatorId, String bedrijfsnaam) async {
+    if (operatorId.isEmpty) return;
+    try {
+      await AppSupabase.client.from('push_queue').insert({
+        'operator_id': operatorId,
+        'titel': 'Vergeet je uren niet! ⏰',
+        'bericht':
+            'Vergeet niet je gewerkte uren voor $bedrijfsnaam in te vullen in de app.',
+      });
+    } catch (e) {
+      debugPrint('Fout bij sturen reminder: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _toonReminderModal(List<Map<String, dynamic>> taken) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(
+            'Achterstallige Uren (3+ dagen)',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+          content: SizedBox(
+            width: 600,
+            height: 400,
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: taken.length,
+                    itemBuilder: (context, index) {
+                      final t = taken[index];
+                      final operatorNaam = _operatorName(t);
+                      final bedrijfsnaam = _klantNaam(t);
+                      final datum = _geplandeDatumDisplay(t);
+                      final operatorId = _text(t['operator_id']);
+
+                      return ListTile(
+                        leading: const Icon(
+                          Icons.warning,
+                          color: Colors.orange,
+                        ),
+                        title: Text(
+                          '$operatorNaam - $datum',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(bedrijfsnaam),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.send, color: Colors.blue),
+                          tooltip: 'Stuur herinnering',
+                          onPressed: () async {
+                            try {
+                              await _stuurPushReminder(
+                                operatorId,
+                                bedrijfsnaam,
+                              );
+                              if (!ctx.mounted) return;
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Reminder gestuurd!'),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!ctx.mounted) return;
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                SnackBar(content: Text('Mislukt: $e')),
+                              );
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const Divider(),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      try {
+                        final inserts = <Map<String, dynamic>>[];
+                        for (final t in taken) {
+                          final operatorId = _text(t['operator_id']);
+                          if (operatorId.isEmpty) continue;
+                          inserts.add({
+                            'operator_id': operatorId,
+                            'titel': 'Vergeet je uren niet! ⏰',
+                            'bericht':
+                                'Vergeet niet je gewerkte uren voor ${_klantNaam(t)} in te vullen in de app.',
+                          });
+                        }
+                        if (inserts.isNotEmpty) {
+                          await AppSupabase.client
+                              .from('push_queue')
+                              .insert(inserts);
+                        }
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Alle reminders verstuurd! (${inserts.length})',
+                            ),
+                            backgroundColor: const Color(0xFF2E7D32),
+                          ),
+                        );
+                      } catch (e) {
+                        if (!ctx.mounted) return;
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('Bulk mislukt: $e')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.send_and_archive),
+                    label: const Text('Stuur alle reminders in één keer'),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -621,9 +873,14 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
               child: const Text('Sluiten'),
             ),
           ],
-        ),
-      );
-    }
+        );
+      },
+    );
+  }
+
+  String _formatUrenNl(double d) {
+    if (d == d.roundToDouble()) return d.toInt().toString();
+    return NumberFormat.decimalPattern('nl_NL').format(d);
   }
 
   Future<void> _openAccordeerDialog(Map<String, dynamic> row) async {
@@ -785,14 +1042,15 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
     final aantalOpen = counts.open;
     final aantalIngediend = counts.ingediend;
     final aantalGeaccordeerd = counts.geaccordeerd;
+    final vergetenTaken = _vergetenTaken3PlusDagen();
 
     return Row(
       children: [
         Expanded(
-          child: _kpiTile(
-            label: 'Nog in te vullen',
-            value: '$aantalOpen',
-            icon: Icons.edit_calendar_outlined,
+          flex: 2,
+          child: _kpiTileOpenMetReminder(
+            aantalOpen: aantalOpen,
+            vergetenTaken: vergetenTaken,
           ),
         ),
         const SizedBox(width: 8),
@@ -812,6 +1070,89 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _kpiTileOpenMetReminder({
+    required int aantalOpen,
+    required List<Map<String, dynamic>> vergetenTaken,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _brightBlue.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.edit_calendar_outlined,
+              color: _deepNavy,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Nog in te vullen',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$aantalOpen',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (vergetenTaken.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+                icon: const Icon(Icons.notifications_active, size: 16),
+                label: Text(
+                  'Stuur Reminders (${vergetenTaken.length})',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+                onPressed: () => _toonReminderModal(vergetenTaken),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -924,18 +1265,14 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
             )
           : Column(
               children: [
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _load,
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _analyticsRow(),
-                          const SizedBox(height: 16),
-                          TableCalendar<String>(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _analyticsRow(),
+                      const SizedBox(height: 16),
+                      TableCalendar<String>(
                     firstDay: DateTime.utc(2020, 1, 1),
                     lastDay: DateTime.utc(2035, 12, 31),
                     focusedDay: _focusedDay,
@@ -949,14 +1286,41 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                     locale: 'nl_NL',
                     onFormatChanged: (f) => setState(() => _calendarFormat = f),
                     onDaySelected: (sel, foc) {
+                      final dayKey = _dayOnly(sel);
+                      final takenOpDag = _sortRowsByDateTime(
+                        _rows.where((t) {
+                          if (!_passesOperatorFilter(t)) return false;
+                          final d = _parseShiftDay(t['geplande_datum']);
+                          if (d == null || _dayOnly(d) != dayKey) return false;
+                          final st = _urenStatusNorm(t);
+                          return st == 'ingediend' || st == 'geaccordeerd';
+                        }).toList(),
+                      );
+
                       setState(() {
                         _selectedDay = sel;
                         _focusedDay = foc;
+                        if (takenOpDag.isNotEmpty) {
+                          final eersteIngediend = takenOpDag
+                              .where((t) => _urenStatusNorm(t) == 'ingediend')
+                              .toList();
+                          _geselecteerdeTaak = eersteIngediend.isNotEmpty
+                              ? eersteIngediend.first
+                              : takenOpDag.first;
+                        }
                       });
+                      _refreshAfsluitStatus();
                     },
-                    onPageChanged: (foc) => setState(() => _focusedDay = foc),
+                    onPageChanged: (foc) {
+                      setState(() {
+                        _focusedDay = foc;
+                        _geselecteerdeTaak = null;
+                      });
+                      _refreshAfsluitStatus();
+                    },
                     eventLoader: (day) {
                       final tags = <String>[];
+                      if (_dayHasOpenVergeten(day)) tags.add('o');
                       if (_dayHasStatus(day, 'ingediend')) tags.add('i');
                       if (_dayHasStatus(day, 'geaccordeerd')) tags.add('g');
                       return tags;
@@ -974,6 +1338,7 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                     calendarBuilders: CalendarBuilders(
                       markerBuilder: (context, day, events) {
                         if (events.isEmpty) return const SizedBox.shrink();
+                        final hasO = events.contains('o');
                         final hasI = events.contains('i');
                         final hasG = events.contains('g');
                         return Padding(
@@ -982,6 +1347,18 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
+                              if (hasO)
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _brightBlue,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
                               if (hasI)
                                 Container(
                                   width: 6,
@@ -1012,387 +1389,440 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                       },
                     ),
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: InputDecorator(
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: Colors.white,
-                            labelText: 'Operator-filter',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
+                      const SizedBox(height: 12),
+                      InputDecorator(
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.white,
+                          labelText: 'Operator-filter',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String?>(
-                              isExpanded: true,
-                              value: _filterOperatorId,
-                              items: _operatorFilterItems(),
-                              onChanged: (v) =>
-                                  setState(() => _filterOperatorId = v),
-                            ),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String?>(
+                            isExpanded: true,
+                            value: _filterOperatorId,
+                            items: _operatorFilterItems(),
+                            onChanged: (v) {
+                              setState(() {
+                                _filterOperatorId = v;
+                                if (_geselecteerdeTaak != null &&
+                                    !_passesOperatorFilter(_geselecteerdeTaak!)) {
+                                  _geselecteerdeTaak = null;
+                                }
+                              });
+                            },
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _loading ? null : _toonOperatorFinancienModal,
-                        icon: const Icon(Icons.account_balance_wallet),
-                        label: const Text('Beheer Operator Financiën'),
-                      ),
                     ],
-                          ),
-                          const SizedBox(height: 16),
-                          ..._buildSplitAccordeerLists(),
-                        ],
-                      ),
-                    ),
                   ),
                 ),
+                Expanded(child: _buildMasterDetailSplit()),
                 _buildBottomPayrollBar(),
               ],
             ),
     );
   }
 
-  String _formatTaakDatumKort(DateTime d) {
-    try {
-      return DateFormat('E d MMM', 'nl_NL').format(d);
-    } catch (_) {
-      return DateFormat('E d MMM').format(d);
-    }
+  Widget _buildInfoBlokje(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F2F7),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: Colors.grey.shade600),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _buildTaskCard(
-    Map<String, dynamic> row, {
-    required bool dayHighlight,
-    required bool showDate,
-  }) {
-    final border = const Color(0xFFE53935);
-    final day = _parseShiftDay(row['geplande_datum']);
+  double _detailPaneBreedte(BuildContext context) {
+    if (_geselecteerdeTaak == null) return 0;
+    final scherm = MediaQuery.sizeOf(context).width;
+    return (scherm * 0.38).clamp(380.0, 480.0);
+  }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: dayHighlight ? Colors.blue.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _onRowTap(row),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: dayHighlight ? Colors.blue.shade400 : border,
-                width: dayHighlight ? 1.5 : 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+  Widget _buildTaakLijst(
+    List<Map<String, dynamic>> lijst, {
+    required bool isGeaccordeerdTab,
+  }) {
+    if (lijst.isEmpty) {
+      return Center(
+        child: Text(
+          isGeaccordeerdTab
+              ? 'Geen geaccordeerde uren gevonden.'
+              : 'Geen uren te accorderen.',
+          style: GoogleFonts.inter(
+            color: Colors.grey.shade600,
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
+    }
+
+    final selId = _geselecteerdeTaak == null
+        ? ''
+        : _planningIdFromRow(_geselecteerdeTaak!);
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: lijst.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final item = lijst[index];
+        final itemId = _planningIdFromRow(item);
+        final isSelected = selId.isNotEmpty && selId == itemId;
+        final rolloverTag = _buildRolloverTag(item);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: () => setState(() => _geselecteerdeTaak = item),
+              borderRadius: BorderRadius.circular(12),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.blue.shade50 : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.blue.shade300
+                        : Colors.grey.shade200,
+                    width: isSelected ? 1.5 : 1,
+                  ),
+                  boxShadow: [
+                    if (!isSelected)
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                  ],
                 ),
-              ],
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isGeaccordeerdTab
+                            ? Colors.green.shade100
+                            : Colors.orange.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.person,
+                        color: isGeaccordeerdTab
+                            ? Colors.green.shade700
+                            : Colors.orange.shade700,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _operatorName(item),
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_geplandeDatumDisplay(item)} • ${_klantNaam(item)}',
+                            style: GoogleFonts.inter(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      color: isSelected ? Colors.blue : Colors.grey.shade400,
+                    ),
+                  ],
+                ),
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (showDate && day != null) ...[
+            if (rolloverTag != null) ...[
+              const SizedBox(height: 6),
+              rolloverTag,
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailKaart() {
+    final taak = _geselecteerdeTaak!;
+    final isAlGeaccordeerd = _urenStatusNorm(taak) == 'geaccordeerd';
+    final rolloverTag = _buildRolloverTag(taak);
+
+    final klant = _klantNaam(taak);
+    final operator = _operatorName(taak);
+    final datum = _geplandeDatumDisplay(taak);
+    final werkelijkStart = _safeTime(taak['werkelijke_starttijd']);
+    final werkelijkEind = _safeTime(taak['werkelijke_eindtijd']);
+    final gewerkteUren =
+        _formatUrenNl(_asDouble(taak['gewerkte_uren_decimaal']));
+    final tijden =
+        '$werkelijkStart – $werkelijkEind · $gewerkteUren u';
+
+    return Container(
+      margin: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                isAlGeaccordeerd ? 'Geaccordeerde Uren' : 'Ingediende Uren',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => setState(() => _geselecteerdeTaak = null),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.grey.shade100,
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 32),
+          if (rolloverTag != null) ...[
+            rolloverTag,
+            const SizedBox(height: 16),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildInfoBlokje(
+                  Icons.business,
+                  'Klant / Project',
+                  klant,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildInfoBlokje(Icons.person, 'Operator', operator),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildInfoBlokje(Icons.calendar_today, 'Datum', datum),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildInfoBlokje(Icons.access_time, 'Tijden', tijden),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          if (!isAlGeaccordeerd)
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade700,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.check_circle_outline),
+                label: Text(
+                  'Uren Beoordelen & Accorderen',
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onPressed: () => _openAccordeerDialog(taak),
+              ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green.shade700),
+                  const SizedBox(width: 8),
                   Text(
-                    _formatTaakDatumKort(day),
+                    'Deze uren zijn succesvol geaccordeerd',
                     style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      color: _brightBlue,
+                      color: Colors.green.shade700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 6),
                 ],
-                Row(
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMasterDetailSplit() {
+    final inTeDienenLijst = _inTeDienenLijst();
+    final geaccordeerdeLijst = _geaccordeerdeLijst();
+    final detailBreedte = _detailPaneBreedte(context);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: DefaultTabController(
+                length: 2,
+                child: Column(
                   children: [
-                    Expanded(
-                      child: Text(
-                        _klantNaam(row),
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: const Color(0xFF0F172A),
+                    TabBar(
+                      labelColor: Colors.blue.shade800,
+                      unselectedLabelColor: Colors.grey.shade600,
+                      indicatorColor: Colors.blue.shade800,
+                      labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                      tabs: [
+                        Tab(
+                          text: 'Te accorderen (${inTeDienenLijst.length})',
                         ),
-                      ),
+                        Tab(
+                          text: 'Geaccordeerd (${geaccordeerdeLijst.length})',
+                        ),
+                      ],
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: border.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        'Ingediend',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: border,
+                    Expanded(
+                      child: ColoredBox(
+                        color: const Color(0xFFF2F2F7),
+                        child: TabBarView(
+                          children: [
+                            _buildTaakLijst(
+                              inTeDienenLijst,
+                              isGeaccordeerdTab: false,
+                            ),
+                            _buildTaakLijst(
+                              geaccordeerdeLijst,
+                              isGeaccordeerdTab: true,
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  _operatorName(row),
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Gepland: ${_safeTime(row['starttijd'])} – ${_safeTime(row['eindtijd'])} · '
-                  'Gewerkt: ${_formatUrenNl(_asDouble(row['gewerkte_uren_decimaal']))} u',
-                  style: GoogleFonts.inter(
-                    fontSize: 12.5,
-                    color: Colors.grey.shade800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIngediendListSection(
-    String title,
-    List<Map<String, dynamic>> items, {
-    required bool dayHighlight,
-    required bool showDate,
-    required String emptyText,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-            color: const Color(0xFF0F172A),
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              emptyText,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
               ),
             ),
-          )
-        else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: items.length,
-            itemBuilder: (context, index) => _buildTaskCard(
-              items[index],
-              dayHighlight: dayHighlight,
-              showDate: showDate,
-            ),
           ),
-      ],
-    );
-  }
-
-  List<Widget> _buildSplitAccordeerLists() {
-    final sel = _selectedDay ?? _focusedDay;
-    final dagItems = _rowsIngediendForSelectedDay();
-    final maandItems = _rowsIngediendForMonthExcludingSelectedDay();
-    final dagTitel =
-        'Te accorderen op ${_dateFmt.format(sel)}';
-
-    return [
-      _buildIngediendListSection(
-        dagTitel,
-        dagItems,
-        dayHighlight: true,
-        showDate: false,
-        emptyText: 'Geen ingediende uren op deze dag.',
-      ),
-      const SizedBox(height: 20),
-      _buildIngediendListSection(
-        'Alle openstaande accorderingen in deze maand',
-        maandItems,
-        dayHighlight: false,
-        showDate: true,
-        emptyText: 'Geen andere openstaande accorderingen in deze maand.',
-      ),
-      const SizedBox(height: 20),
-      _buildGeaccordeerdMaandSection(),
-    ];
-  }
-
-  Widget _buildGeaccordeerdMaandCard(Map<String, dynamic> row) {
-    final day = _parseShiftDay(row['geplande_datum']);
-    final werkelijk =
-        '${_safeTime(row['werkelijke_starttijd'])} – ${_safeTime(row['werkelijke_eindtijd'])}';
-    final gepland = '${_safeTime(row['starttijd'])} – ${_safeTime(row['eindtijd'])}';
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _onRowTap(row),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: const Color(0xFF2E7D32).withValues(alpha: 0.35),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (day != null)
-                  Text(
-                    _formatTaakDatumKort(day),
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      color: const Color(0xFF166534),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOutCubic,
+            width: detailBreedte,
+            color: const Color(0xFFF2F2F7),
+            child: ClipRect(
+              child: _geselecteerdeTaak == null
+                  ? const SizedBox.shrink()
+                  : Align(
+                      alignment: Alignment.topCenter,
+                      child: _buildDetailKaart(),
                     ),
-                  ),
-                const SizedBox(height: 6),
-                Text(
-                  _operatorName(row),
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF166534),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _klantNaam(row),
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Werkelijk: $werkelijk · Gepland: $gepland',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Gewerkte uren: ${_formatUrenNl(_asDouble(row['gewerkte_uren_decimaal']))} u',
-                  style: GoogleFonts.inter(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-              ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildGeaccordeerdMaandSection() {
-    final items = _rowsGeaccordeerdForFocusedMonth();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Reeds geaccordeerd deze maand',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w800,
-            fontSize: 15,
-            color: const Color(0xFF166534),
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'Nog geen geaccordeerde uren in deze maand.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          )
-        else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: items.length,
-            itemBuilder: (context, index) =>
-                _buildGeaccordeerdMaandCard(items[index]),
-          ),
-      ],
-    );
-  }
 
-  List<String> _operatorIdsForFinModal() {
-    final ids = <String>{};
-    for (final r in _rows) {
-      final id = _text(r['operator_id']);
-      if (id.isNotEmpty) ids.add(id);
-    }
-    for (final k in _operatorNames.keys) {
-      if (k.isNotEmpty) ids.add(k);
-    }
-    final list = ids.toList()
-      ..sort(
-        (a, b) => (_operatorNames[a] ?? a).toLowerCase().compareTo(
-              (_operatorNames[b] ?? b).toLowerCase(),
-            ),
-      );
-    return list;
-  }
-
-  Future<void> _toonOperatorFinancienModal() async {
-    if (!mounted) return;
-    final ids = _operatorIdsForFinModal();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => _OperatorFinancienModal(
-        operatorIds: ids,
-        operatorNames: Map<String, String>.from(_operatorNames),
-        onSaved: () async {
-          if (mounted) await _load();
-        },
-      ),
-    );
-  }
 }
+
 
 class _MaandSluitingModal extends StatefulWidget {
   const _MaandSluitingModal({
@@ -1427,11 +1857,52 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
   );
 
   String? _selectedOperatorId;
+  String? _geselecteerdeOperatorNaam;
   double _voorschotBedrag = 0;
   bool _loadingVoorschot = false;
+  bool _checkingAfgesloten = false;
+  bool _isAlAfgesloten = false;
   bool _saving = false;
 
   String _text(dynamic v) => (v ?? '').toString().trim();
+
+  DateTime? _parseShiftDay(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) return DateTime(raw.year, raw.month, raw.day);
+    final s = raw.toString().trim();
+    if (s.length >= 10) {
+      try {
+        final d = DateTime.parse(s.substring(0, 10));
+        return DateTime(d.year, d.month, d.day);
+      } catch (_) {}
+    }
+    return DateTime.tryParse(s);
+  }
+
+  bool _isOpenOfIngediendUrenStatus(Map<String, dynamic> r) {
+    final st = _urenStatusNorm(r);
+    return st.isEmpty || st == 'open' || st == 'ingediend';
+  }
+
+  String _planningIdFromRow(Map<String, dynamic> row) => _text(row['id']);
+
+  String get _volgendeMaandSleutel {
+    final fd = widget.focusedDay;
+    if (fd.month == 12) {
+      return '${fd.year + 1}-01';
+    }
+    return '${fd.year}-${(fd.month + 1).toString().padLeft(2, '0')}';
+  }
+
+  Future<bool> _checkMaandAlAfgesloten(String operatorId) async {
+    final check = await AppSupabase.client
+        .from('operator_uitbetalingen')
+        .select('id')
+        .eq('operator_id', operatorId)
+        .eq('maand_sleutel', widget.maandSleutel)
+        .maybeSingle();
+    return check != null;
+  }
 
   double _asDouble(dynamic v) {
     if (v == null) return 0;
@@ -1580,20 +2051,171 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
     return (uren: totaalGewerkteUren, bruto: berekendBruto);
   }
 
+  Future<void> _toonOperatorZoekModal() async {
+    if (_saving) return;
+    var zoekTerm = '';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final q = zoekTerm.toLowerCase().trim();
+            final gefilterd = widget.operators.where((op) {
+              if (q.isEmpty) return true;
+              return _operatorLabel(op).toLowerCase().contains(q);
+            }).toList();
+
+            return AlertDialog(
+              title: Text(
+                'Kies een operator',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Zoek operator',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) =>
+                          setModalState(() => zoekTerm = val),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: gefilterd.isEmpty
+                          ? Center(
+                              child: Text(
+                                'Geen resultaten',
+                                style: GoogleFonts.inter(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: gefilterd.length,
+                              itemBuilder: (context, index) {
+                                final op = gefilterd[index];
+                                final opId = _text(op['id']);
+                                if (opId.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                final opNaam = _operatorLabel(op);
+                                final isSelected =
+                                    _selectedOperatorId == opId;
+
+                                return ListTile(
+                                  title: Text(
+                                    opNaam,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  selected: isSelected,
+                                  selectedTileColor: Colors.blue.shade50,
+                                  onTap: () async {
+                                    Navigator.pop(dialogContext);
+                                    setState(() {
+                                      _geselecteerdeOperatorNaam = opNaam;
+                                    });
+                                    await _onOperatorChanged(opId);
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAnalyticsBlok({
+    required String operatorNaam,
+    required double berekendeUren,
+    required double vasteUren,
+    required double voorschotBedrag,
+    required double berekendBruto,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Analytics voor $operatorNaam:',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '• Totaal geaccordeerd: '
+            '${berekendeUren.toStringAsFixed(2).replaceAll('.', ',')} uur',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          Text(
+            '• Vast contract uren: '
+            '${vasteUren.toStringAsFixed(2).replaceAll('.', ',')} uur',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          Text(
+            '• Voorschot deze maand: ${_eur.format(voorschotBedrag)}',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          const Divider(),
+          Text(
+            'Berekend Bruto Salaris: ${_eur.format(berekendBruto)}',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w800,
+              color: Colors.green.shade800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _onOperatorChanged(String? id) async {
     setState(() {
       _selectedOperatorId = id;
+      if (id == null || id.isEmpty) {
+        _geselecteerdeOperatorNaam = null;
+      } else {
+        final op = _operatorById(id);
+        if (op != null) {
+          _geselecteerdeOperatorNaam = _operatorLabel(op);
+        }
+      }
       _voorschotBedrag = 0;
+      _isAlAfgesloten = false;
       _loadingVoorschot = id != null && id.isNotEmpty;
+      _checkingAfgesloten = id != null && id.isNotEmpty;
     });
     if (id == null || id.isEmpty) return;
     try {
-      final row = await AppSupabase.client
+      final voorschotFuture = AppSupabase.client
           .from('operator_voorschotten')
           .select('voorschot_bedrag')
           .eq('operator_id', id)
           .eq('maand_sleutel', widget.maandSleutel)
           .maybeSingle();
+      final afgeslotenFuture = _checkMaandAlAfgesloten(id);
+
+      final row = await voorschotFuture;
+      final alAfgesloten = await afgeslotenFuture;
+
       if (!mounted) return;
       setState(() {
         _voorschotBedrag = row == null
@@ -1601,12 +2223,49 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
             : _asDouble(
                 Map<String, dynamic>.from(row as Map)['voorschot_bedrag'],
               );
+        _isAlAfgesloten = alAfgesloten;
         _loadingVoorschot = false;
+        _checkingAfgesloten = false;
       });
     } catch (_) {
       if (mounted) {
-        setState(() => _loadingVoorschot = false);
+        setState(() {
+          _loadingVoorschot = false;
+          _checkingAfgesloten = false;
+        });
       }
+    }
+  }
+
+  Future<void> _doorschuifOpenEnIngediendNaarVolgendeMaand(String operatorId) async {
+    final fd = widget.focusedDay;
+    final volgendeMaandSleutel = _volgendeMaandSleutel;
+    final doorschuifIds = <String>[];
+
+    for (final t in widget.planningRows) {
+      if (_text(t['operator_id']) != operatorId) continue;
+      if (!_isOpenOfIngediendUrenStatus(t)) continue;
+
+      final datum = _parseShiftDay(t['geplande_datum']);
+      if (datum == null) continue;
+      if (datum.year != fd.year || datum.month != fd.month) continue;
+
+      final planningId = _planningIdFromRow(t);
+      if (planningId.isNotEmpty) {
+        doorschuifIds.add(planningId);
+      }
+    }
+
+    if (doorschuifIds.isEmpty) return;
+
+    try {
+      await AppSupabase.client
+          .from('opdracht_planning')
+          .update({'doorgeschoven_naar_maand': volgendeMaandSleutel})
+          .inFilter('id', doorschuifIds);
+    } catch (e) {
+      // ignore: avoid_print
+      print('Fout bij doorschuiven uren: $e');
     }
   }
 
@@ -1615,6 +2274,23 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
     if (id == null || id.isEmpty) return;
     setState(() => _saving = true);
     try {
+      if (await _checkMaandAlAfgesloten(id)) {
+        if (!mounted) return;
+        setState(() {
+          _isAlAfgesloten = true;
+          _saving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Deze maand is al afgesloten voor deze operator.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       final response = await AppSupabase.client
           .from('operator_uitbetalingen')
           .upsert({
@@ -1629,6 +2305,8 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
       if ((response as List).isEmpty) {
         throw Exception('Maandsluiting niet opgeslagen (RLS of constraint).');
       }
+
+      await _doorschuifOpenEnIngediendNaarVolgendeMaand(id);
 
       await widget.onSuccess();
       if (!mounted) return;
@@ -1725,27 +2403,44 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
                   ),
                 )
               else
-                DropdownButtonFormField<String>(
-                  key: ValueKey<String?>(opId),
-                  initialValue: opId,
-                  decoration: const InputDecoration(
-                    labelText: 'Selecteer Operator voor Loonstrook',
-                    border: OutlineInputBorder(),
-                  ),
-                  hint: const Text('Kies een operator'),
-                  items: widget.operators
-                      .map(
-                        (op) => DropdownMenuItem<String>(
-                          value: _text(op['id']),
-                          child: Text(_operatorLabel(op)),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _saving ? null : _toonOperatorZoekModal,
+                    borderRadius: BorderRadius.circular(8),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Selecteer Operator voor Loonstrook',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.search),
+                      ),
+                      child: Text(
+                        _geselecteerdeOperatorNaam ??
+                            (operator != null
+                                ? _operatorLabel(operator)
+                                : 'Tik om een operator te zoeken'),
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          color: opId == null
+                              ? Colors.grey.shade600
+                              : const Color(0xFF0F172A),
                         ),
-                      )
-                      .toList(),
-                  onChanged: _saving ? null : _onOperatorChanged,
+                      ),
+                    ),
+                  ),
                 ),
-              if (_loadingVoorschot) ...[
+              if (_loadingVoorschot || _checkingAfgesloten) ...[
                 const SizedBox(height: 16),
                 const Center(child: CircularProgressIndicator()),
+              ] else if (_isAlAfgesloten && opId != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Deze maand is al succesvol afgesloten voor deze operator.',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800,
+                    color: Colors.red.shade800,
+                  ),
+                ),
               ] else if (opId != null && operator != null) ...[
                 const SizedBox(height: 16),
                 if (scenarioPerfect)
@@ -1804,23 +2499,15 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
                     ),
                   ),
                 const SizedBox(height: 12),
-                Text(
-                  'Geaccordeerde uren (loonstrook): '
-                  '${geaccUren.toStringAsFixed(2).replaceAll('.', ',')} u',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Voorschot deze maand: ${_eur.format(_voorschotBedrag)}',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Berekend bruto: ${_eur.format(berekendBruto ?? 0)}',
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                _buildAnalyticsBlok(
+                  operatorNaam: _geselecteerdeOperatorNaam ??
+                      _operatorLabel(operator),
+                  berekendeUren: geaccUren,
+                  vasteUren: _veiligParsen(
+                    operatorData?['contract_vaste_uren'],
                   ),
+                  voorschotBedrag: _voorschotBedrag,
+                  berekendBruto: berekendBruto ?? 0.0,
                 ),
               ],
             ],
@@ -1836,7 +2523,9 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
             opId != null &&
             operator != null &&
             berekendBruto != null &&
-            !_loadingVoorschot)
+            !_loadingVoorschot &&
+            !_checkingAfgesloten &&
+            !_isAlAfgesloten)
           FilledButton(
             onPressed: _saving
                 ? null
@@ -1858,514 +2547,6 @@ class _MaandSluitingModalState extends State<_MaandSluitingModal> {
                     style: GoogleFonts.inter(fontWeight: FontWeight.w800),
                   ),
           ),
-      ],
-    );
-  }
-}
-
-class _OperatorFinancienModal extends StatefulWidget {
-  const _OperatorFinancienModal({
-    required this.operatorIds,
-    required this.operatorNames,
-    required this.onSaved,
-  });
-
-  final List<String> operatorIds;
-  final Map<String, String> operatorNames;
-  final Future<void> Function() onSaved;
-
-  @override
-  State<_OperatorFinancienModal> createState() =>
-      _OperatorFinancienModalState();
-}
-
-class _OperatorFinancienModalState extends State<_OperatorFinancienModal> {
-  static String get _maandSleutel =>
-      '${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}';
-
-  String? _selectedId;
-  final _vasteUrenCtl = TextEditingController();
-  final _vastSalarisCtl = TextEditingController();
-  final _voorschotCtl = TextEditingController();
-  DateTime? _contractStart;
-  DateTime? _contractEnd;
-  String? _contractBijlageUrl;
-  bool _isOnbepaaldeTijd = false;
-  bool _loadingData = false;
-  bool _saving = false;
-  String? _loadErr;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.operatorIds.isNotEmpty) {
-      _selectedId = widget.operatorIds.first;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_selectedId != null) _loadVoorOperator(_selectedId!);
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _vasteUrenCtl.dispose();
-    _vastSalarisCtl.dispose();
-    _voorschotCtl.dispose();
-    super.dispose();
-  }
-
-  String _trim(dynamic v) => (v ?? '').toString().trim();
-
-  DateTime? _parseIsoDate(dynamic raw) {
-    if (raw == null) return null;
-    if (raw is DateTime) return DateTime(raw.year, raw.month, raw.day);
-    final s = raw.toString().trim();
-    if (s.length >= 10) {
-      try {
-        final d = DateTime.parse(s.substring(0, 10));
-        return DateTime(d.year, d.month, d.day);
-      } catch (_) {}
-    }
-    return null;
-  }
-
-  double? _parseMoney(String raw) {
-    final t = raw.trim();
-    if (t.isEmpty) return null;
-    final d = double.tryParse(t.replaceAll(',', '.'));
-    if (d != null) return d;
-    return double.tryParse(t.replaceAll('.', '').replaceAll(',', '.'));
-  }
-
-  Future<void> _loadVoorOperator(String id) async {
-    setState(() {
-      _loadingData = true;
-      _loadErr = null;
-      _vasteUrenCtl.clear();
-      _vastSalarisCtl.clear();
-      _voorschotCtl.clear();
-      _contractStart = null;
-      _contractEnd = null;
-      _contractBijlageUrl = null;
-      _isOnbepaaldeTijd = false;
-    });
-    try {
-      final g = await AppSupabase.client
-          .from('gebruikers')
-          .select(
-            'id, contract_vaste_uren, contract_vast_salaris, '
-            'contract_startdatum, contract_einddatum, contract_bijlage_url',
-          )
-          .eq('id', id)
-          .maybeSingle();
-
-      final v = await AppSupabase.client
-          .from('operator_voorschotten')
-          .select()
-          .eq('operator_id', id)
-          .eq('maand_sleutel', _maandSleutel)
-          .maybeSingle();
-
-      if (!mounted) return;
-      if (g != null) {
-        final m = Map<String, dynamic>.from(g as Map);
-        final uren = m['contract_vaste_uren'];
-        if (uren != null) {
-          _vasteUrenCtl.text = uren is num && uren % 1 == 0
-              ? uren.toInt().toString()
-              : uren.toString();
-        }
-        final sal = m['contract_vast_salaris'];
-        if (sal != null) {
-          _vastSalarisCtl.text = sal is num
-              ? sal.toString().replaceAll('.', ',')
-              : _trim(sal);
-        }
-        _contractStart = _parseIsoDate(m['contract_startdatum']);
-        _contractEnd = _parseIsoDate(m['contract_einddatum']);
-        _isOnbepaaldeTijd = _contractEnd == null;
-        final url = _trim(m['contract_bijlage_url']);
-        _contractBijlageUrl = url.isEmpty ? null : url;
-      }
-      if (v != null) {
-        final vm = Map<String, dynamic>.from(v as Map);
-        final amt = vm['voorschot_bedrag'];
-        if (amt != null) {
-          if (amt is num) {
-            _voorschotCtl.text = amt.toString().replaceAll('.', ',');
-          } else {
-            _voorschotCtl.text = _trim(amt);
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) setState(() => _loadErr = e.toString());
-    } finally {
-      if (mounted) setState(() => _loadingData = false);
-    }
-  }
-
-  Future<void> _pickContractPdf() async {
-    final id = _selectedId;
-    if (id == null || id.isEmpty) return;
-    try {
-      const group = XTypeGroup(label: 'PDF', extensions: ['pdf']);
-      final file = await openFile(acceptedTypeGroups: const [group]);
-      if (file == null) return;
-      final bytes = await file.readAsBytes();
-      final safeName = file.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-      final path =
-          '$id/${DateTime.now().millisecondsSinceEpoch}_$safeName';
-      await AppSupabase.client.storage.from('contracten').uploadBinary(
-            path,
-            bytes,
-            fileOptions: const FileOptions(
-              contentType: 'application/pdf',
-              upsert: true,
-            ),
-          );
-      final url =
-          AppSupabase.client.storage.from('contracten').getPublicUrl(path);
-      if (!mounted) return;
-      setState(() => _contractBijlageUrl = url);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Contract geüpload.')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload mislukt: $e')),
-      );
-    }
-  }
-
-  Future<void> _pickStart() async {
-    final d = await showDatePicker(
-      context: context,
-      initialDate: _contractStart ?? DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (d != null && mounted) setState(() => _contractStart = d);
-  }
-
-  Future<void> _pickEnd() async {
-    if (_isOnbepaaldeTijd) return;
-    final d = await showDatePicker(
-      context: context,
-      initialDate: _contractEnd ?? _contractStart ?? DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (d != null && mounted) {
-      setState(() {
-        _contractEnd = d;
-        _isOnbepaaldeTijd = false;
-      });
-    }
-  }
-
-  void _beeindigHuidigContract() {
-    setState(() {
-      _isOnbepaaldeTijd = false;
-      _contractEnd = DateTime.now();
-    });
-  }
-
-  Future<void> _opslaan() async {
-    final id = _selectedId;
-    if (id == null || id.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecteer een operator.')),
-      );
-      return;
-    }
-    setState(() => _saving = true);
-    try {
-      final patch = <String, dynamic>{};
-      final vu = _vasteUrenCtl.text.trim();
-      patch['contract_vaste_uren'] = vu.isEmpty ? null : _parseMoney(vu);
-      final vs = _vastSalarisCtl.text.trim();
-      patch['contract_vast_salaris'] = vs.isEmpty ? null : _parseMoney(vs);
-      patch['contract_startdatum'] =
-          _contractStart?.toIso8601String().split('T').first;
-      patch['contract_einddatum'] = _isOnbepaaldeTijd
-          ? null
-          : _contractEnd?.toIso8601String().split('T').first;
-      if (_contractBijlageUrl != null && _contractBijlageUrl!.isNotEmpty) {
-        patch['contract_bijlage_url'] = _contractBijlageUrl;
-      }
-
-      await AppSupabase.client.from('gebruikers').update(patch).eq('id', id);
-
-      final vo = _voorschotCtl.text.trim();
-      if (vo.isNotEmpty) {
-        final bedrag = _parseMoney(vo) ?? 0;
-        await AppSupabase.client.from('operator_voorschotten').upsert(
-          {
-            'operator_id': id,
-            'maand_sleutel': _maandSleutel,
-            'voorschot_bedrag': bedrag,
-          },
-          onConflict: 'operator_id,maand_sleutel',
-        );
-      }
-
-      await widget.onSaved();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Opgeslagen.'),
-          backgroundColor: Color(0xFF2E7D32),
-        ),
-      );
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Opslaan mislukt: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final items = <DropdownMenuItem<String>>[
-      for (final id in widget.operatorIds)
-        DropdownMenuItem(
-          value: id,
-          child: Text(
-            widget.operatorNames[id] ?? id,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-    ];
-
-    return AlertDialog(
-      title: Text(
-        'Operator financiën',
-        style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-      ),
-      content: SizedBox(
-        width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Huidige maand: $_maandSleutel',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade700,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (widget.operatorIds.isEmpty)
-                Text(
-                  'Geen operators in dit overzicht. Vernieuw het scherm of '
-                  'wacht tot er planning met operators is geladen.',
-                  style: GoogleFonts.inter(fontSize: 13),
-                )
-              else ...[
-                InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Operator',
-                    border: OutlineInputBorder(),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: _selectedId,
-                      items: items,
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() => _selectedId = v);
-                        _loadVoorOperator(v);
-                      },
-                    ),
-                  ),
-                ),
-                if (_loadingData)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else ...[
-                  if (_loadErr != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _loadErr!,
-                        style: TextStyle(color: Colors.red.shade800, fontSize: 12),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Vast contract (optioneel)',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _vasteUrenCtl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Vaste uren per maand',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _vastSalarisCtl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Vast salaris (€)',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _isOnbepaaldeTijd,
-                    onChanged: _loadingData
-                        ? null
-                        : (v) {
-                            setState(() {
-                              _isOnbepaaldeTijd = v ?? false;
-                              if (_isOnbepaaldeTijd) {
-                                _contractEnd = null;
-                              }
-                            });
-                          },
-                    title: Text(
-                      'Contract voor onbepaalde tijd',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                    ),
-                    controlAffinity: ListTileControlAffinity.leading,
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _pickStart,
-                          child: Text(
-                            _contractStart == null
-                                ? 'Startdatum contract'
-                                : DateFormat('dd-MM-yyyy').format(_contractStart!),
-                          ),
-                        ),
-                      ),
-                      if (!_isOnbepaaldeTijd) ...[
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _pickEnd,
-                            child: Text(
-                              _contractEnd == null
-                                  ? 'Einddatum contract'
-                                  : DateFormat('dd-MM-yyyy').format(
-                                      _contractEnd!,
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.red.shade700,
-                      ),
-                      onPressed: _loadingData ? null : _beeindigHuidigContract,
-                      child: Text(
-                        'Huidig contract beëindigen',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed:
-                        (_selectedId == null || _loadingData) ? null : _pickContractPdf,
-                    icon: const Icon(Icons.upload_file),
-                    label: const Text('Contract PDF uploaden'),
-                  ),
-                  if (_contractBijlageUrl != null &&
-                      _contractBijlageUrl!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        'Bijlage: ${_contractBijlageUrl!}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                    ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Voorschot (huidige maand)',
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _voorschotCtl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText:
-                          'Voorschot reeds uitbetaald deze maand (€)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Annuleren'),
-        ),
-        FilledButton(
-          onPressed: (_saving ||
-                  widget.operatorIds.isEmpty ||
-                  _selectedId == null)
-              ? null
-              : _opslaan,
-          child: _saving
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Opslaan'),
-        ),
       ],
     );
   }

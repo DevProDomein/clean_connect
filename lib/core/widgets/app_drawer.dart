@@ -40,6 +40,7 @@ import '../../features/facilitator/screens/quote_overview_screen.dart';
 import '../../features/facilitator/screens/agenda_screen.dart';
 import '../../features/facilitator/screens/sales_centre_screen.dart';
 import '../../features/facilitator/screens/ticket_overview_screen.dart';
+import '../../features/facilitator/screens/hr_beheer_screen.dart';
 import '../../features/klant/client_dashboard.dart';
 import '../../features/operator/screens/operator_dashboard_screen.dart';
 import '../../features/operator/screens/operator_agenda_screen.dart';
@@ -349,20 +350,6 @@ class AppDrawerContent extends StatelessWidget {
                         ),
                       if (canPeriodClose)
                         navTile(
-                          name: '/admin/salaris-administratie',
-                          icon: Icons.account_balance_wallet_outlined,
-                          title: 'Salarisadministratie',
-                          screen: const SalarisAdministratieScreen(),
-                        ),
-                      if (isEnterpriseAdmin)
-                        navTile(
-                          name: '/admin/uren-accorderen',
-                          icon: Icons.fact_check_outlined,
-                          title: 'Uren accorderen',
-                          screen: const UrenAccorderenScreen(),
-                        ),
-                      if (canPeriodClose)
-                        navTile(
                           name: '/admin/settings/period-close',
                           icon: Icons.lock_clock_rounded,
                           title: 'Maandafsluiting',
@@ -561,6 +548,34 @@ class AppDrawerContent extends StatelessWidget {
                       );
                     },
                   ),
+                if (isGen) ...[
+                  const Divider(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: Text(
+                      'Generator beheer',
+                      style: groupStyle(),
+                    ),
+                  ),
+                  navTile(
+                    name: '/generator/hr-beheer',
+                    icon: Icons.badge_outlined,
+                    title: 'HR & Contracten',
+                    screen: const HrBeheerScreen(),
+                  ),
+                  navTile(
+                    name: '/admin/uren-accorderen',
+                    icon: Icons.fact_check_outlined,
+                    title: 'Uren accorderen',
+                    screen: const UrenAccorderenScreen(),
+                  ),
+                  navTile(
+                    name: '/admin/salaris-administratie',
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: 'Salarisadministratie',
+                    screen: const SalarisAdministratieScreen(),
+                  ),
+                ],
               ],
             ),
           ),

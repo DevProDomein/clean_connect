@@ -75,19 +75,17 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
     DateTime monthFirst,
     DateTime monthLast,
   ) {
-    final start = _parseDateOnly(o['contract_startdatum']) ??
-        _parseDateOnly(o['start_datum']);
-    final end =
-        _parseDateOnly(o['contract_einddatum']) ?? _parseDateOnly(o['eind_datum']);
+    final start = _parseDateOnly(o['contract_startdatum']);
+    final end = _parseDateOnly(o['contract_einddatum']);
     if (start == null) return false;
     if (start.isAfter(monthLast)) return false;
     if (end != null && end.isBefore(monthFirst)) return false;
     return true;
   }
 
-  bool _isAbonnementFrequentie(String freq) {
-    final f = freq.toLowerCase();
-    return f == 'regulier' || f == 'frequent' || f == 'periodiek';
+  /// Abonnement op offerte-niveau: maandprijs (frequentie staat op project/opdracht).
+  bool _offerteTeltAlsAbonnement(Map<String, dynamic> o) {
+    return _asDouble(o['maandprijs_ex_btw']) > 0;
   }
 
   bool _planningInSelectedMonth(Map<String, dynamic> row) {
@@ -159,8 +157,7 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
       final monthLast =
           DateTime(_geselecteerdeMaand.year, _geselecteerdeMaand.month + 1, 0);
       if (!_offerteActiefInMaand(o, monthFirst, monthLast)) continue;
-      final freq = _text(o['frequentie_type']).toLowerCase();
-      if (!_isAbonnementFrequentie(freq)) continue;
+      if (!_offerteTeltAlsAbonnement(o)) continue;
       abonnement += _asDouble(o['maandprijs_ex_btw']);
     }
 
@@ -215,9 +212,8 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
       final offertesRes = await AppSupabase.client
           .from('offertes')
           .select(
-            'id, bedrijf_id, status, frequentie_type, '
-            'contract_startdatum, contract_einddatum, start_datum, eind_datum, '
-            'maandprijs_ex_btw',
+            'id, bedrijf_id, status, '
+            'contract_startdatum, contract_einddatum, maandprijs_ex_btw',
           )
           .eq('status', 'signed');
 

@@ -159,8 +159,7 @@ class ContractsDashboardRepository {
   /// Normaliseer naar UI (view-kolommen of fallback berekeningen).
   Map<String, dynamic> normalizeVm(Map<String, dynamic> row) {
     DateTime? end = _dt(row['contract_einddatum']);
-    DateTime? start =
-        _dt(row['contract_startdatum']) ?? _dt(row['start_datum']);
+    DateTime? start = _dt(row['contract_startdatum']);
 
     final offerte = offerteFrom(row);
 

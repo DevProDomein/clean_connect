@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../widgets/project_add_modal.dart';
 import 'quote_survey_screen.dart';
 
 /// "Direct project" header: [offertes] row with [is_direct_project] = true,
@@ -42,6 +43,7 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
   String _looptijd = '1_jaar';
   bool _isDatumOnbepaald = false;
   int _aantalOperators = 1;
+  final GlobalKey<ProjectAddModalState> _artikelKey = GlobalKey<ProjectAddModalState>();
   bool _loadingKlanten = true;
   bool _saving = false;
 
@@ -118,6 +120,15 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
   String _fmtTimeUi(TimeOfDay? t) => t == null
       ? ''
       : '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  bool _valideerArtikelGeselecteerd() {
+    final code = _artikelKey.currentState?.geselecteerdeArtikelCode;
+    if (code == null || code.trim().isEmpty) {
+      _toast('Selecteer een artikel voor facturatie.', err: true);
+      return false;
+    }
+    return true;
+  }
 
   String _buildAdresVolledig({
     required String straat,
@@ -310,6 +321,7 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
       _toast('Kies een periodieke frequentie.', err: true);
       return;
     }
+    if (!_valideerArtikelGeselecteerd()) return;
 
     setState(() => _saving = true);
     final b = _klanten.firstWhere(
@@ -380,6 +392,8 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
     };
     if (uid != null) payload['aangemaakt_door_id'] = uid;
 
+    final artikelCode = _artikelKey.currentState!.geselecteerdeArtikelCode!;
+
     try {
       final ins = await AppSupabase.client
           .from('offertes')
@@ -399,6 +413,7 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
           builder: (_) => QuoteSurveyScreen(
                 offerteId: newId,
                 isDirectProject: true,
+                standaardArtikelCode: artikelCode,
               ),
         ),
       );
@@ -450,6 +465,7 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
       _toast('Kies een werkregio.', err: true);
       return;
     }
+    if (!_valideerArtikelGeselecteerd()) return;
 
     if (!mounted) return;
     final prijsController = TextEditingController();
@@ -544,6 +560,7 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
       'status': 'actief',
       // Pricing column for incidenteel fixed appointment.
       'vaste_prijs_per_beurt': prijs,
+      'standaard_artikel_code': _artikelKey.currentState!.geselecteerdeArtikelCode,
     };
 
     try {
@@ -654,6 +671,10 @@ class _ProjectCreateHeaderScreenState extends State<ProjectCreateHeaderScreen> {
                           ),
                         ],
                       ),
+                    ),
+                    _card(
+                      title: 'Facturatie',
+                      child: ProjectAddModal(key: _artikelKey),
                     ),
                     const SizedBox(height: 16),
                     _card(

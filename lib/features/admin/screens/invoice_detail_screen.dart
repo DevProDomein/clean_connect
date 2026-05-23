@@ -36,6 +36,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   bool _finalizeBusy = false;
   bool _emailBusy = false;
   bool _creditBusy = false;
+  bool _deleteConceptBusy = false;
   bool? _localBtwVerlegd;
   double? _localFactuurKortingPercentage;
 
@@ -751,6 +752,99 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     }
   }
 
+  String _maandSleutel(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
+
+  Future<void> _confirmAndDeleteConcept({
+    required Map<String, dynamic> invoice,
+  }) async {
+    if (_deleteConceptBusy) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => SelectionArea(
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Text(
+            'Conceptfactuur verwijderen?',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            'De conceptfactuur en het facturatie-trackerrecord voor deze maand worden '
+            'verwijderd. De klant kan daarna opnieuw worden geselecteerd bij Facturen genereren.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuleren'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              child: Text(
+                'Verwijderen',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+    await _verwijderConceptFactuur(invoice: invoice);
+  }
+
+  Future<void> _verwijderConceptFactuur({
+    required Map<String, dynamic> invoice,
+  }) async {
+    final factuurId = _text(invoice['id']);
+    if (factuurId.isEmpty) return;
+
+    setState(() => _deleteConceptBusy = true);
+    try {
+      final factuurData = await AppSupabase.client
+          .from('facturen')
+          .select('bedrijf_id, factuur_datum, status')
+          .eq('id', factuurId)
+          .single();
+
+      final bedrijfId = _text(factuurData['bedrijf_id']);
+      final factuurDatum = _asDate(factuurData['factuur_datum']);
+      final maandSleutel = factuurDatum == null ? '' : _maandSleutel(factuurDatum);
+
+      await AppSupabase.client
+          .from('opdrachten')
+          .update({'factuur_id': null})
+          .eq('factuur_id', factuurId);
+      await AppSupabase.client.from('factuur_regels').delete().eq('factuur_id', factuurId);
+      await AppSupabase.client.from('facturen').delete().eq('id', factuurId);
+
+      if (bedrijfId.isNotEmpty && maandSleutel.isNotEmpty) {
+        await AppSupabase.client
+            .from('klant_facturaties')
+            .delete()
+            .eq('bedrijf_id', bedrijfId)
+            .eq('maand_sleutel', maandSleutel);
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      debugPrint('Fout bij verwijderen concept: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.deepOrange.withValues(alpha: 0.92),
+          content: Text('Kon concept niet verwijderen: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deleteConceptBusy = false);
+    }
+  }
+
   Future<void> _persistOrderSilently() async {
     try {
       final updates = <Map<String, dynamic>>[];
@@ -991,8 +1085,38 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: (_finalizeBusy || _deleteConceptBusy)
+                            ? null
+                            : () => _confirmAndDeleteConcept(invoice: inv),
+                        icon: _deleteConceptBusy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.delete_outline),
+                        label: Text(
+                          _deleteConceptBusy ? 'Verwijderen…' : 'Concept verwijderen',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Colors.redAccent),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
                       child: FilledButton(
-                        onPressed: _finalizeBusy ? null : () => _confirmAndFinalize(invoice: inv),
+                        onPressed: (_finalizeBusy || _deleteConceptBusy)
+                            ? null
+                            : () => _confirmAndFinalize(invoice: inv),
                         style: FilledButton.styleFrom(
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

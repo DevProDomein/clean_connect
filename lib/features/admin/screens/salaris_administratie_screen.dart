@@ -39,6 +39,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _afgeslotenLoonstroken = [];
+  String? _geselecteerdeOperatorFilterId;
 
   String get _maandSleutel =>
       '${_geselecteerdeMaand.year}-${_geselecteerdeMaand.month.toString().padLeft(2, '0')}';
@@ -139,6 +140,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
       if (!mounted) return;
       setState(() {
         _afgeslotenLoonstroken = rows;
+        _geselecteerdeOperatorFilterId = null;
         _loading = false;
       });
     } catch (e) {
@@ -473,36 +475,216 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     );
   }
 
-  Widget _trailing(Map<String, dynamic> item) {
-    if (_asBool(item['is_betaald'])) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFDCFCE7),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          'BETAALD',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w900,
-            fontSize: 12,
-            color: const Color(0xFF166534),
-          ),
-        ),
-      );
+  List<({String id, String naam})> _operatorsInHuidigeData() {
+    final seen = <String>{};
+    final list = <({String id, String naam})>[];
+    for (final item in _afgeslotenLoonstroken) {
+      final id = _text(item['operator_id']);
+      if (id.isEmpty || seen.contains(id)) continue;
+      seen.add(id);
+      list.add((id: id, naam: _operatorNaamUitLoonstrook(item)));
     }
-    return FilledButton(
-      onPressed: () => _openUitbetaalModal(item),
-      style: FilledButton.styleFrom(
-        backgroundColor: _brightBlue,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    list.sort((a, b) => a.naam.toLowerCase().compareTo(b.naam.toLowerCase()));
+    return list;
+  }
+
+  List<Map<String, dynamic>> _weergaveLijst() {
+    if (_geselecteerdeOperatorFilterId == null) {
+      return _afgeslotenLoonstroken;
+    }
+    return _afgeslotenLoonstroken
+        .where(
+          (item) =>
+              _text(item['operator_id']) == _geselecteerdeOperatorFilterId,
+        )
+        .toList();
+  }
+
+  Widget _operatorFilterDropdown() {
+    final operators = _operatorsInHuidigeData();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: DropdownButtonFormField<String?>(
+        value: _geselecteerdeOperatorFilterId,
+        decoration: InputDecoration(
+          labelText: 'Filter op operator',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        items: [
+          const DropdownMenuItem<String?>(
+            value: null,
+            child: Text('Alle Operators'),
+          ),
+          for (final op in operators)
+            DropdownMenuItem<String?>(
+              value: op.id,
+              child: Text(op.naam),
+            ),
+        ],
+        onChanged: _loading
+            ? null
+            : (v) => setState(() => _geselecteerdeOperatorFilterId = v),
       ),
-      child: Text(
-        'Uitbetalen',
-        style: GoogleFonts.inter(
-          fontWeight: FontWeight.w900,
-          fontSize: 12,
-          color: Colors.white,
+    );
+  }
+
+  Widget _bedragBlok(String label, String waarde, {Color? accent}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F3F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            waarde,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              color: accent ?? const Color(0xFF0F172A),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _uitbetalingKaart(Map<String, dynamic> item) {
+    final naam = _operatorNaamUitLoonstrook(item);
+    final initial = naam.isNotEmpty ? naam[0].toUpperCase() : '?';
+    final bruto = _asDouble(item['berekend_bruto']);
+    final voorschot = _asDouble(item['verrekend_voorschot']);
+    final netto = _nettoUitLoonstrook(item);
+    final isBetaald = _asBool(item['is_betaald']);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: isBetaald ? 2 : 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isBetaald
+              ? const Color(0xFF86EFAC)
+              : Colors.grey.shade200,
+          width: isBetaald ? 2 : 1,
+        ),
+      ),
+      shadowColor: isBetaald
+          ? const Color(0xFF22C55E).withValues(alpha: 0.35)
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: isBetaald
+                      ? const Color(0xFFDCFCE7)
+                      : _brightBlue.withValues(alpha: 0.12),
+                  foregroundColor: isBetaald
+                      ? const Color(0xFF166534)
+                      : _brightBlue,
+                  child: Text(
+                    initial,
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    naam,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (isBetaald)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'BETAALD',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                        color: const Color(0xFF166534),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _bedragBlok('Berekend bruto', _eur.format(bruto)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _bedragBlok(
+                    'Voorschot',
+                    _eur.format(voorschot),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _bedragBlok(
+                    'Netto uit te betalen',
+                    _eur.format(netto),
+                    accent: isBetaald
+                        ? const Color(0xFF166534)
+                        : _brightBlue,
+                  ),
+                ),
+              ],
+            ),
+            if (!isBetaald) ...[
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: () => _openUitbetaalModal(item),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _brightBlue,
+                  minimumSize: const Size.fromHeight(44),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  'Markeer als Uitbetaald',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -552,14 +734,20 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
                     ),
                   ),
                 if (!_loading) _analyticsRow(analytics),
+                if (!_loading && _afgeslotenLoonstroken.isNotEmpty)
+                  _operatorFilterDropdown(),
                 Expanded(
                   child: _loading
                       ? const Center(child: CircularProgressIndicator())
                       : RefreshIndicator(
                           color: _brightBlue,
                           onRefresh: _loadData,
-                          child: _afgeslotenLoonstroken.isEmpty
-                              ? ListView(
+                          child: Builder(
+                            builder: (context) {
+                              final weergaveLijst = _weergaveLijst();
+
+                              if (_afgeslotenLoonstroken.isEmpty) {
+                                return ListView(
                                   physics:
                                       const AlwaysScrollableScrollPhysics(),
                                   padding: const EdgeInsets.all(24),
@@ -578,56 +766,45 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
                                     ),
                                     SizedBox(height: mobileNavBuffer),
                                   ],
-                                )
-                              : ListView.builder(
+                                );
+                              }
+
+                              if (weergaveLijst.isEmpty) {
+                                return ListView(
                                   physics:
                                       const AlwaysScrollableScrollPhysics(),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    12,
-                                    16,
-                                    8,
-                                  ),
-                                  itemCount: _afgeslotenLoonstroken.length,
-                                  itemBuilder: (context, index) {
-                                    final item =
-                                        _afgeslotenLoonstroken[index];
-                                    final bruto =
-                                        _asDouble(item['berekend_bruto']);
-                                    final voorschot = _asDouble(
-                                      item['verrekend_voorschot'],
-                                    );
-                                    final isBetaald =
-                                        _asBool(item['is_betaald']);
+                                  padding: const EdgeInsets.all(24),
+                                  children: [
+                                    const SizedBox(height: 32),
+                                    Text(
+                                      'Geen uitbetalingen voor de geselecteerde operator.',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    SizedBox(height: mobileNavBuffer),
+                                  ],
+                                );
+                              }
 
-                                    return Card(
-                                      margin: const EdgeInsets.only(bottom: 8),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: ListTile(
-                                        onTap: isBetaald
-                                            ? null
-                                            : () => _openUitbetaalModal(item),
-                                        title: Text(
-                                          _operatorNaamUitLoonstrook(item),
-                                          style: GoogleFonts.inter(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          'Berekend Bruto: ${_eur.format(bruto)} | '
-                                          'Voorschot: ${_eur.format(voorschot)}',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        trailing: _trailing(item),
-                                      ),
-                                    );
-                                  },
+                              return ListView.builder(
+                                physics:
+                                    const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  16,
+                                  8,
                                 ),
+                                itemCount: weergaveLijst.length,
+                                itemBuilder: (context, index) {
+                                  return _uitbetalingKaart(weergaveLijst[index]);
+                                },
+                              );
+                            },
+                          ),
                         ),
                 ),
                 SizedBox(height: mobileNavBuffer),
