@@ -41,6 +41,8 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
   /// Geselecteerde ingediende taak in master-detail split-view.
   Map<String, dynamic>? _geselecteerdeTaak;
 
+  int _actieveTab = 0;
+
   @override
   void initState() {
     super.initState();
@@ -1263,8 +1265,11 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                 child: Text(_error, textAlign: TextAlign.center),
               ),
             )
-          : Column(
-              children: [
+          : SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: Column(
@@ -1419,9 +1424,11 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                     ],
                   ),
                 ),
-                Expanded(child: _buildMasterDetailSplit()),
+                _buildMasterDetailSplit(),
                 _buildBottomPayrollBar(),
+                const SizedBox(height: 120),
               ],
+            ),
             ),
     );
   }
@@ -1496,6 +1503,8 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
         : _planningIdFromRow(_geselecteerdeTaak!);
 
     return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       itemCount: lijst.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
@@ -1766,6 +1775,7 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                 child: Column(
                   children: [
                     TabBar(
+                      onTap: (index) => setState(() => _actieveTab = index),
                       labelColor: Colors.blue.shade800,
                       unselectedLabelColor: Colors.grey.shade600,
                       indicatorColor: Colors.blue.shade800,
@@ -1779,22 +1789,17 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                         ),
                       ],
                     ),
-                    Expanded(
-                      child: ColoredBox(
-                        color: const Color(0xFFF2F2F7),
-                        child: TabBarView(
-                          children: [
-                            _buildTaakLijst(
+                    ColoredBox(
+                      color: const Color(0xFFF2F2F7),
+                      child: _actieveTab == 0
+                          ? _buildTaakLijst(
                               inTeDienenLijst,
                               isGeaccordeerdTab: false,
-                            ),
-                            _buildTaakLijst(
+                            )
+                          : _buildTaakLijst(
                               geaccordeerdeLijst,
                               isGeaccordeerdTab: true,
                             ),
-                          ],
-                        ),
-                      ),
                     ),
                   ],
                 ),

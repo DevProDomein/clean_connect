@@ -30,6 +30,94 @@ class QuoteSurveyScreen extends StatefulWidget {
 class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   final NumberFormat _eur = NumberFormat.currency(locale: 'nl_NL', symbol: '€ ');
   bool _closing = false;
+  double? vastePrijsOverride;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOfferteData();
+  }
+
+  Future<void> _fetchOfferteData() async {
+    try {
+      final offerteData = await AppSupabase.client
+          .from('offertes')
+          .select('vaste_prijs_override')
+          .eq('id', widget.offerteId)
+          .maybeSingle();
+      if (!mounted || offerteData == null) return;
+      setState(() {
+        vastePrijsOverride = double.tryParse(
+          offerteData['vaste_prijs_override']?.toString() ?? '',
+        );
+      });
+    } catch (_) {
+      // Stil falen: bottom bar leest override ook uit de stream.
+    }
+  }
+
+  Future<void> _toonPrijsafspraakModal() async {
+    final controller = TextEditingController(
+      text: vastePrijsOverride?.toStringAsFixed(2) ?? '',
+    );
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Vaste Prijsafspraak'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Dit overschrijft de automatisch berekende prijs voor deze klus.',
+              style: TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Vaste prijs (ex. BTW)',
+                prefixIcon: Icon(Icons.euro),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await AppSupabase.client
+                  .from('offertes')
+                  .update({'vaste_prijs_override': null})
+                  .eq('id', widget.offerteId);
+              if (!mounted) return;
+              setState(() => vastePrijsOverride = null);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Wis afspraak', style: TextStyle(color: Colors.red)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final val = double.tryParse(controller.text.replaceAll(',', '.'));
+              if (val != null) {
+                await AppSupabase.client
+                    .from('offertes')
+                    .update({'vaste_prijs_override': val})
+                    .eq('id', widget.offerteId);
+                if (!mounted) return;
+                setState(() => vastePrijsOverride = val);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Opslaan'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+  }
 
   String _text(dynamic v) => (v ?? '').toString().trim();
 
@@ -686,6 +774,9 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             final maandBtw = _asDouble(offerte?['maand_btw_bedrag']);
             final maandIncl = _asDouble(offerte?['maandprijs_inc_btw']);
             final totaalContract = _asDouble(offerte?['totaal_prijs_ex_btw']);
+            final contractType = _text(offerte?['contract_type']).toLowerCase();
+            final isEenmaligOfIncidenteel =
+                contractType == 'eenmalig' || contractType == 'incidenteel';
             final regulier = _asInt(offerte?['regulier_aantal_beurten']);
             final frequent = _asInt(offerte?['frequent_aantal_beurten']);
             final periodiek = _asInt(offerte?['periodiek_aantal_beurten']);
@@ -719,6 +810,53 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
 
                 Widget buildFinanceColumn() {
                   final isCompact = MediaQuery.of(context).size.width < 600;
+
+                  if (isEenmaligOfIncidenteel) {
+                    final berekendeTotaalPrijs =
+                        maandEx > 0 ? maandEx : totaalContract;
+                    final weergavePrijs = vastePrijsOverride ?? berekendeTotaalPrijs;
+                    final heeftPrijsafspraak = vastePrijsOverride != null;
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Totaal per beurt: €${weergavePrijs.toStringAsFixed(2)} '
+                          '${heeftPrijsafspraak ? '(Vaste prijs)' : ''}',
+                          style: GoogleFonts.inter(
+                            color: heeftPrijsafspraak
+                                ? Colors.orange.shade300
+                                : Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: isCompact ? 18 : 20,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Contractwaarde: ${_eur.format(totaalContract)}',
+                          style: GoogleFonts.inter(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                            fontSize: isCompact ? 11 : 12,
+                          ),
+                        ),
+                        if (isConcept) ...[
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            onPressed: _toonPrijsafspraakModal,
+                            icon: const Icon(Icons.handshake, size: 18),
+                            label: const Text('Prijsafspraak'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.orange.shade300,
+                              side: BorderSide(color: Colors.orange.shade400),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  }
+
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

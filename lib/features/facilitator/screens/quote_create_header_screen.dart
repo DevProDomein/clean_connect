@@ -47,6 +47,8 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
   String _looptijd = '1_jaar';
   DateTime? _contractStartDatum;
   DateTime? _contractEindDatumHandmatig;
+  DateTime? geselecteerdeUitvoerDatum;
+  bool isDatumIndicatief = true;
   final Set<String> _reguliereWeekdagen = <String>{};
   TimeOfDay? _tijdslotStart;
   TimeOfDay? _tijdslotEind;
@@ -65,6 +67,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
     _Option('vast', 'Vast'),
     _Option('flexibel', 'Flexibel'),
     _Option('eenmalig', 'Eenmalig'),
+    _Option('incidenteel', 'Incidenteel'),
   ];
 
   static const List<_Option> _frequenties = [
@@ -172,6 +175,13 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
 
         _contractStartDatum = DateTime.tryParse(_text(m['contract_startdatum']));
         _contractEindDatumHandmatig = DateTime.tryParse(_text(m['contract_einddatum']));
+        geselecteerdeUitvoerDatum = DateTime.tryParse(_text(m['uitvoer_datum']));
+        final indicRaw = m['datum_is_indicatief'];
+        if (indicRaw is bool) {
+          isDatumIndicatief = indicRaw;
+        } else if (indicRaw != null) {
+          isDatumIndicatief = indicRaw.toString().toLowerCase() == 'true';
+        }
 
         final reg = (m['reguliere_weekdagen'] as List?)
                 ?.whereType<String>()
@@ -326,29 +336,38 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
       }
     }
 
-    if (_contractStartDatum == null) {
-      _showError('Selecteer een startdatum.');
-      return false;
+    if (_contractType == 'eenmalig') {
+      if (geselecteerdeUitvoerDatum == null) {
+        _showError('Selecteer een gewenste uitvoerdatum.');
+        return false;
+      }
+    } else {
+      if (_contractStartDatum == null) {
+        _showError('Selecteer een startdatum.');
+        return false;
+      }
+
+      if (_looptijd == 'anders' && _contractEindDatumHandmatig == null) {
+        _showError('Selecteer een einddatum voor het contract.');
+        return false;
+      }
+
+      final contractEnd = _autoCalculatedEndDate();
+      if (contractEnd == null) {
+        _showError('Kan contracteinddatum niet bepalen.');
+        return false;
+      }
+      if (contractEnd.isBefore(_contractStartDatum!)) {
+        _showError('Contracteinddatum moet na de startdatum liggen.');
+        return false;
+      }
     }
 
-    if (_looptijd == 'anders' && _contractEindDatumHandmatig == null) {
-      _showError('Selecteer een einddatum voor het contract.');
-      return false;
-    }
-
-    final contractEnd = _autoCalculatedEndDate();
-    if (contractEnd == null) {
-      _showError('Kan contracteinddatum niet bepalen.');
-      return false;
-    }
-    if (contractEnd.isBefore(_contractStartDatum!)) {
-      _showError('Contracteinddatum moet na de startdatum liggen.');
-      return false;
-    }
-
-    if (_reguliereWeekdagen.isEmpty) {
-      _showError('Selecteer minimaal 1 reguliere weekdag.');
-      return false;
+    if (_contractType != 'eenmalig' && _contractType != 'incidenteel') {
+      if (_reguliereWeekdagen.isEmpty) {
+        _showError('Selecteer minimaal 1 reguliere weekdag.');
+        return false;
+      }
     }
 
     if (_tijdslotStart == null || _tijdslotEind == null) {
@@ -388,22 +407,29 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (!_validateConditionalFields()) return;
 
-    final contractEinddatum = _autoCalculatedEndDate();
-    if (contractEinddatum == null || _contractStartDatum == null) {
-      return;
+    final contractTypeDb = _contractType.toLowerCase();
+    final isEenmalig = contractTypeDb == 'eenmalig';
+    final hideWeekdagen =
+        isEenmalig || contractTypeDb == 'incidenteel';
+
+    DateTime? contractEinddatum;
+    if (!isEenmalig) {
+      contractEinddatum = _autoCalculatedEndDate();
+      if (contractEinddatum == null || _contractStartDatum == null) {
+        return;
+      }
     }
 
     setState(() => _saving = true);
 
     try {
       final userId = AppSupabase.client.auth.currentUser?.id;
-      final reguliereWeekdagenDb = _reguliereWeekdagen
-          .map((d) => d.toLowerCase())
-          .toList(growable: false);
+      final reguliereWeekdagenDb = hideWeekdagen
+          ? null
+          : _reguliereWeekdagen.map((d) => d.toLowerCase()).toList(growable: false);
       final afwijkendeWeekdagenDb = _afwijkendeWeekdagen
           .map((d) => d.toLowerCase())
           .toList(growable: false);
-      final contractTypeDb = _contractType.toLowerCase();
       final frequentieDb = _periodiekeFrequentie.replaceAll(' ', '_').toLowerCase();
 
       final payload = <String, dynamic>{
@@ -424,8 +450,15 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         'contact_telefoon': _contactTelefoon.text.trim(),
         'contract_type': contractTypeDb,
         'periodieke_frequentie': frequentieDb,
-        'contract_startdatum': _fmtDate(_contractStartDatum!),
-        'contract_einddatum': _fmtDate(contractEinddatum),
+        'uitvoer_datum': isEenmalig
+            ? geselecteerdeUitvoerDatum?.toIso8601String()
+            : null,
+        'datum_is_indicatief': isEenmalig ? isDatumIndicatief : false,
+        'contract_startdatum': isEenmalig
+            ? null
+            : _fmtDate(_contractStartDatum!),
+        'contract_einddatum':
+            isEenmalig ? null : _fmtDate(contractEinddatum!),
         'reguliere_weekdagen': reguliereWeekdagenDb,
         'tijdslot_start': _fmtTimeDb(_tijdslotStart!),
         'tijdslot_eind': _fmtTimeDb(_tijdslotEind!),
@@ -850,103 +883,160 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                             ? null
                             : (v) => setState(() => _periodiekeFrequentie = v ?? _periodiekeFrequentie),
                       ),
-                      const SizedBox(height: 12),
-                      pickerField(
-                        label: 'Startdatum *',
-                        value: _fmtDateHuman(_contractStartDatum),
-                        icon: Icons.calendar_today_rounded,
-                        onTap: () => _pickDate(
-                          initial: _contractStartDatum,
-                          helpText: 'Selecteer startdatum',
-                          onPicked: (d) => _contractStartDatum = d,
+                      if (_contractType == 'eenmalig') ...[
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.calendar_today, color: Colors.blue),
+                          title: const Text('Gewenste uitvoerdatum'),
+                          subtitle: Text(
+                            geselecteerdeUitvoerDatum != null
+                                ? '${geselecteerdeUitvoerDatum!.day}-'
+                                    '${geselecteerdeUitvoerDatum!.month}-'
+                                    '${geselecteerdeUitvoerDatum!.year}'
+                                : 'Kies een datum',
+                          ),
+                          trailing: const TextButton(
+                            onPressed: null,
+                            child: Text('Kiezen'),
+                          ),
+                          onTap: _saving
+                              ? null
+                              : () async {
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate:
+                                        geselecteerdeUitvoerDatum ?? DateTime.now(),
+                                    firstDate: DateTime.now(),
+                                    lastDate: DateTime.now().add(
+                                      const Duration(days: 365 * 2),
+                                    ),
+                                  );
+                                  if (picked != null) {
+                                    setState(() => geselecteerdeUitvoerDatum = picked);
+                                  }
+                                },
                         ),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Startdatum is verplicht' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Looptijd *',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _looptijdOpties
-                            .map(
-                              (o) => ChoiceChip(
-                                label: Text(o.label, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-                                selected: _looptijd == o.value,
-                                onSelected: _saving
-                                    ? null
-                                    : (_) => setState(() {
-                                          _looptijd = o.value;
-                                          if (_looptijd != 'anders') {
-                                            _contractEindDatumHandmatig = null;
-                                          }
-                                        }),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                side: BorderSide(color: cs.onSurface.withValues(alpha: 0.16)),
-                                selectedColor: cs.primary.withValues(alpha: 0.14),
-                              ),
-                            )
-                            .toList(growable: false),
-                      ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 230),
-                        curve: Curves.easeInOut,
-                        child: _looptijd != 'anders'
-                            ? Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: Text(
-                                  'Einddatum contract (automatisch): ${_fmtDateHuman(contractEindPreview)}',
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700,
-                                    color: cs.onSurface.withValues(alpha: 0.70),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: const Text(
+                            'Datum is indicatief (Afhankelijk van planning/overleg)',
+                          ),
+                          value: isDatumIndicatief,
+                          onChanged: _saving
+                              ? null
+                              : (val) => setState(() => isDatumIndicatief = val ?? true),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (_contractType != 'eenmalig') ...[
+                        const SizedBox(height: 12),
+                        pickerField(
+                          label: 'Startdatum *',
+                          value: _fmtDateHuman(_contractStartDatum),
+                          icon: Icons.calendar_today_rounded,
+                          onTap: () => _pickDate(
+                            initial: _contractStartDatum,
+                            helpText: 'Selecteer startdatum',
+                            onPicked: (d) => _contractStartDatum = d,
+                          ),
+                          validator: (v) =>
+                              (v == null || v.trim().isEmpty) ? 'Startdatum is verplicht' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Looptijd *',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _looptijdOpties
+                              .map(
+                                (o) => ChoiceChip(
+                                  label: Text(
+                                    o.label,
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                                   ),
+                                  selected: _looptijd == o.value,
+                                  onSelected: _saving
+                                      ? null
+                                      : (_) => setState(() {
+                                            _looptijd = o.value;
+                                            if (_looptijd != 'anders') {
+                                              _contractEindDatumHandmatig = null;
+                                            }
+                                          }),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                  ),
+                                  side: BorderSide(
+                                    color: cs.onSurface.withValues(alpha: 0.16),
+                                  ),
+                                  selectedColor: cs.primary.withValues(alpha: 0.14),
                                 ),
                               )
-                            : Column(
-                                children: [
-                                  const SizedBox(height: 12),
-                                  pickerField(
-                                    label: 'Einddatum contract *',
-                                    value: _fmtDateHuman(_contractEindDatumHandmatig),
-                                    icon: Icons.calendar_today_rounded,
-                                    onTap: () => _pickDate(
-                                      initial: _contractEindDatumHandmatig,
-                                      helpText: 'Selecteer einddatum contract',
-                                      onPicked: (d) => _contractEindDatumHandmatig = d,
+                              .toList(growable: false),
+                        ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 230),
+                          curve: Curves.easeInOut,
+                          child: _looptijd != 'anders'
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: Text(
+                                    'Einddatum contract (automatisch): ${_fmtDateHuman(contractEindPreview)}',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.onSurface.withValues(alpha: 0.70),
                                     ),
-                                    validator: (v) {
-                                      if (_looptijd != 'anders') return null;
-                                      if (v == null || v.trim().isEmpty) {
-                                        return 'Einddatum is verplicht';
-                                      }
-                                      return null;
-                                    },
                                   ),
-                                ],
-                              ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Weekdagen *',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 8),
-                      weekdayWrap(
-                        selected: _reguliereWeekdagen,
-                        onToggle: (day, enabled) {
-                          setState(() {
-                            if (enabled) {
-                              _reguliereWeekdagen.add(day);
-                            } else {
-                              _reguliereWeekdagen.remove(day);
-                            }
-                          });
-                        },
-                      ),
+                                )
+                              : Column(
+                                  children: [
+                                    const SizedBox(height: 12),
+                                    pickerField(
+                                      label: 'Einddatum contract *',
+                                      value: _fmtDateHuman(_contractEindDatumHandmatig),
+                                      icon: Icons.calendar_today_rounded,
+                                      onTap: () => _pickDate(
+                                        initial: _contractEindDatumHandmatig,
+                                        helpText: 'Selecteer einddatum contract',
+                                        onPicked: (d) => _contractEindDatumHandmatig = d,
+                                      ),
+                                      validator: (v) {
+                                        if (_looptijd != 'anders') return null;
+                                        if (v == null || v.trim().isEmpty) {
+                                          return 'Einddatum is verplicht';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ],
+                      if (_contractType != 'eenmalig' && _contractType != 'incidenteel') ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Weekdagen *',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        weekdayWrap(
+                          selected: _reguliereWeekdagen,
+                          onToggle: (day, enabled) {
+                            setState(() {
+                              if (enabled) {
+                                _reguliereWeekdagen.add(day);
+                              } else {
+                                _reguliereWeekdagen.remove(day);
+                              }
+                            });
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       twoCol(
                         left: pickerField(
