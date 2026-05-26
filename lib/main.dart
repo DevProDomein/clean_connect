@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+import 'core/app_router.dart';
 import 'core/supabase_client.dart';
 import 'core/models/user_role.dart';
 import 'core/translations.dart';
@@ -427,6 +428,9 @@ class _MyAppState extends State<MyApp> {
           ),
           themeMode: themeMode,
           onGenerateRoute: (settings) {
+            final facilitatorRoute = AppRouter.onGenerateRoute(settings);
+            if (facilitatorRoute != null) return facilitatorRoute;
+
             // Operator pages must stay inside the mobile shell so the bottom nav is visible.
             // Keep names/pads identical to the existing AppDrawer route names.
             switch (settings.name) {

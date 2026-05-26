@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/supabase_client.dart';
 
@@ -77,6 +78,36 @@ class _QuoteDetailModalState extends State<QuoteDetailModal> {
       );
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openDefinitievePdf() async {
+    final url = _text(widget.offerte['definitieve_pdf_url']);
+    if (url.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Geen definitieve PDF beschikbaar.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Kon PDF niet openen.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
     }
   }
 
@@ -270,6 +301,26 @@ class _QuoteDetailModalState extends State<QuoteDetailModal> {
                     ),
                   ],
                   const SizedBox(height: 16),
+                  if (isVerzonden || isGetekend) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : _openDefinitievePdf,
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                        label: Text(
+                          'Toon Definitieve PDF',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (isVerzonden) ...[
                     Row(
                       children: [

@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../services/pdf_generator_service.dart';
 import '../widgets/quote_summary_modal.dart';
 import '../widgets/room_add_modal.dart';
+import 'pdf_preview_screen.dart';
 import 'project_overview_screen.dart';
 import 'quote_create_header_screen.dart';
 
@@ -30,6 +33,7 @@ class QuoteSurveyScreen extends StatefulWidget {
 class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   final NumberFormat _eur = NumberFormat.currency(locale: 'nl_NL', symbol: '€ ');
   bool _closing = false;
+  bool isVerzenden = false;
   double? vastePrijsOverride;
 
   @override
@@ -160,12 +164,126 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
 
   String _statusOf(Map<String, dynamic>? offerte) {
     final s = _text(offerte?['status']).toLowerCase();
-    if (s == 'verzonden') return 'send';
     if (s == 'getekend') return 'signed';
+    if (s == 'verzonden') return 'verzonden';
+    if (s == 'send') return 'send';
     return s;
   }
 
   bool _isConceptStatus(String status) => status == 'concept' || status == 'new';
+
+  bool _isSentStatus(String status) => status == 'send' || status == 'verzonden';
+
+  bool _isSignedStatus(String status) => status == 'signed' || status == 'getekend';
+
+  void _openConceptPdfPreview() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/facilitator/quotes/pdf-preview'),
+        builder: (_) => PdfPreviewScreen(
+          offerteId: widget.offerteId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDefinitievePdfUrl(Map<String, dynamic>? offerte) async {
+    final url = _text(offerte?['definitieve_pdf_url']);
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Geen definitieve PDF beschikbaar voor deze offerte.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'PDF-URL is ongeldig.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+      return;
+    }
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Kon PDF niet openen in de browser.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _offerteVerzenden() async {
+    if (isVerzenden || widget.isDirectProject) return;
+    setState(() => isVerzenden = true);
+    try {
+      final supabase = Supabase.instance.client;
+      final pdfBytes =
+          await PdfGeneratorService.generateOffertePdf(widget.offerteId);
+
+      final fileName =
+          'Offerte_${widget.offerteId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+      await supabase.storage.from('offerte_pdfs').uploadBinary(
+            fileName,
+            pdfBytes,
+            fileOptions: const FileOptions(contentType: 'application/pdf'),
+          );
+
+      final pdfUrl = supabase.storage.from('offerte_pdfs').getPublicUrl(fileName);
+
+      await supabase.from('offertes').update({
+        'status': 'verzonden',
+        'verzonden_op': DateTime.now().toIso8601String(),
+        'definitieve_pdf_url': pdfUrl,
+      }).eq('id', widget.offerteId);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF1E8E3E),
+          content: Text(
+            'Offerte definitief gemaakt en verzonden!',
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade800,
+          content: Text(
+            'Fout bij verzenden: $e',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isVerzenden = false);
+    }
+  }
 
   Future<void> _showSummary({
     required Map<String, dynamic> offerte,
@@ -405,39 +523,19 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
       return;
     }
 
-    final navigator = Navigator.of(context);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final didSend = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => SelectionArea(
-        child: QuoteSummaryModal(
-          offerte: offerte,
-          ruimtes: ruimtes,
-        ),
-      ),
-    );
-
-    if (didSend == true && mounted) {
-      scaffoldMessenger.showSnackBar(
+    if (ruimtes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1E8E3E),
           content: Text(
-            'Offerte is definitief gemaakt en wordt nu via de achtergrond verzonden!',
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
+            'Voeg minimaal één ruimte toe voordat je verzendt.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
           ),
         ),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      if (mounted) {
-        navigator.popUntil((route) => route.isFirst);
-      }
+      return;
     }
+    await _offerteVerzenden();
   }
 
   Widget _buildExpandableRoomTile(Map<String, dynamic> room) {
@@ -768,8 +866,8 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             final offerte = snapshot.hasData ? _extractOfferte(snapshot.data!) : null;
             final status = _statusOf(offerte);
             final isConcept = _isConceptStatus(status);
-            final isSent = status == 'send';
-            final isSigned = status == 'signed';
+            final isSent = _isSentStatus(status);
+            final isSigned = _isSignedStatus(status);
             final maandEx = _asDouble(offerte?['maandprijs_ex_btw']);
             final maandBtw = _asDouble(offerte?['maand_btw_bedrag']);
             final maandIncl = _asDouble(offerte?['maandprijs_inc_btw']);
@@ -1083,12 +1181,39 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                   ),
                                 ),
                               ),
-                            if (isConcept) const SizedBox(height: 10),
+                            if (isConcept) ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: isVerzenden ? null : _openConceptPdfPreview,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(
+                                      color: Colors.white.withValues(alpha: 0.30),
+                                    ),
+                                    minimumSize: const Size.fromHeight(48),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.picture_as_pdf),
+                                  label: Text(
+                                    'Preview PDF',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
                             Row(
                               children: [
                                 Expanded(
                                   child: OutlinedButton(
-                                    onPressed: offerte == null
+                                    onPressed: offerte == null || isVerzenden
                                         ? null
                                         : () => _saveAndClose(status: status),
                                     style: OutlinedButton.styleFrom(
@@ -1114,7 +1239,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                 Expanded(
                                   child: isConcept
                                       ? ElevatedButton(
-                                          onPressed: offerte == null
+                                          onPressed: offerte == null || isVerzenden
                                               ? null
                                               : () => _onPrimaryAction(
                                                     offerte: offerte,
@@ -1129,16 +1254,25 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                               borderRadius: BorderRadius.circular(24),
                                             ),
                                           ),
-                                          child: Text(
-                                            widget.isDirectProject
-                                                ? '🚀 Project Activeren & Taken Genereren'
-                                                : 'Maak definitief & Verzenden',
-                                            textAlign: TextAlign.center,
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 15,
-                                            ),
-                                          ),
+                                          child: isVerzenden && !widget.isDirectProject
+                                              ? const SizedBox(
+                                                  width: 22,
+                                                  height: 22,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    color: Colors.white,
+                                                  ),
+                                                )
+                                              : Text(
+                                                  widget.isDirectProject
+                                                      ? '🚀 Project Activeren & Taken Genereren'
+                                                      : 'Definitief Maken & Verzenden',
+                                                  textAlign: TextAlign.center,
+                                                  style: GoogleFonts.inter(
+                                                    fontWeight: FontWeight.w900,
+                                                    fontSize: 15,
+                                                  ),
+                                                ),
                                         )
                                       : isSent
                                           ? ElevatedButton(
@@ -1224,18 +1358,10 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                               const SizedBox(height: 10),
                               SizedBox(
                                 width: double.infinity,
-                                child: OutlinedButton(
-                                  onPressed: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        behavior: SnackBarBehavior.floating,
-                                        content: Text(
-                                          'PDF is nog niet beschikbaar.',
-                                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                child: OutlinedButton.icon(
+                                  onPressed: offerte == null
+                                      ? null
+                                      : () => _openDefinitievePdfUrl(offerte),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.white,
                                     side: BorderSide(color: Colors.white.withValues(alpha: 0.30)),
@@ -1244,8 +1370,9 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                       borderRadius: BorderRadius.circular(24),
                                     ),
                                   ),
-                                  child: Text(
-                                    'View PDF',
+                                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                                  label: Text(
+                                    'Toon Definitieve PDF',
                                     style: GoogleFonts.inter(
                                       fontWeight: FontWeight.w900,
                                       fontSize: 14,
@@ -1311,12 +1438,39 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                                 ),
                               ),
                             ),
-                          if (isConcept) const SizedBox(height: 12),
+                          if (isConcept) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: isVerzenden ? null : _openConceptPdfPreview,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.white.withValues(alpha: 0.30),
+                                  ),
+                                  minimumSize: const Size.fromHeight(52),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.picture_as_pdf),
+                                label: Text(
+                                  'Preview PDF',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                           Row(
                             children: [
                               Expanded(
                                 child: OutlinedButton(
-                                  onPressed: offerte == null
+                                  onPressed: offerte == null || isVerzenden
                                       ? null
                                       : () => _saveAndClose(status: status),
                                   style: OutlinedButton.styleFrom(
@@ -1340,33 +1494,91 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: ElevatedButton(
-                                  onPressed: offerte == null
-                                      ? null
-                                      : () => _onPrimaryAction(
-                                            offerte: offerte,
-                                            ruimtes: ruimtes,
+                                child: isConcept
+                                    ? ElevatedButton(
+                                        onPressed: offerte == null || isVerzenden
+                                            ? null
+                                            : () => _onPrimaryAction(
+                                                  offerte: offerte,
+                                                  ruimtes: ruimtes,
+                                                ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: cs.primary,
+                                          foregroundColor: Colors.white,
+                                          elevation: 0,
+                                          minimumSize: const Size.fromHeight(56),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(24),
                                           ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: cs.primary,
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    minimumSize: const Size.fromHeight(56),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(24),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    widget.isDirectProject
-                                        ? '🚀 Project Activeren & Taken Genereren'
-                                        : 'Maak definitief & Verzenden',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
+                                        ),
+                                        child: isVerzenden && !widget.isDirectProject
+                                            ? const SizedBox(
+                                                width: 24,
+                                                height: 24,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : Text(
+                                                widget.isDirectProject
+                                                    ? '🚀 Project Activeren & Taken Genereren'
+                                                    : 'Definitief Maken & Verzenden',
+                                                textAlign: TextAlign.center,
+                                                style: GoogleFonts.inter(
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                      )
+                                    : isSent || isSigned
+                                        ? OutlinedButton.icon(
+                                            onPressed: offerte == null
+                                                ? null
+                                                : () => _openDefinitievePdfUrl(offerte),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: Colors.white,
+                                              side: BorderSide(
+                                                color: Colors.white.withValues(alpha: 0.30),
+                                              ),
+                                              minimumSize: const Size.fromHeight(56),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(24),
+                                              ),
+                                            ),
+                                            icon: const Icon(Icons.picture_as_pdf_outlined),
+                                            label: Text(
+                                              'Toon Definitieve PDF',
+                                              style: GoogleFonts.inter(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                          )
+                                        : ElevatedButton(
+                                            onPressed: offerte == null
+                                                ? null
+                                                : () => _onPrimaryAction(
+                                                      offerte: offerte,
+                                                      ruimtes: ruimtes,
+                                                    ),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: cs.primary,
+                                              foregroundColor: Colors.white,
+                                              elevation: 0,
+                                              minimumSize: const Size.fromHeight(56),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(24),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'View Details',
+                                              style: GoogleFonts.inter(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ),
                               ),
                             ],
                           ),

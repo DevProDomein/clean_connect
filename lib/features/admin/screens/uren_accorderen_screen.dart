@@ -1039,180 +1039,135 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
     }
   }
 
-  Widget _analyticsRow() {
+  Widget _buildAnalyticsCard(
+    String titel,
+    String waarde,
+    Color kleur,
+    IconData icon,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: kleur.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kleur.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: kleur, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    titel,
+                    style: TextStyle(
+                      color: kleur,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              waarde,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: kleur,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _analyticsRow(BuildContext context) {
     final counts = _maandPlanningStatusCounts();
     final aantalOpen = counts.open;
     final aantalIngediend = counts.ingediend;
     final aantalGeaccordeerd = counts.geaccordeerd;
     final vergetenTaken = _vergetenTaken3PlusDagen();
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
 
-    return Row(
+    final kaarten = [
+      _buildAnalyticsCard(
+        'Nog in te vullen',
+        '$aantalOpen',
+        Colors.blue,
+        Icons.assignment,
+      ),
+      _buildAnalyticsCard(
+        'Te accorderen',
+        '$aantalIngediend',
+        Colors.orange,
+        Icons.access_time,
+      ),
+      _buildAnalyticsCard(
+        'Geaccordeerd',
+        '$aantalGeaccordeerd',
+        Colors.green,
+        Icons.check_circle,
+      ),
+    ];
+
+    final analyticsBlok = isMobile
+        ? Column(
+            children: [
+              kaarten[0],
+              const SizedBox(height: 12),
+              kaarten[1],
+              const SizedBox(height: 12),
+              kaarten[2],
+            ],
+          )
+        : Row(
+            children: [
+              Expanded(child: kaarten[0]),
+              const SizedBox(width: 16),
+              Expanded(child: kaarten[1]),
+              const SizedBox(width: 16),
+              Expanded(child: kaarten[2]),
+            ],
+          );
+
+    if (vergetenTaken.isEmpty) return analyticsBlok;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          flex: 2,
-          child: _kpiTileOpenMetReminder(
-            aantalOpen: aantalOpen,
-            vergetenTaken: vergetenTaken,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _kpiTile(
-            label: 'Te accorderen',
-            value: '$aantalIngediend',
-            icon: Icons.hourglass_top_rounded,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _kpiTile(
-            label: 'Geaccordeerd',
-            value: '$aantalGeaccordeerd',
-            icon: Icons.verified_rounded,
+        analyticsBlok,
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerRight,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            icon: const Icon(Icons.notifications_active, size: 16),
+            label: Text(
+              'Stuur Reminders (${vergetenTaken.length})',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+            onPressed: () => _toonReminderModal(vergetenTaken),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _kpiTileOpenMetReminder({
-    required int aantalOpen,
-    required List<Map<String, dynamic>> vergetenTaken,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: _brightBlue.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.edit_calendar_outlined,
-              color: _deepNavy,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Nog in te vullen',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$aantalOpen',
-                  style: GoogleFonts.inter(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF0F172A),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (vergetenTaken.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                ),
-                icon: const Icon(Icons.notifications_active, size: 16),
-                label: Text(
-                  'Stuur Reminders (${vergetenTaken.length})',
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
-                ),
-                onPressed: () => _toonReminderModal(vergetenTaken),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _kpiTile({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: _brightBlue.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: _deepNavy),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: GoogleFonts.inter(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF0F172A),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1265,9 +1220,7 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                 child: Text(_error, textAlign: TextAlign.center),
               ),
             )
-          : SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
+          : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                 Padding(
@@ -1275,7 +1228,7 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _analyticsRow(),
+                      _analyticsRow(context),
                       const SizedBox(height: 16),
                       TableCalendar<String>(
                     firstDay: DateTime.utc(2020, 1, 1),
@@ -1424,11 +1377,11 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                     ],
                   ),
                 ),
-                _buildMasterDetailSplit(),
+                Expanded(
+                  child: _buildMasterDetailSplit(),
+                ),
                 _buildBottomPayrollBar(),
-                const SizedBox(height: 120),
               ],
-            ),
             ),
     );
   }
@@ -1503,8 +1456,6 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
         : _planningIdFromRow(_geselecteerdeTaak!);
 
     return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       itemCount: lijst.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
@@ -1789,17 +1740,19 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                         ),
                       ],
                     ),
-                    ColoredBox(
-                      color: const Color(0xFFF2F2F7),
-                      child: _actieveTab == 0
-                          ? _buildTaakLijst(
-                              inTeDienenLijst,
-                              isGeaccordeerdTab: false,
-                            )
-                          : _buildTaakLijst(
-                              geaccordeerdeLijst,
-                              isGeaccordeerdTab: true,
-                            ),
+                    Expanded(
+                      child: ColoredBox(
+                        color: const Color(0xFFF2F2F7),
+                        child: _actieveTab == 0
+                            ? _buildTaakLijst(
+                                inTeDienenLijst,
+                                isGeaccordeerdTab: false,
+                              )
+                            : _buildTaakLijst(
+                                geaccordeerdeLijst,
+                                isGeaccordeerdTab: true,
+                              ),
+                      ),
                     ),
                   ],
                 ),

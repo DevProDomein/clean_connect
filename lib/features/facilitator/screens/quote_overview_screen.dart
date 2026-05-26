@@ -23,7 +23,7 @@ class QuoteOverviewScreen extends StatefulWidget {
 class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
   // Status buckets per tab.
   static const List<String> _conceptStatuses = ['concept', 'new'];
-  static const List<String> _verzondenStatuses = ['send'];
+  static const List<String> _verzondenStatuses = ['send', 'verzonden'];
   static const List<String> _getekendStatuses = ['signed'];
 
   bool _loading = true;
@@ -45,7 +45,7 @@ class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
       final res = await AppSupabase.client
           .from('offertes')
           .select(
-            'id, offerte_nummer, bedrijfsnaam_klant, totaal_prijs_ex_btw, status, aangemaakt_op, verzonden_op',
+            'id, offerte_nummer, bedrijfsnaam_klant, totaal_prijs_ex_btw, status, aangemaakt_op, verzonden_op, definitieve_pdf_url',
           )
           .order('aangemaakt_op', ascending: false);
       _rows = (res as List).cast<Map<String, dynamic>>();

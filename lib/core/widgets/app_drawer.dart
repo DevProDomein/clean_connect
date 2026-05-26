@@ -9,7 +9,6 @@ import '../../providers/theme_mode_provider.dart';
 import '../../features/admin/screens/cfo_dashboard_screen.dart';
 import '../../features/admin/screens/creditors_screen.dart';
 import '../../features/admin/screens/expense_dashboard_screen.dart';
-import '../../features/admin/screens/invoice_settings_screen.dart';
 import '../../features/admin/screens/offers_screen.dart';
 import '../../features/admin/screens/relations_crm_screen.dart';
 import '../../features/admin/screens/security_center_screen.dart';
@@ -116,6 +115,14 @@ class AppDrawerContent extends StatelessWidget {
           builder: (_) => screen,
         ),
       );
+    }
+
+    void navigateBedrijfsInstellingen() {
+      const name = '/bedrijfs-instellingen';
+      Navigator.of(context).maybePop();
+      if (routeName == name) return;
+      // Mobiel: pushNamed (stack). Desktop: zelfde flow via geregistreerde route.
+      Navigator.of(context).pushNamed(name);
     }
 
     Widget leadingOrSpacer(IconData icon) {
@@ -400,11 +407,28 @@ class AppDrawerContent extends StatelessWidget {
                     title: Text('Instellingen', style: groupStyle()),
                     childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                     children: [
-                      navTile(
-                        name: '/admin/settings/invoice',
-                        icon: Icons.business_rounded,
-                        title: 'Sjablonen & Logo',
-                        screen: const InvoiceSettingsScreen(),
+                      ListTile(
+                        leading: isDesktop
+                            ? null
+                            : const Icon(Icons.business_center),
+                        minLeadingWidth: isDesktop ? 0 : null,
+                        selected: routeName == '/bedrijfs-instellingen',
+                        selectedColor: Theme.of(context).colorScheme.primary,
+                        selectedTileColor: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: isDark ? 0.18 : 0.10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        title: const Text(
+                          'Bedrijfsgegevens & Sjablonen',
+                          style: TextStyle(
+                            fontSize: _fontSize,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        onTap: navigateBedrijfsInstellingen,
                       ),
                       if (canSecurity)
                         navTile(
@@ -543,7 +567,40 @@ class AppDrawerContent extends StatelessWidget {
                             ? const TicketOverviewScreen()
                             : const MobileBottomNavLayout(initialKey: 'tickets'),
                       ),
-
+                      ExpansionTile(
+                        leading: isDesktop
+                            ? null
+                            : const Icon(Icons.settings_outlined),
+                        title: Text('Instellingen', style: groupStyle()),
+                        childrenPadding:
+                            const EdgeInsets.fromLTRB(28, 0, 12, 8),
+                        children: [
+                          ListTile(
+                            leading: isDesktop
+                                ? null
+                                : const Icon(Icons.business_center),
+                            minLeadingWidth: isDesktop ? 0 : null,
+                            selected: routeName == '/bedrijfs-instellingen',
+                            selectedColor:
+                                Theme.of(context).colorScheme.primary,
+                            selectedTileColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: isDark ? 0.18 : 0.10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            title: const Text(
+                              'Bedrijfsgegevens & Sjablonen',
+                              style: TextStyle(
+                                fontSize: _fontSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onTap: navigateBedrijfsInstellingen,
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 if (isOperatorOnly)
