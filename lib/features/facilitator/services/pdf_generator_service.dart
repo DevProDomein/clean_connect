@@ -4,6 +4,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'offerte_pricing_service.dart';
+
 /// Premium offerte-PDF: kaft, intro, ruimtes, werkwijze, prijs, ondertekening, AV.
 class PdfGeneratorService {
   static pw.Font? _fontMontserrat;
@@ -177,19 +179,8 @@ class PdfGeneratorService {
     );
   }
 
-  static double _asDouble(dynamic v) {
-    if (v == null) return 0;
-    if (v is num) return v.toDouble();
-    return double.tryParse(_text(v).replaceAll(',', '.')) ?? 0;
-  }
-
-  static double _totaalExBtwOfferte(Map<String, dynamic> offerte) {
-    final override = _asDouble(offerte['vaste_prijs_override']);
-    if (override > 0) return override;
-    final maand = _asDouble(offerte['maandprijs_ex_btw']);
-    if (maand > 0) return maand;
-    return _asDouble(offerte['totaal_prijs_ex_btw']);
-  }
+  static double _totaalExBtwOfferte(Map<String, dynamic> offerte) =>
+      OffertePricingService.weergavePrijsExBtw(offerte);
 
   static Future<Uint8List> generateOffertePdf(String offerteId) async {
     final pdf = pw.Document();
@@ -1151,9 +1142,31 @@ class PdfGeneratorService {
     // ==========================================
     // PAGINA Y: PRIJSOVERZICHT
     // ==========================================
+    final String cTypePrijs = _text(offerte['contract_type']).toLowerCase();
+    var bedragHeader = 'Bedrag per maand';
+    var inbegrepenTekst =
+        'Inclusief alle reguliere, frequente en periodieke diensten.';
+    if (cTypePrijs == 'incidenteel') {
+      bedragHeader = 'Prijs per beurt';
+      inbegrepenTekst =
+          'Inclusief alle afgesproken werkzaamheden per uitvoering.';
+    } else if (cTypePrijs == 'eenmalig') {
+      bedragHeader = 'Totaalbedrag';
+      inbegrepenTekst = 'Inclusief de volledige eenmalige oplevering.';
+    }
+    final bool isAbonnementPrijs =
+        OffertePricingService.isAbonnement(cTypePrijs);
+    final String bedragSuffix = isAbonnementPrijs ? ' per maand' : '';
+
     final double totaalExBtw = _totaalExBtwOfferte(offerte);
     final double btwBedrag = totaalExBtw * 0.21;
     final double totaalInclBtw = totaalExBtw + btwBedrag;
+    final double regUren =
+        double.tryParse(offerte['regulier_uren_per_beurt_afgerond']?.toString() ?? '0') ?? 0.0;
+    final double freqUren =
+        double.tryParse(offerte['frequent_uren_per_beurt_afgerond']?.toString() ?? '0') ?? 0.0;
+    final double perUren =
+        double.tryParse(offerte['periodiek_uren_per_beurt_afgerond']?.toString() ?? '0') ?? 0.0;
     const checkIconSvg =
         '<svg viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="3" '
         'stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">'
@@ -1213,7 +1226,7 @@ class PdfGeneratorService {
                                     ),
                                   ),
                                   pw.Text(
-                                    'Bedrag per maand (ex BTW)',
+                                    '$bedragHeader (ex BTW)',
                                     style: pw.TextStyle(
                                       font: fontBold,
                                       color: PdfColors.white,
@@ -1227,13 +1240,34 @@ class PdfGeneratorService {
                               child: pw.Row(
                                 mainAxisAlignment:
                                     pw.MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
                                 children: [
-                                  pw.Text(
-                                    'Schoonmaakonderhoud volgens specificatie',
-                                    style: pw.TextStyle(font: fontBold),
+                                  pw.Expanded(
+                                    child: pw.Column(
+                                      crossAxisAlignment:
+                                          pw.CrossAxisAlignment.start,
+                                      children: [
+                                        pw.Text(
+                                          'Schoonmaakonderhoud volgens specificatie',
+                                          style: pw.TextStyle(
+                                            font: fontBold,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                        pw.SizedBox(height: 4),
+                                        pw.Text(
+                                          inbegrepenTekst,
+                                          style: pw.TextStyle(
+                                            font: fontRegular,
+                                            fontSize: 9,
+                                            color: PdfColors.grey600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   pw.Text(
-                                    '€ ${totaalExBtw.toStringAsFixed(2)} per maand',
+                                    '€ ${totaalExBtw.toStringAsFixed(2)}$bedragSuffix',
                                     style: pw.TextStyle(
                                       font: fontRegular,
                                       fontSize: 12,
@@ -1307,7 +1341,7 @@ class PdfGeneratorService {
                                         ),
                                       ),
                                       pw.Text(
-                                        '€ ${totaalInclBtw.toStringAsFixed(2)} per maand',
+                                        '€ ${totaalInclBtw.toStringAsFixed(2)}$bedragSuffix',
                                         style: pw.TextStyle(
                                           font: fontBold,
                                           fontSize: 14,
@@ -1346,6 +1380,37 @@ class PdfGeneratorService {
                               ),
                             ),
                             pw.SizedBox(height: 16),
+                            pw.SizedBox(height: 12),
+                            pw.Text(
+                              'Verwachte inzet (indicatie per beurt)',
+                              style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 10,
+                                color: blueColor,
+                              ),
+                            ),
+                            pw.SizedBox(height: 6),
+                            if (regUren > 0)
+                              _buildCheckItem(
+                                checkIconSvg,
+                                'Regulier: ${regUren.toStringAsFixed(2)} uur',
+                                fontRegular,
+                              ),
+                            if (freqUren > 0)
+                              _buildCheckItem(
+                                checkIconSvg,
+                                'Frequent: ${freqUren.toStringAsFixed(2)} uur',
+                                fontRegular,
+                              ),
+                            if (perUren > 0)
+                              _buildCheckItem(
+                                checkIconSvg,
+                                'Periodiek: ${perUren.toStringAsFixed(2)} uur',
+                                fontRegular,
+                              ),
+                            pw.SizedBox(height: 12),
+                            pw.Divider(color: PdfColors.grey300),
+                            pw.SizedBox(height: 12),
                             _buildCheckItem(
                               checkIconSvg,
                               'Inzet van gekwalificeerd personeel',

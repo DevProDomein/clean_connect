@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../services/offerte_pricing_service.dart';
 import '../services/pdf_generator_service.dart';
 import '../widgets/quote_summary_modal.dart';
 import '../widgets/room_add_modal.dart';
@@ -40,6 +41,14 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   void initState() {
     super.initState();
     _fetchOfferteData();
+  }
+
+  Stream<List<Map<String, dynamic>>> _ruimtesStream() {
+    return Supabase.instance.client
+        .from('offerte_ruimtes')
+        .stream(primaryKey: ['id'])
+        .eq('offerte_id', widget.offerteId)
+        .order('id', ascending: true);
   }
 
   Future<void> _fetchOfferteData() async {
@@ -744,11 +753,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     final bg = isDark ? const Color(0xFF0A0912) : const Color(0xFFF5F5F7);
     final offerteStream =
         AppSupabase.client.from('offertes').stream(primaryKey: ['id']).eq('id', widget.offerteId);
-    final ruimtesStream = Supabase.instance.client
-        .from('offerte_ruimtes')
-        .stream(primaryKey: ['id'])
-        .eq('offerte_id', widget.offerteId)
-        .order('id', ascending: true);
+    final ruimtesStream = _ruimtesStream();
 
     return Scaffold(
       backgroundColor: bg,
@@ -868,13 +873,10 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             final isConcept = _isConceptStatus(status);
             final isSent = _isSentStatus(status);
             final isSigned = _isSignedStatus(status);
-            final maandEx = _asDouble(offerte?['maandprijs_ex_btw']);
-            final maandBtw = _asDouble(offerte?['maand_btw_bedrag']);
-            final maandIncl = _asDouble(offerte?['maandprijs_inc_btw']);
-            final totaalContract = _asDouble(offerte?['totaal_prijs_ex_btw']);
-            final contractType = _text(offerte?['contract_type']).toLowerCase();
-            final isEenmaligOfIncidenteel =
-                contractType == 'eenmalig' || contractType == 'incidenteel';
+            final contractTypeKaft =
+                _text(offerte?['contract_type']).toLowerCase();
+            final isLosseKlusKaft = contractTypeKaft == 'incidenteel' ||
+                contractTypeKaft == 'eenmalig';
             final regulier = _asInt(offerte?['regulier_aantal_beurten']);
             final frequent = _asInt(offerte?['frequent_aantal_beurten']);
             final periodiek = _asInt(offerte?['periodiek_aantal_beurten']);
@@ -882,13 +884,6 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             final fUren = _asDouble(offerte?['frequent_uren_per_beurt_afgerond']);
             final pUren = _asDouble(offerte?['periodiek_uren_per_beurt_afgerond']);
             double roundToQuarter(double v) => (v * 4).roundToDouble() / 4.0;
-            String fmtQuarter(double v) {
-              final q = roundToQuarter(v);
-              // Trim trailing zeros for a compact UI.
-              var s = q.toStringAsFixed(2);
-              s = s.replaceFirst(RegExp(r'\.?0+$'), '');
-              return s;
-            }
 
             return StreamBuilder<List<Map<String, dynamic>>>(
               stream: ruimtesStream,
@@ -908,35 +903,126 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
 
                 Widget buildFinanceColumn() {
                   final isCompact = MediaQuery.of(context).size.width < 600;
+                  final berekening = offerte != null
+                      ? OffertePricingService.berekenTotalenUitMap(offerte)
+                      : null;
 
-                  if (isEenmaligOfIncidenteel) {
-                    final berekendeTotaalPrijs =
-                        maandEx > 0 ? maandEx : totaalContract;
-                    final weergavePrijs = vastePrijsOverride ?? berekendeTotaalPrijs;
-                    final heeftPrijsafspraak = vastePrijsOverride != null;
+                  final dynamic rawLooptijdMaanden =
+                      offerte != null ? offerte['looptijd_maanden'] : null;
+                  final int? looptijdMaanden = rawLooptijdMaanden == null
+                      ? null
+                      : _asInt(rawLooptijdMaanden, fallback: 12);
 
+                  // 1. Actueel contracttype + scheiding
+                  final String cType = berekening?.contractType.toLowerCase() ?? 'vast';
+                  final bool isLosseKlus =
+                      cType == 'eenmalig' || cType == 'incidenteel';
+
+                  // 2. Weergaveprijs: override > berekend (som van ruimtes)
+                  final double berekendeTotaalPrijs = berekening?.totaalExBtw ?? 0.0;
+                  final double weergavePrijs =
+                      vastePrijsOverride ?? berekendeTotaalPrijs;
+                  final bool heeftPrijsafspraak = vastePrijsOverride != null;
+
+                  // 3. Wiskunde (BTW en Inclusief)
+                  final double btwBedrag = weergavePrijs * 0.21;
+                  final double totaalInclBtw = weergavePrijs + btwBedrag;
+
+                  // 4. Bepaal labels
+                  final String prijsLabel = cType == 'eenmalig'
+                      ? 'Totaalprijs'
+                      : 'Prijs per beurt';
+
+                  // 5. UREN SPECIFICATIE – per frequentie, alleen tonen als > 0
+                  final double regulierUren = roundToQuarter(rUren);
+                  final double frequentUren = roundToQuarter(fUren);
+                  final double periodiekUren = roundToQuarter(pUren);
+
+                  Widget buildUurTag(String label, double uren, Color kleur) {
+                    if (uren <= 0) return const SizedBox.shrink();
+                    return Container(
+                      margin: const EdgeInsets.only(right: 6, bottom: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: kleur.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: kleur.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        '$label: ${uren.toStringAsFixed(2)}u',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: kleur,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (isLosseKlus) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          'Totaal per beurt: €${weergavePrijs.toStringAsFixed(2)} '
-                          '${heeftPrijsafspraak ? '(Vaste prijs)' : ''}',
-                          style: GoogleFonts.inter(
-                            color: heeftPrijsafspraak
-                                ? Colors.orange.shade300
-                                : Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: isCompact ? 18 : 20,
-                            letterSpacing: -0.4,
-                          ),
+                        const Text(
+                          'Verwachte inzet (indicatie per beurt):',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            buildUurTag(
+                              'Regulier',
+                              regulierUren,
+                              Colors.blue.shade700,
+                            ),
+                            buildUurTag(
+                              'Frequent',
+                              frequentUren,
+                              Colors.orange.shade700,
+                            ),
+                            buildUurTag(
+                              'Periodiek',
+                              periodiekUren,
+                              Colors.teal.shade700,
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Contractwaarde: ${_eur.format(totaalContract)}',
+                          '$prijsLabel (ex. BTW): ${_eur.format(weergavePrijs)} ${heeftPrijsafspraak ? '(Vaste prijs)' : ''}',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w900,
+                            fontSize: isCompact ? 18 : 20,
+                            letterSpacing: -0.4,
+                            color: heeftPrijsafspraak
+                                ? Colors.orange.shade300
+                                : Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '21% BTW: ${_eur.format(btwBedrag)}',
                           style: GoogleFonts.inter(
                             color: Colors.white70,
                             fontWeight: FontWeight.w600,
                             fontSize: isCompact ? 11 : 12,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Totaal incl. BTW: ${_eur.format(totaalInclBtw)}',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: isCompact ? 13 : 14,
                           ),
                         ),
                         if (isConcept) ...[
@@ -955,11 +1041,40 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                     );
                   }
 
+                  // Abonnement (vast / flexibel)
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      const Text(
+                        'Verwachte inzet (indicatie per beurt):',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          buildUurTag(
+                            'Regulier',
+                            regulierUren,
+                            Colors.blue.shade700,
+                          ),
+                          buildUurTag(
+                            'Frequent',
+                            frequentUren,
+                            Colors.orange.shade700,
+                          ),
+                          buildUurTag(
+                            'Periodiek',
+                            periodiekUren,
+                            Colors.teal.shade700,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
                       Text(
-                        'Totaal per maand (ex BTW): ${_eur.format(maandEx)}',
+                        'Maandprijs (ex. BTW): ${_eur.format(weergavePrijs)} ${heeftPrijsafspraak ? '(Vaste prijs)' : ''}',
                         style: GoogleFonts.inter(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
@@ -967,66 +1082,32 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                           letterSpacing: -0.4,
                         ),
                       ),
-                      const SizedBox(height: 8),
                       Text(
-                        'Btw: ${_eur.format(maandBtw)} | Incl: ${_eur.format(maandIncl)}',
-                        style: GoogleFonts.inter(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w600,
-                          fontSize: isCompact ? 11 : 12,
+                        'Totale contractwaarde: €${(weergavePrijs * (looptijdMaanden ?? 12)).toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: Colors.blueGrey,
+                          fontSize: 12,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Contractwaarde: ${_eur.format(totaalContract)}',
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: isCompact ? 13.5 : 15,
+                      if (isConcept) ...[
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: _toonPrijsafspraakModal,
+                          icon: const Icon(Icons.handshake, size: 18),
+                          label: const Text('Prijsafspraak'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.orange.shade300,
+                            side: BorderSide(color: Colors.orange.shade400),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (roundToQuarter(rUren) > 0 ||
-                          roundToQuarter(fUren) > 0 ||
-                          roundToQuarter(pUren) > 0)
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 6,
-                          children: [
-                            if (roundToQuarter(rUren) > 0)
-                              Text(
-                                'Regulier: ${fmtQuarter(rUren)} uur',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: isCompact ? 12.5 : 14,
-                                ),
-                              ),
-                            if (roundToQuarter(fUren) > 0)
-                              Text(
-                                'Frequent: ${fmtQuarter(fUren)} uur',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: isCompact ? 12.5 : 14,
-                                ),
-                              ),
-                            if (roundToQuarter(pUren) > 0)
-                              Text(
-                                'Periodiek: ${fmtQuarter(pUren)} uur',
-                                style: GoogleFonts.inter(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: isCompact ? 12.5 : 14,
-                                ),
-                              ),
-                          ],
-                        ),
+                      ],
                     ],
                   );
                 }
 
                 Widget buildExecutionsColumn() {
+                  final bool heeftFrequent = roundToQuarter(fUren) > 0;
+                  final bool heeftPeriodiek = roundToQuarter(pUren) > 0;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1047,24 +1128,28 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                           fontSize: 13,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Frequent: ${frequent}x',
-                        style: GoogleFonts.inter(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
+                      if (heeftFrequent) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Frequent: ${frequent}x',
+                          style: GoogleFonts.inter(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Periodiek: ${periodiek}x',
-                        style: GoogleFonts.inter(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
+                      ],
+                      if (heeftPeriodiek) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Periodiek: ${periodiek}x',
+                          style: GoogleFonts.inter(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   );
                 }
@@ -1140,7 +1225,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                               runSpacing: 18,
                               children: [
                                 buildFinanceColumn(),
-                                buildExecutionsColumn(),
+                                if (!isLosseKlusKaft) buildExecutionsColumn(),
                                 buildInventoryColumn(),
                               ],
                             ),
@@ -1394,8 +1479,14 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(child: buildFinanceColumn()),
-                                const VerticalDivider(color: Colors.white24, width: 26, thickness: 1),
-                                Expanded(child: buildExecutionsColumn()),
+                                if (!isLosseKlusKaft) ...[
+                                  const VerticalDivider(
+                                    color: Colors.white24,
+                                    width: 26,
+                                    thickness: 1,
+                                  ),
+                                  Expanded(child: buildExecutionsColumn()),
+                                ],
                                 const VerticalDivider(color: Colors.white24, width: 26, thickness: 1),
                                 Expanded(child: buildInventoryColumn()),
                               ],
