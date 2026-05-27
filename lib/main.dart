@@ -93,16 +93,30 @@ Future<void> main() async {
     }
   });
 
-  // Load environment variables.
-  // Note: If you renamed it for Netlify earlier, make sure this says "env.txt" instead of ".env".
-  await dotenv.load(fileName: "env.txt");
+  // Load environment variables: defaults from the committed example, optional
+  // overrides from env.txt (see env.txt.example). Both must be listed in pubspec.yaml assets.
+  await dotenv.load(
+    fileName: 'env.txt.example',
+    overrideWithFiles: const ['env.txt'],
+    isOptional: true,
+  );
 
   // Read variables securely - USE THE EXACT VARIABLE NAMES, NOT THE ACTUAL URL!
   final supabaseUrl = dotenv.env['SUPABASE_URL'];
   final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-  if (supabaseUrl == null || supabaseAnonKey == null) {
+  if (supabaseUrl == null ||
+      supabaseAnonKey == null ||
+      supabaseUrl.isEmpty ||
+      supabaseAnonKey.isEmpty) {
     throw Exception('Supabase configuratie ontbreekt in env bestand');
+  }
+  if (supabaseUrl.contains('your-project.supabase.co') ||
+      supabaseAnonKey.contains('your-anon-key')) {
+    throw Exception(
+      'Supabase staat nog op placeholder-waarden. Kopieer env.txt.example naar env.txt '
+      'in de projectmap en vul SUPABASE_URL en SUPABASE_ANON_KEY in.',
+    );
   }
 
   // Initialize Supabase

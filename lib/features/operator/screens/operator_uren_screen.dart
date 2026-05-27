@@ -1517,7 +1517,10 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                   ),
                 )
               : TabBarView(
-                  children: [_buildOverzichtTab(), _buildRegistratieTab()],
+                  children: [
+                    _buildOverzichtTab(),
+                    _buildRegistratieTab(),
+                  ],
                 ),
         ),
       ),
@@ -1525,6 +1528,23 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   }
 
   Widget _buildOverzichtTab() {
+    final alleOpgehaaldePlanningen = _shiftsLijst;
+    // 1. Zoek de taken die nog openstaan en niet in de toekomst liggen
+    final DateTime vandaag = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final int aantalOpenstaand = alleOpgehaaldePlanningen.where((t) {
+      if (t['uren_status'] != 'open') return false;
+      final taakDatum = DateTime.tryParse(
+        t['geplande_datum']?.toString() ?? '',
+      );
+      if (taakDatum == null) return false;
+      final taakDag = DateTime(taakDatum.year, taakDatum.month, taakDatum.day);
+      return !taakDag.isAfter(vandaag); // Mag vandaag of verleden zijn
+    }).length;
+
     final overview = _overzichtDezeMaandLijst();
     final pending = _pendingSubmittedHoursDezeMaand();
 
@@ -1535,6 +1555,89 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverToBoxAdapter(child: _buildOverzichtSegmentToggle()),
+          if (aantalOpenstaand > 0)
+            SliverToBoxAdapter(
+              child: Builder(
+                builder: (tabContext) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 24),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.red.shade200,
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.red.shade700,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Je hebt nog $aantalOpenstaand oningevulde dienst(en)!',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red.shade600,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              icon: const Icon(Icons.edit_calendar),
+                              label: const Text(
+                                'Uren Nu Invullen',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              onPressed: () {
+                                // DIT IS DE MAGIE: Schuif automatisch naar Tab 2 (Index 1)!
+                                DefaultTabController.of(
+                                  tabContext,
+                                ).animateTo(1);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
           if (_overzichtIsDezeMaand) ...[
             SliverToBoxAdapter(
               child: Padding(
@@ -1605,7 +1708,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     BuildContext context,
     Map<String, dynamic> row, {
     required bool toonDatumInSubtitel,
-    required bool isDagLijst,
     bool compact = false,
   }) {
     final tt = Theme.of(context).textTheme;
@@ -1613,15 +1715,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     final timeLine =
         '${_safeTime(row['starttijd'])} – ${_safeTime(row['eindtijd'])}';
     final adres = _uitvoerAdresVolledigVoorRegistratie(row);
-
-    final cardColor = isDagLijst ? Colors.blue.shade50 : Colors.white;
-    final cardRadius = BorderRadius.circular(isDagLijst ? 12 : 14);
-    final cardShape = RoundedRectangleBorder(
-      borderRadius: cardRadius,
-      side: isDagLijst
-          ? BorderSide(color: Colors.blue.shade200)
-          : BorderSide.none,
-    );
 
     final subtitleChildren = <Widget>[
       if (toonDatumInSubtitel && day != null) ...[
@@ -1685,35 +1778,51 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
       ),
     ];
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: compact ? 6 : 8),
-      child: Material(
-        color: cardColor,
-        shape: cardShape,
-        clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 16,
-            vertical: compact ? 6 : 8,
+    // Vervang de decoratie van de actieve open-taken container/card door deze Apple-stijl:
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50, // Lichte opvallende achtergrond
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-          shape: cardShape,
-          title: Text(
-            _shiftBedrijfsnaam(row),
-            style: GoogleFonts.lato(
-              fontWeight: FontWeight.w900,
-              fontSize: compact ? 14 : 15,
+        ],
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 16,
+          vertical: compact ? 6 : 8,
+        ),
+        title: Text(
+          _shiftBedrijfsnaam(row),
+          style: GoogleFonts.lato(
+            fontWeight: FontWeight.w900,
+            fontSize: compact ? 14 : 15,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: subtitleChildren,
+        ),
+        trailing: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange.shade600,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
           ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: subtitleChildren,
-          ),
-          trailing: Icon(
-            Icons.edit_calendar_rounded,
-            color: _brightBlue,
-            size: compact ? 26 : 28,
-          ),
-          onTap: () => _openUrenInvullenSheet(row),
+          onPressed: () {
+            // Behoud jullie originele onTap() actie die de invul-modal opent!
+            _openUrenInvullenSheet(row);
+          },
+          child: const Text('Invullen'),
         ),
       ),
     );
@@ -1834,7 +1943,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                         context,
                         openList[index],
                         toonDatumInSubtitel: false,
-                        isDagLijst: true,
                       );
                     },
                   ),
@@ -1870,7 +1978,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                         context,
                         maandVangnet[index],
                         toonDatumInSubtitel: true,
-                        isDagLijst: false,
                         compact: true,
                       );
                     },
