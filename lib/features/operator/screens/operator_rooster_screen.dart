@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/app_drawer.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
-import '../widgets/packing_list_modal.dart';
+import '../helpers/paklijst_programma_helper.dart';
 
 class OperatorRoosterScreen extends StatefulWidget {
   const OperatorRoosterScreen({super.key});
@@ -78,8 +78,14 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
       final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
       final DateTime todayDate = DateTime.now();
-      final DateTime todayDay = DateTime(todayDate.year, todayDate.month, todayDate.day);
-      final DateTime weekStart = todayDay.subtract(Duration(days: todayDay.weekday - 1));
+      final DateTime todayDay = DateTime(
+        todayDate.year,
+        todayDate.month,
+        todayDate.day,
+      );
+      final DateTime weekStart = todayDay.subtract(
+        Duration(days: todayDay.weekday - 1),
+      );
       final DateTime weekEnd = weekStart.add(const Duration(days: 6));
       final DateTime upcomingWindowEnd = todayDay.add(const Duration(days: 31));
 
@@ -95,7 +101,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
         DateTime taskDay;
         try {
-          final parsed = DateTime.parse(dateStr.length >= 10 ? dateStr.substring(0, 10) : dateStr);
+          final parsed = DateTime.parse(
+            dateStr.length >= 10 ? dateStr.substring(0, 10) : dateStr,
+          );
           taskDay = DateTime(parsed.year, parsed.month, parsed.day);
         } catch (_) {
           continue;
@@ -107,7 +115,8 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
         if (dateStr == todayStr) {
           today.add(task);
-        } else if (taskDay.isAfter(todayDay) && !taskDay.isAfter(upcomingWindowEnd)) {
+        } else if (taskDay.isAfter(todayDay) &&
+            !taskDay.isAfter(upcomingWindowEnd)) {
           upcoming.add(task);
         }
       }
@@ -259,25 +268,15 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     return s;
   }
 
-  void _openPaklijst(String opdrachtId) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => SelectionArea(
-        child: PackingListModal(opdrachtId: opdrachtId),
-      ),
-    );
-  }
-
   bool _isEindtijdVerstreken(Map<String, dynamic> task) {
     var isEindtijdVerstreken = false;
     final nu = DateTime.now();
 
     try {
       final rawDatum = task['geplande_datum']?.toString() ?? '';
-      final dateStr =
-          rawDatum.length >= 10 ? rawDatum.substring(0, 10) : rawDatum;
+      final dateStr = rawDatum.length >= 10
+          ? rawDatum.substring(0, 10)
+          : rawDatum;
       final taakDatum = DateTime.tryParse(dateStr) ?? nu;
 
       final eindtijd = task['rooster_eindtijd']?.toString();
@@ -305,6 +304,308 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     Navigator.of(context).pushNamed('/operator/uren');
   }
 
+  Future<void> _openPaklijstProgrammaVoorTaak(Map<String, dynamic> task) async {
+    final opdrachtId = opdrachtIdUitItem(task);
+    await openKogelvrijePaklijst(context, opdrachtId);
+  }
+
+  Future<void> _toonPaklijst(dynamic planningItem) async {
+    // 1. Haal het opdracht_id veilig uit de planning regel
+    final String opdrachtId = planningItem['opdracht_id']?.toString() ?? '';
+
+    if (opdrachtId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Fout: Geen opdracht gekoppeld aan deze planning.'),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      // STAP 1: Haal Opdracht op
+      final opd = await supabase
+          .from('opdrachten')
+          .select('project_id, frequentie_type')
+          .eq('id', opdrachtId)
+          .maybeSingle();
+      if (opd == null) throw Exception('Opdracht niet gevonden.');
+
+      final String freqType =
+          opd['frequentie_type']?.toString().toLowerCase() ?? '';
+      final String projectId = opd['project_id']?.toString() ?? '';
+
+      if (freqType == 'incidenteel' || freqType == 'eenmalig') {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Geen standaard materialen voor losse/incidentele klussen.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      // STAP 2: Haal Project op
+      final proj = await supabase
+          .from('projecten')
+          .select('offerte_id')
+          .eq('id', projectId)
+          .maybeSingle();
+      if (proj == null || proj['offerte_id'] == null) {
+        throw Exception('Geen Offerte-koppeling gevonden.');
+      }
+      final String offerteId = proj['offerte_id'].toString();
+
+      // STAP 3: Haal Ruimtes en Gekoppelde Materialen op
+      final ruimtes = await supabase
+          .from('offerte_ruimtes')
+          .select('''
+      naam_in_pand, 
+      ruimte_categorie,
+      offerte_ruimte_diensten (
+        frequentie_label,
+        moeder_bestek (
+          *,
+          bestek_materialen (
+            materialen (*)
+          )
+        )
+      )
+    ''')
+          .eq('offerte_id', offerteId);
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // Sluit lader
+
+      // STAP 4: Parse data en ontdubbel
+      List<Widget> ruimteWidgets = [];
+      Set<String> globaleMaterialen = {};
+
+      for (var ruimte in ruimtes) {
+        final ruimtesDienstenRaw = ruimte['offerte_ruimte_diensten'];
+        final List<dynamic> diensten = ruimtesDienstenRaw is List
+            ? ruimtesDienstenRaw
+            : (ruimtesDienstenRaw != null ? [ruimtesDienstenRaw] : []);
+        Set<String> ruimteMaterialen = {};
+
+        for (var d in diensten) {
+          bool isActief = false;
+          // Haal het label op. Is deze leeg of null? Dan is het standaard regulier werk.
+          final String fLabel =
+              d['frequentie_label']?.toString().toLowerCase() ?? 'regulier';
+
+          if (freqType == 'regulier' && fLabel == 'regulier') isActief = true;
+          if (freqType == 'frequent' && fLabel == 'frequent') isActief = true;
+          if (freqType == 'periodiek' && fLabel == 'periodiek') isActief = true;
+
+          // Als de taak actief is voor het huidige frequentietype van de werkbon, haal dan materialen op
+          if (isActief && d['moeder_bestek'] != null) {
+            final mbRaw = d['moeder_bestek'];
+            final Map<String, dynamic> mb = (mbRaw is List && mbRaw.isNotEmpty)
+                ? mbRaw.first
+                : (mbRaw is Map<String, dynamic> ? mbRaw : {});
+
+            final bestekMatRaw = mb['bestek_materialen'];
+            final List<dynamic> gekoppeldeMaterialen = bestekMatRaw is List
+                ? bestekMatRaw
+                : (bestekMatRaw != null ? [bestekMatRaw] : []);
+
+            for (var koppeling in gekoppeldeMaterialen) {
+              final matRaw =
+                  koppeling['materialen'] ??
+                  koppeling['materiaal'] ??
+                  koppeling;
+              final Map<String, dynamic> mat =
+                  (matRaw is List && matRaw.isNotEmpty)
+                  ? matRaw.first
+                  : (matRaw is Map<String, dynamic> ? matRaw : {});
+
+              final String matNaam =
+                  mat['artikelnaam']?.toString() ??
+                  mat['artikel_naam']?.toString() ??
+                  mat['naam']?.toString() ??
+                  '';
+
+              if (matNaam.isNotEmpty) {
+                ruimteMaterialen.add(matNaam);
+                globaleMaterialen.add(matNaam);
+              }
+            }
+          }
+        }
+
+        if (ruimteMaterialen.isNotEmpty) {
+          ruimteWidgets.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      ruimte['naam_in_pand']?.toString() ??
+                          ruimte['ruimte_categorie']?.toString() ??
+                          'Ruimte',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...ruimteMaterialen.map(
+                    (m) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6, left: 4),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check_box_outline_blank,
+                            size: 16,
+                            color: Colors.blueGrey,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              m,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      }
+
+      // STAP 5: Toon Modal
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Materialenlijst ($freqType)'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 500,
+            child: globaleMaterialen.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Geen gekoppelde materialen gevonden in het bestek voor deze taak.',
+                    ),
+                  )
+                : ListView(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.shopping_cart,
+                                  color: Colors.orange.shade800,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Totale Paklijst',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(),
+                            ...globaleMaterialen.map(
+                              (m) => Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.check_box_outline_blank,
+                                      size: 16,
+                                      color: Colors.orange,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        m,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Text(
+                        'Uitsplitsing per ruimte:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...ruimteWidgets,
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Sluiten'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fout bij laden materialen: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -325,9 +626,16 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading) return const Center(child: CupertinoActivityIndicator(radius: 16));
+    if (_isLoading) {
+      return const Center(child: CupertinoActivityIndicator(radius: 16));
+    }
     if (_errorMessage.isNotEmpty) {
-      return Center(child: Text('Fout: $_errorMessage', style: const TextStyle(color: Colors.red)));
+      return Center(
+        child: Text(
+          'Fout: $_errorMessage',
+          style: const TextStyle(color: Colors.red),
+        ),
+      );
     }
 
     return RefreshIndicator(
@@ -342,7 +650,12 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
               child: Text(
                 'VANDAAG UIT TE VOEREN',
-                style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.blueAccent, letterSpacing: 1.0),
+                style: GoogleFonts.lato(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.blueAccent,
+                  letterSpacing: 1.0,
+                ),
               ),
             ),
           ),
@@ -352,11 +665,19 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                 padding: const EdgeInsets.all(32.0),
                 child: Column(
                   children: [
-                    Icon(Icons.done_all, size: 64, color: Colors.green.shade300),
+                    Icon(
+                      Icons.done_all,
+                      size: 64,
+                      color: Colors.green.shade300,
+                    ),
                     const SizedBox(height: 16),
                     Text(
                       'Je bent helemaal klaar voor vandaag!',
-                      style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey.shade600),
+                      style: GoogleFonts.lato(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                 ),
@@ -375,7 +696,12 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 32, 20, 12),
                 child: Text(
                   'KOMENDE MAAND',
-                  style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.grey.shade600, letterSpacing: 1.0),
+                  style: GoogleFonts.lato(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.grey.shade600,
+                    letterSpacing: 1.0,
+                  ),
                 ),
               ),
             ),
@@ -401,18 +727,33 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       child: Row(
         children: [
           Expanded(
-            child: _kpiCard('Taken vandaag', '$_kpiTakenVandaag', Icons.today, Colors.orange),
+            child: _kpiCard(
+              'Taken vandaag',
+              '$_kpiTakenVandaag',
+              Icons.today,
+              Colors.orange,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: _kpiCard('Deze week', '$_kpiDezeWeek', Icons.calendar_month, Colors.blue),
+            child: _kpiCard(
+              'Deze week',
+              '$_kpiDezeWeek',
+              Icons.calendar_month,
+              Colors.blue,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _kpiCard(String title, String value, IconData icon, MaterialColor color) {
+  Widget _kpiCard(
+    String title,
+    String value,
+    IconData icon,
+    MaterialColor color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -433,11 +774,25 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Icon(icon, color: color.shade400, size: 24),
-              Text(value, style: GoogleFonts.lato(fontSize: 24, fontWeight: FontWeight.w900, color: color.shade700)),
+              Text(
+                value,
+                style: GoogleFonts.lato(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  color: color.shade700,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(title, style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600, fontSize: 13)),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
         ],
       ),
     );
@@ -492,26 +847,52 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
             children: [
               Text(
                 '${_safeTime(task['rooster_starttijd'])} - ${_safeTime(task['rooster_eindtijd'])}',
-                style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.black87),
+                style: GoogleFonts.lato(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black87,
+                ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(color: bgChip, borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: bgChip,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Text(
                   badgeLabel,
-                  style: TextStyle(color: badgeColor, fontWeight: FontWeight.bold, fontSize: 12),
+                  style: TextStyle(
+                    color: badgeColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Text(task['bedrijfsnaam'] ?? 'Onbekende Klant', style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(
+            task['bedrijfsnaam'] ?? 'Onbekende Klant',
+            style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 4),
           Row(
             children: [
-              Icon(Icons.business_center, size: 14, color: Colors.grey.shade400),
+              Icon(
+                Icons.business_center,
+                size: 14,
+                color: Colors.grey.shade400,
+              ),
               const SizedBox(width: 6),
-              Expanded(child: Text(task['project_naam'] ?? '', style: TextStyle(color: Colors.grey.shade600, fontSize: 14))),
+              Expanded(
+                child: Text(
+                  task['project_naam'] ?? '',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -528,13 +909,18 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
               ),
             ],
           ),
-          const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1)),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Divider(height: 1),
+          ),
           OutlinedButton.icon(
-            onPressed: () => _openPaklijst(task['opdracht_id'].toString()),
+            onPressed: () => _toonPaklijst(task),
             icon: const Text('📦', style: TextStyle(fontSize: 16)),
             label: const Text('Paklijst'),
             style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
           if (isEindtijdVerstreken) ...[
@@ -574,10 +960,20 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle),
-          child: Icon(Icons.calendar_month, color: Colors.grey.shade600, size: 20),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.calendar_month,
+            color: Colors.grey.shade600,
+            size: 20,
+          ),
         ),
-        title: Text(task['bedrijfsnaam'] ?? 'Onbekend', style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 15)),
+        title: Text(
+          task['bedrijfsnaam'] ?? 'Onbekend',
+          style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
         subtitle: Text(
           '$dateLabel • ${_safeTime(task['rooster_starttijd'])}',
           style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
@@ -634,6 +1030,13 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                   ],
                 ),
                 actions: [
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _openPaklijstProgrammaVoorTaak(task);
+                    },
+                    child: const Text('Bekijk Paklijst & Programma'),
+                  ),
                   TextButton(
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Sluiten'),

@@ -43,18 +43,22 @@ class PdfGeneratorService {
       }
 
       try {
-        _logoNormaal = await networkImage(_urlOrPlaceholder(
-          bedrijfsData['logo_url']?.toString(),
-          'https://via.placeholder.com/400x150.png?text=NORMAAL+LOGO',
-        ));
+        _logoNormaal = await networkImage(
+          _urlOrPlaceholder(
+            bedrijfsData['logo_url']?.toString(),
+            'https://via.placeholder.com/400x150.png?text=NORMAAL+LOGO',
+          ),
+        );
       } catch (e) {
         debugPrint('Logo normaal: $e');
       }
       try {
-        _logoTekst = await networkImage(_urlOrPlaceholder(
-          bedrijfsData['logo_tekst_url']?.toString(),
-          'https://via.placeholder.com/600x150.png?text=TEKST+LOGO',
-        ));
+        _logoTekst = await networkImage(
+          _urlOrPlaceholder(
+            bedrijfsData['logo_tekst_url']?.toString(),
+            'https://via.placeholder.com/600x150.png?text=TEKST+LOGO',
+          ),
+        );
       } catch (e) {
         debugPrint('Logo tekst: $e');
       }
@@ -118,13 +122,17 @@ class PdfGeneratorService {
     if (cat.contains('sanitair') || cat.contains('toilet')) {
       return _fotoSanitair ?? _coverFoto;
     }
-    if (cat.contains('keuken') || cat.contains('pantry') || cat.contains('kantine')) {
+    if (cat.contains('keuken') ||
+        cat.contains('pantry') ||
+        cat.contains('kantine')) {
       return _fotoKeuken ?? _coverFoto;
     }
     if (cat.contains('zaal') || cat.contains('vergader')) {
       return _fotoZaal ?? _coverFoto;
     }
-    if (cat.contains('gang') || cat.contains('entree') || cat.contains('vloer')) {
+    if (cat.contains('gang') ||
+        cat.contains('entree') ||
+        cat.contains('vloer')) {
       return _fotoGang ?? _coverFoto;
     }
     if (cat.contains('magazijn') || cat.contains('opslag')) {
@@ -215,6 +223,25 @@ class PdfGeneratorService {
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
 
+    // Bepaal of de offerte Frequente of Periodieke taken bevat
+    bool heeftFrequent = false;
+    bool heeftPeriodiek = false;
+
+    for (var ruimte in ruimtes) {
+      final dienstenRaw = ruimte['offerte_ruimte_diensten'];
+      final List<dynamic> diensten = dienstenRaw is List
+          ? dienstenRaw
+          : (dienstenRaw != null ? [dienstenRaw] : []);
+      for (var d in diensten) {
+        if (d['in_frequent'] == true || d['frequentie_label'] == 'frequent') {
+          heeftFrequent = true;
+        }
+        if (d['in_periodiek'] == true || d['frequentie_label'] == 'periodiek') {
+          heeftPeriodiek = true;
+        }
+      }
+    }
+
     final blueColor = PdfColor.fromHex('#004A99');
     final lightGrey = PdfColor.fromHex('#F2F2F7');
     final primaryOrange = PdfColor.fromHex('#F26622');
@@ -230,8 +257,14 @@ class PdfGeneratorService {
     final merkLogo = _logoNormaal;
     final logoImage = _logoTekst;
 
-    final bedrijfsnaamKlant = _text(offerte['bedrijfsnaam_klant'], fallback: 'Onbekend');
-    final onzeNaam = _text(onzeGegevens['bedrijfsnaam'], fallback: 'CleanConnect');
+    final bedrijfsnaamKlant = _text(
+      offerte['bedrijfsnaam_klant'],
+      fallback: 'Onbekend',
+    );
+    final onzeNaam = _text(
+      onzeGegevens['bedrijfsnaam'],
+      fallback: 'CleanConnect',
+    );
     final offerteNummer = _text(offerte['offerte_nummer'], fallback: 'Concept');
     final datumLabel =
         '${DateTime.now().day.toString().padLeft(2, '0')}-'
@@ -239,7 +272,10 @@ class PdfGeneratorService {
         '${DateTime.now().year}';
     final uitvoerLocatie =
         '${_text(offerte['uitvoer_adres_straat_huisnr'])}, ${_text(offerte['uitvoer_adres_stad'])}';
-    final contactVoornaam = _text(offerte['contact_voornaam'], fallback: 'relatie');
+    final contactVoornaam = _text(
+      offerte['contact_voornaam'],
+      fallback: 'relatie',
+    );
 
     final bool isConcept =
         offerte['status'] == 'concept' || offerte['status'] == 'new';
@@ -253,11 +289,7 @@ class PdfGeneratorService {
         alignment: pw.Alignment.centerLeft,
         child: pw.Text(
           bedrijfsnaamKlant,
-          style: pw.TextStyle(
-            font: fontBold,
-            color: blueColor,
-            fontSize: 9,
-          ),
+          style: pw.TextStyle(font: fontBold, color: blueColor, fontSize: 9),
         ),
       );
     }
@@ -351,9 +383,7 @@ class PdfGeneratorService {
 
           return pw.Stack(
             children: [
-              pw.Positioned.fill(
-                child: pw.Container(color: PdfColors.white),
-              ),
+              pw.Positioned.fill(child: pw.Container(color: PdfColors.white)),
               if (logoImage != null)
                 pw.Positioned(
                   top: 40,
@@ -401,10 +431,7 @@ class PdfGeneratorService {
                   decoration: pw.BoxDecoration(
                     color: primaryOrange,
                     boxShadow: [
-                      pw.BoxShadow(
-                        color: coverOrangeShadow,
-                        blurRadius: 25,
-                      ),
+                      pw.BoxShadow(color: coverOrangeShadow, blurRadius: 25),
                     ],
                   ),
                   padding: const pw.EdgeInsets.only(
@@ -507,16 +534,23 @@ class PdfGeneratorService {
     // PAGINA 2: PRAKTISCHE INFO
     // ==========================================
     final cType = _text(offerte['contract_type']).toLowerCase();
-    final startD = _text(offerte['contract_startdatum'], fallback: 'in overleg');
-    final eindD = _text(offerte['contract_einddatum'], fallback: 'onbepaalde tijd');
+    final startD = _text(
+      offerte['contract_startdatum'],
+      fallback: 'in overleg',
+    );
+    final eindD = _text(
+      offerte['contract_einddatum'],
+      fallback: 'onbepaalde tijd',
+    );
     final dagenTekst = _formatWeekdagen(offerte['reguliere_weekdagen']);
-    final periodiekeFreq = _text(offerte['periodieke_frequentie'])
-        .replaceAll('_', ' ');
+    final periodiekeFreq = _text(
+      offerte['periodieke_frequentie'],
+    ).replaceAll('_', ' ');
     final akkoordTekst = (cType == 'eenmalig' || cType == 'incidenteel')
         ? 'Bij akkoord zullen wij deze eenmalige/incidentele opdracht uitvoeren op of rond $startD.\n\n'
-            'De gedetailleerde specificatie van de overeengekomen werkzaamheden, ingedeeld per ruimte, treft u aan in de tabel op de volgende pagina.'
+              'De gedetailleerde specificatie van de overeengekomen werkzaamheden, ingedeeld per ruimte, treft u aan in de tabel op de volgende pagina.'
         : 'Bij akkoord kunnen wij starten op $startD, de overeenkomst wordt aangegaan voor een $cType looptijd tot en met $eindD.\n\n'
-            'De gedetailleerde specificatie van de overeengekomen werkzaamheden, ingedeeld per ruimte, treft u aan in de tabel op de volgende pagina.';
+              'De gedetailleerde specificatie van de overeengekomen werkzaamheden, ingedeeld per ruimte, treft u aan in de tabel op de volgende pagina.';
 
     pdf.addPage(
       pw.Page(
@@ -529,163 +563,179 @@ class PdfGeneratorService {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-              pw.Text(
-                'Onze Samenwerking',
-                style: pw.TextStyle(
-                  font: fontBold,
-                  fontSize: 32,
-                  color: blueColor,
+                pw.Text(
+                  'Onze Samenwerking',
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 32,
+                    color: blueColor,
+                  ),
                 ),
-              ),
-              pw.SizedBox(height: 30),
-              pw.Expanded(
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      flex: 6,
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Beste $contactVoornaam,',
-                            style: pw.TextStyle(font: fontBold, fontSize: 12),
-                          ),
-                          pw.SizedBox(height: 10),
-                          pw.Text(
-                            'Hartelijk dank dat wij u deze aanbieding mogen presenteren voor het uitvoeren '
-                            'van het schoonmaakonderhoud aan uw pand. Hierbij presenteren wij u deze offerte '
-                            'en het gedetailleerde voorstel voor de facilitaire diensten, volledig afgestemd '
-                            'op uw wensen.',
-                            style: pw.TextStyle(
-                              font: fontRegular,
-                              fontSize: 10,
-                              lineSpacing: 1.5,
+                pw.SizedBox(height: 30),
+                pw.Expanded(
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        flex: 6,
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(
+                              'Beste $contactVoornaam,',
+                              style: pw.TextStyle(font: fontBold, fontSize: 12),
                             ),
-                          ),
-                          pw.SizedBox(height: 25),
-                          pw.Text(
-                            'Praktische Informatie',
-                            style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 14,
-                              color: blueColor,
-                            ),
-                          ),
-                          pw.SizedBox(height: 10),
-                          pw.Container(
-                            decoration: pw.BoxDecoration(
-                              border: pw.Border(
-                                top: pw.BorderSide(color: blueColor, width: 2),
+                            pw.SizedBox(height: 10),
+                            pw.Text(
+                              'Hartelijk dank dat wij u deze aanbieding mogen presenteren voor het uitvoeren '
+                              'van het schoonmaakonderhoud aan uw pand. Hierbij presenteren wij u deze offerte '
+                              'en het gedetailleerde voorstel voor de facilitaire diensten, volledig afgestemd '
+                              'op uw wensen.',
+                              style: pw.TextStyle(
+                                font: fontRegular,
+                                fontSize: 10,
+                                lineSpacing: 1.5,
                               ),
                             ),
-                            child: pw.Column(
-                              children: [
-                                _buildSleekTableRow(
-                                  'Locatie van uitvoering',
-                                  uitvoerLocatie,
-                                  fontBold,
-                                  fontRegular,
+                            pw.SizedBox(height: 25),
+                            pw.Text(
+                              'Praktische Informatie',
+                              style: pw.TextStyle(
+                                font: fontBold,
+                                fontSize: 14,
+                                color: blueColor,
+                              ),
+                            ),
+                            pw.SizedBox(height: 10),
+                            pw.Container(
+                              decoration: pw.BoxDecoration(
+                                border: pw.Border(
+                                  top: pw.BorderSide(
+                                    color: blueColor,
+                                    width: 2,
+                                  ),
                                 ),
-                                _buildSleekTableRow(
-                                  'Type overeenkomst',
-                                  cType.toUpperCase().isEmpty
-                                      ? 'ONBEKEND'
-                                      : cType.toUpperCase(),
-                                  fontBold,
-                                  fontRegular,
-                                ),
-                                if (cType != 'eenmalig' && cType != 'incidenteel')
+                              ),
+                              child: pw.Column(
+                                children: [
                                   _buildSleekTableRow(
-                                    'Uitvoerdagen',
-                                    dagenTekst,
+                                    'Locatie van uitvoering',
+                                    uitvoerLocatie,
                                     fontBold,
                                     fontRegular,
                                   ),
-                                _buildSleekTableRow(
-                                  'Frequente werkzaamheden',
-                                  'Worden maandelijks uitgevoerd',
-                                  fontBold,
-                                  fontRegular,
-                                ),
-                                _buildSleekTableRow(
-                                  'Periodieke werkzaamheden',
-                                  periodiekeFreq.isEmpty
-                                      ? 'Volgens afspraak'
-                                      : periodiekeFreq,
-                                  fontBold,
-                                  fontRegular,
-                                ),
-                                _buildSleekTableRow(
-                                  'Tijdslot',
-                                  '${_text(offerte['tijdslot_start'], fallback: '--:--')} tot ${_text(offerte['tijdslot_eind'], fallback: '--:--')}',
-                                  fontBold,
-                                  fontRegular,
-                                ),
-                              ],
-                            ),
-                          ),
-                          pw.SizedBox(height: 20),
-                          pw.Text(
-                            akkoordTekst,
-                            style: pw.TextStyle(
-                              font: fontRegular,
-                              fontSize: 10,
-                              color: PdfColors.black,
-                              lineSpacing: 1.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    pw.SizedBox(width: 40),
-                    pw.Expanded(
-                      flex: 4,
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          if (_logoNormaal != null)
-                            pw.Container(
-                              height: 35,
-                              child: pw.Image(_logoNormaal!),
-                            ),
-                          pw.SizedBox(height: 5),
-                          pw.Text(
-                            onzeNaam,
-                            style: pw.TextStyle(font: fontBold, fontSize: 10),
-                          ),
-                          pw.Text(
-                            _text(onzeGegevens['adres_straat_huisnr']),
-                            style: pw.TextStyle(font: fontRegular, fontSize: 9),
-                          ),
-                          pw.Text(
-                            '${_text(onzeGegevens['adres_postcode'])} ${_text(onzeGegevens['adres_stad'])}',
-                            style: pw.TextStyle(font: fontRegular, fontSize: 9),
-                          ),
-                          pw.Text(
-                            'KVK: ${_text(onzeGegevens['kvk_nummer'])} | Tel: ${_text(onzeGegevens['telefoonnummer'])}',
-                            style: pw.TextStyle(font: fontRegular, fontSize: 9),
-                          ),
-                          pw.Spacer(),
-                          if (_introFoto != null)
-                            pw.SizedBox(
-                              height: 180,
-                              width: double.infinity,
-                              child: _asymFoto(
-                                provider: _introFoto,
-                                borderRadius: pw.BorderRadius.only(
-                                  topLeft: pw.Radius.circular(40),
-                                  bottomRight: pw.Radius.circular(40),
-                                ),
+                                  _buildSleekTableRow(
+                                    'Type overeenkomst',
+                                    cType.toUpperCase().isEmpty
+                                        ? 'ONBEKEND'
+                                        : cType.toUpperCase(),
+                                    fontBold,
+                                    fontRegular,
+                                  ),
+                                  if (cType != 'eenmalig' &&
+                                      cType != 'incidenteel')
+                                    _buildSleekTableRow(
+                                      'Uitvoerdagen',
+                                      dagenTekst,
+                                      fontBold,
+                                      fontRegular,
+                                    ),
+                                  // DE CONDITIONELE WEERGAVE:
+                                  if (heeftFrequent)
+                                    _buildSleekTableRow(
+                                      'Frequente werkzaamheden',
+                                      'Worden maandelijks uitgevoerd',
+                                      fontBold,
+                                      fontRegular,
+                                    ),
+                                  if (heeftPeriodiek)
+                                    _buildSleekTableRow(
+                                      'Periodieke werkzaamheden',
+                                      periodiekeFreq.isEmpty
+                                          ? 'Volgens afspraak'
+                                          : periodiekeFreq,
+                                      fontBold,
+                                      fontRegular,
+                                    ),
+                                  _buildSleekTableRow(
+                                    'Tijdslot',
+                                    '${_text(offerte['tijdslot_start'], fallback: '--:--')} tot ${_text(offerte['tijdslot_eind'], fallback: '--:--')}',
+                                    fontBold,
+                                    fontRegular,
+                                  ),
+                                ],
                               ),
                             ),
-                          pw.SizedBox(height: 20),
-                        ],
+                            pw.SizedBox(height: 20),
+                            pw.Text(
+                              akkoordTekst,
+                              style: pw.TextStyle(
+                                font: fontRegular,
+                                fontSize: 10,
+                                color: PdfColors.black,
+                                lineSpacing: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      pw.SizedBox(width: 40),
+                      pw.Expanded(
+                        flex: 4,
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.end,
+                          children: [
+                            if (_logoNormaal != null)
+                              pw.Container(
+                                height: 35,
+                                child: pw.Image(_logoNormaal!),
+                              ),
+                            pw.SizedBox(height: 5),
+                            pw.Text(
+                              onzeNaam,
+                              style: pw.TextStyle(font: fontBold, fontSize: 10),
+                            ),
+                            pw.Text(
+                              _text(onzeGegevens['adres_straat_huisnr']),
+                              style: pw.TextStyle(
+                                font: fontRegular,
+                                fontSize: 9,
+                              ),
+                            ),
+                            pw.Text(
+                              '${_text(onzeGegevens['adres_postcode'])} ${_text(onzeGegevens['adres_stad'])}',
+                              style: pw.TextStyle(
+                                font: fontRegular,
+                                fontSize: 9,
+                              ),
+                            ),
+                            pw.Text(
+                              'KVK: ${_text(onzeGegevens['kvk_nummer'])} | Tel: ${_text(onzeGegevens['telefoonnummer'])}',
+                              style: pw.TextStyle(
+                                font: fontRegular,
+                                fontSize: 9,
+                              ),
+                            ),
+                            pw.Spacer(),
+                            if (_introFoto != null)
+                              pw.SizedBox(
+                                height: 180,
+                                width: double.infinity,
+                                child: _asymFoto(
+                                  provider: _introFoto,
+                                  borderRadius: pw.BorderRadius.only(
+                                    topLeft: pw.Radius.circular(40),
+                                    bottomRight: pw.Radius.circular(40),
+                                  ),
+                                ),
+                              ),
+                            pw.SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               ],
             ),
           );
@@ -832,9 +882,7 @@ class PdfGeneratorService {
     for (final ruimte in ruimtes) {
       final dienstenRaw = ruimte['offerte_ruimte_diensten'];
       final List<Map<String, dynamic>> diensten = dienstenRaw is List
-          ? dienstenRaw
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList()
+          ? dienstenRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
           : <Map<String, dynamic>>[];
 
       final cat = _text(ruimte['ruimte_categorie'], fallback: 'Ruimte');
@@ -891,8 +939,9 @@ class PdfGeneratorService {
                                   width: double.infinity,
                                   height: double.infinity,
                                   child: () {
-                                    final ruimteFoto =
-                                        _fotoVoorRuimteCategorie(cat);
+                                    final ruimteFoto = _fotoVoorRuimteCategorie(
+                                      cat,
+                                    );
                                     if (ruimteFoto != null) {
                                       return pw.Image(
                                         ruimteFoto,
@@ -902,9 +951,7 @@ class PdfGeneratorService {
                                     return pw.Center(
                                       child: pw.Text(
                                         'Foto $cat',
-                                        style: pw.TextStyle(
-                                          font: fontRegular,
-                                        ),
+                                        style: pw.TextStyle(font: fontRegular),
                                       ),
                                     );
                                   }(),
@@ -918,8 +965,7 @@ class PdfGeneratorService {
                                   padding: const pw.EdgeInsets.all(12),
                                   decoration: pw.BoxDecoration(
                                     color: blueOverlay90,
-                                    borderRadius:
-                                        pw.BorderRadius.circular(12),
+                                    borderRadius: pw.BorderRadius.circular(12),
                                   ),
                                   child: pw.Text(
                                     beschrijving,
@@ -1003,8 +1049,7 @@ class PdfGeneratorService {
                                 fontRegular: fontRegular,
                               ),
                             ),
-                          if (freqDiensten.isNotEmpty &&
-                              perDiensten.isNotEmpty)
+                          if (freqDiensten.isNotEmpty && perDiensten.isNotEmpty)
                             pw.SizedBox(width: 20),
                           if (perDiensten.isNotEmpty)
                             pw.Expanded(
@@ -1055,83 +1100,81 @@ class PdfGeneratorService {
                       height: double.infinity,
                       child: _werkwijzeFoto != null
                           ? pw.Image(_werkwijzeFoto!, fit: pw.BoxFit.cover)
-                          : pw.Center(
-                              child: pw.Text('Sfeerfoto Werkwijze'),
-                            ),
+                          : pw.Center(child: pw.Text('Sfeerfoto Werkwijze')),
                     ),
                   ),
                 ),
-                    pw.SizedBox(width: 40),
-                    pw.Expanded(
-                      flex: 5,
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        mainAxisAlignment: pw.MainAxisAlignment.center,
-                        children: [
-                          pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: pw.BoxDecoration(
-                              color: orangeTint10,
-                              borderRadius: pw.BorderRadius.circular(8),
-                            ),
-                            child: pw.Text(
-                              'ONZE WERKWIJZE',
-                              style: pw.TextStyle(
-                                font: fontBold,
-                                fontSize: 12,
-                                color: primaryOrange,
-                                letterSpacing: 2,
-                              ),
-                            ),
+                pw.SizedBox(width: 40),
+                pw.Expanded(
+                  flex: 5,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: pw.BoxDecoration(
+                          color: orangeTint10,
+                          borderRadius: pw.BorderRadius.circular(8),
+                        ),
+                        child: pw.Text(
+                          'ONZE WERKWIJZE',
+                          style: pw.TextStyle(
+                            font: fontBold,
+                            fontSize: 12,
+                            color: primaryOrange,
+                            letterSpacing: 2,
                           ),
-                          pw.SizedBox(height: 16),
-                          pw.Text(
-                            'Schoonmaak zonder gedoe.',
-                            style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 32,
-                              color: blueColor,
-                              lineSpacing: 1.2,
-                            ),
-                          ),
-                          pw.SizedBox(height: 24),
-                          pw.Text(
-                            'Schoonmaak efficiënt geregeld is het sentiment. '
-                            'Bij $onzeNaam geloven we in een transparante, daadkrachtige aanpak.',
-                            style: pw.TextStyle(
-                              font: fontRegular,
-                              fontSize: 14,
-                              color: PdfColors.grey800,
-                              lineSpacing: 1.5,
-                            ),
-                          ),
-                          pw.SizedBox(height: 16),
-                          pw.Text(
-                            'Wij gebruiken state-of-the-art systemen en innovatieve technieken. '
-                            'Hierdoor werken we niet alleen sneller, maar leveren we structureel '
-                            'een beter en schoner resultaat af.',
-                            style: pw.TextStyle(
-                              font: fontRegular,
-                              fontSize: 14,
-                              color: PdfColors.grey800,
-                              lineSpacing: 1.5,
-                            ),
-                          ),
-                          pw.SizedBox(height: 16),
-                          pw.Text(
-                            'Dat is goed geregeld.',
-                            style: pw.TextStyle(
-                              font: fontBold,
-                              fontSize: 16,
-                              color: primaryOrange,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                      pw.SizedBox(height: 16),
+                      pw.Text(
+                        'Schoonmaak zonder gedoe.',
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 32,
+                          color: blueColor,
+                          lineSpacing: 1.2,
+                        ),
+                      ),
+                      pw.SizedBox(height: 24),
+                      pw.Text(
+                        'Schoonmaak efficiënt geregeld is het sentiment. '
+                        'Bij $onzeNaam geloven we in een transparante, daadkrachtige aanpak.',
+                        style: pw.TextStyle(
+                          font: fontRegular,
+                          fontSize: 14,
+                          color: PdfColors.grey800,
+                          lineSpacing: 1.5,
+                        ),
+                      ),
+                      pw.SizedBox(height: 16),
+                      pw.Text(
+                        'Wij gebruiken state-of-the-art systemen en innovatieve technieken. '
+                        'Hierdoor werken we niet alleen sneller, maar leveren we structureel '
+                        'een beter en schoner resultaat af.',
+                        style: pw.TextStyle(
+                          font: fontRegular,
+                          fontSize: 14,
+                          color: PdfColors.grey800,
+                          lineSpacing: 1.5,
+                        ),
+                      ),
+                      pw.SizedBox(height: 16),
+                      pw.Text(
+                        'Dat is goed geregeld.',
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 16,
+                          color: primaryOrange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           );
@@ -1143,6 +1186,7 @@ class PdfGeneratorService {
     // PAGINA Y: PRIJSOVERZICHT
     // ==========================================
     final String cTypePrijs = _text(offerte['contract_type']).toLowerCase();
+    final bool isMateriaalInbegrepen = offerte['inclusief_materialen'] == true;
     var bedragHeader = 'Bedrag per maand';
     var inbegrepenTekst =
         'Inclusief alle reguliere, frequente en periodieke diensten.';
@@ -1154,19 +1198,29 @@ class PdfGeneratorService {
       bedragHeader = 'Totaalbedrag';
       inbegrepenTekst = 'Inclusief de volledige eenmalige oplevering.';
     }
-    final bool isAbonnementPrijs =
-        OffertePricingService.isAbonnement(cTypePrijs);
+    final bool isAbonnementPrijs = OffertePricingService.isAbonnement(
+      cTypePrijs,
+    );
     final String bedragSuffix = isAbonnementPrijs ? ' per maand' : '';
 
     final double totaalExBtw = _totaalExBtwOfferte(offerte);
     final double btwBedrag = totaalExBtw * 0.21;
     final double totaalInclBtw = totaalExBtw + btwBedrag;
     final double regUren =
-        double.tryParse(offerte['regulier_uren_per_beurt_afgerond']?.toString() ?? '0') ?? 0.0;
+        double.tryParse(
+          offerte['regulier_uren_per_beurt_afgerond']?.toString() ?? '0',
+        ) ??
+        0.0;
     final double freqUren =
-        double.tryParse(offerte['frequent_uren_per_beurt_afgerond']?.toString() ?? '0') ?? 0.0;
+        double.tryParse(
+          offerte['frequent_uren_per_beurt_afgerond']?.toString() ?? '0',
+        ) ??
+        0.0;
     final double perUren =
-        double.tryParse(offerte['periodiek_uren_per_beurt_afgerond']?.toString() ?? '0') ?? 0.0;
+        double.tryParse(
+          offerte['periodiek_uren_per_beurt_afgerond']?.toString() ?? '0',
+        ) ??
+        0.0;
     const checkIconSvg =
         '<svg viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="3" '
         'stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">'
@@ -1183,271 +1237,319 @@ class PdfGeneratorService {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-              pw.Text(
-                'Investeringsoverzicht',
-                style: pw.TextStyle(
-                  font: fontBold,
-                  fontSize: 28,
-                  color: blueColor,
+                pw.Text(
+                  'Investeringsoverzicht',
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: 28,
+                    color: blueColor,
+                  ),
                 ),
-              ),
-              pw.SizedBox(height: 30),
-              pw.Expanded(
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      flex: 6,
-                      child: pw.Container(
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(color: PdfColors.grey300),
-                          borderRadius: pw.BorderRadius.circular(12),
-                        ),
-                        child: pw.Column(
-                          children: [
-                            pw.Container(
-                              padding: const pw.EdgeInsets.all(16),
-                              decoration: pw.BoxDecoration(
-                                color: primaryOrange,
-                                borderRadius:
-                                    const pw.BorderRadius.vertical(
-                                  top: pw.Radius.circular(12),
+                pw.SizedBox(height: 30),
+                pw.Expanded(
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        flex: 6,
+                        child: pw.Container(
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border.all(color: PdfColors.grey300),
+                            borderRadius: pw.BorderRadius.circular(12),
+                          ),
+                          child: pw.Column(
+                            children: [
+                              pw.Container(
+                                padding: const pw.EdgeInsets.all(16),
+                                decoration: pw.BoxDecoration(
+                                  color: primaryOrange,
+                                  borderRadius: const pw.BorderRadius.vertical(
+                                    top: pw.Radius.circular(12),
+                                  ),
+                                ),
+                                child: pw.Row(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    pw.Text(
+                                      'Omschrijving',
+                                      style: pw.TextStyle(
+                                        font: fontBold,
+                                        color: PdfColors.white,
+                                      ),
+                                    ),
+                                    pw.Text(
+                                      '$bedragHeader (ex BTW)',
+                                      style: pw.TextStyle(
+                                        font: fontBold,
+                                        color: PdfColors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              child: pw.Row(
-                                mainAxisAlignment:
-                                    pw.MainAxisAlignment.spaceBetween,
-                                children: [
-                                  pw.Text(
-                                    'Omschrijving',
-                                    style: pw.TextStyle(
-                                      font: fontBold,
-                                      color: PdfColors.white,
-                                    ),
-                                  ),
-                                  pw.Text(
-                                    '$bedragHeader (ex BTW)',
-                                    style: pw.TextStyle(
-                                      font: fontBold,
-                                      color: PdfColors.white,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            pw.Padding(
-                              padding: const pw.EdgeInsets.all(16),
-                              child: pw.Row(
-                                mainAxisAlignment:
-                                    pw.MainAxisAlignment.spaceBetween,
-                                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                                children: [
-                                  pw.Expanded(
-                                    child: pw.Column(
-                                      crossAxisAlignment:
-                                          pw.CrossAxisAlignment.start,
-                                      children: [
-                                        pw.Text(
-                                          'Schoonmaakonderhoud volgens specificatie',
-                                          style: pw.TextStyle(
-                                            font: fontBold,
-                                            fontSize: 11,
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(16),
+                                child: pw.Row(
+                                  mainAxisAlignment:
+                                      pw.MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment:
+                                      pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Expanded(
+                                      child: pw.Column(
+                                        crossAxisAlignment:
+                                            pw.CrossAxisAlignment.start,
+                                        children: [
+                                          pw.Text(
+                                            'Schoonmaakonderhoud volgens specificatie',
+                                            style: pw.TextStyle(
+                                              font: fontBold,
+                                              fontSize: 11,
+                                            ),
                                           ),
-                                        ),
-                                        pw.SizedBox(height: 4),
-                                        pw.Text(
-                                          inbegrepenTekst,
-                                          style: pw.TextStyle(
-                                            font: fontRegular,
-                                            fontSize: 9,
-                                            color: PdfColors.grey600,
+                                          pw.SizedBox(height: 4),
+                                          pw.Text(
+                                            inbegrepenTekst,
+                                            style: pw.TextStyle(
+                                              font: fontRegular,
+                                              fontSize: 9,
+                                              color: PdfColors.grey600,
+                                            ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  pw.Text(
-                                    '€ ${totaalExBtw.toStringAsFixed(2)}$bedragSuffix',
-                                    style: pw.TextStyle(
-                                      font: fontRegular,
-                                      fontSize: 12,
+                                    pw.Text(
+                                      '€ ${totaalExBtw.toStringAsFixed(2)}$bedragSuffix',
+                                      style: pw.TextStyle(
+                                        font: fontRegular,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            pw.Divider(color: PdfColors.grey300, height: 1),
-                            pw.Expanded(
-                              child: pw.Container(
-                              padding: const pw.EdgeInsets.all(16),
-                              decoration: pw.BoxDecoration(
-                                color: lightGrey,
-                                borderRadius:
-                                    const pw.BorderRadius.vertical(
-                                  bottom: pw.Radius.circular(12),
+                                  ],
                                 ),
                               ),
-                              child: pw.Column(
-                                mainAxisAlignment: pw.MainAxisAlignment.end,
-                                children: [
-                                  pw.Row(
+                              if (isMateriaalInbegrepen) ...[
+                                pw.Divider(color: PdfColors.grey300, height: 1),
+                                pw.Padding(
+                                  padding: const pw.EdgeInsets.all(16),
+                                  child: pw.Row(
                                     mainAxisAlignment:
                                         pw.MainAxisAlignment.spaceBetween,
+                                    crossAxisAlignment:
+                                        pw.CrossAxisAlignment.start,
                                     children: [
+                                      pw.Expanded(
+                                        child: pw.Column(
+                                          crossAxisAlignment:
+                                              pw.CrossAxisAlignment.start,
+                                          children: [
+                                            pw.Text(
+                                              'Schoonmaakmaterialen en middelen',
+                                              style: pw.TextStyle(
+                                                font: fontBold,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                            pw.SizedBox(height: 4),
+                                            pw.Text(
+                                              'Wij dragen zorg voor de levering van de benodigde materialen.',
+                                              style: pw.TextStyle(
+                                                font: fontRegular,
+                                                fontSize: 9,
+                                                color: PdfColors.grey600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                       pw.Text(
-                                        'Totaal exclusief 21% BTW',
+                                        '€ 15.00 per beurt',
                                         style: pw.TextStyle(
                                           font: fontRegular,
-                                          color: PdfColors.grey800,
-                                          fontSize: 10,
+                                          fontSize: 12,
                                         ),
-                                      ),
-                                      pw.Text(
-                                        '€ ${totaalExBtw.toStringAsFixed(2)}',
-                                        style: pw.TextStyle(fontSize: 10),
                                       ),
                                     ],
                                   ),
-                                  pw.SizedBox(height: 6),
-                                  pw.Row(
-                                    mainAxisAlignment:
-                                        pw.MainAxisAlignment.spaceBetween,
+                                ),
+                              ],
+                              pw.Divider(color: PdfColors.grey300, height: 1),
+                              pw.Expanded(
+                                child: pw.Container(
+                                  padding: const pw.EdgeInsets.all(16),
+                                  decoration: pw.BoxDecoration(
+                                    color: lightGrey,
+                                    borderRadius:
+                                        const pw.BorderRadius.vertical(
+                                          bottom: pw.Radius.circular(12),
+                                        ),
+                                  ),
+                                  child: pw.Column(
+                                    mainAxisAlignment: pw.MainAxisAlignment.end,
                                     children: [
-                                      pw.Text(
-                                        '21% BTW',
-                                        style: pw.TextStyle(
-                                          font: fontRegular,
-                                          color: PdfColors.grey800,
-                                          fontSize: 10,
-                                        ),
+                                      pw.Row(
+                                        mainAxisAlignment:
+                                            pw.MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          pw.Text(
+                                            'Totaal exclusief 21% BTW',
+                                            style: pw.TextStyle(
+                                              font: fontRegular,
+                                              color: PdfColors.grey800,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                          pw.Text(
+                                            '€ ${totaalExBtw.toStringAsFixed(2)}',
+                                            style: pw.TextStyle(fontSize: 10),
+                                          ),
+                                        ],
                                       ),
-                                      pw.Text(
-                                        '€ ${btwBedrag.toStringAsFixed(2)}',
-                                        style: pw.TextStyle(fontSize: 10),
+                                      pw.SizedBox(height: 6),
+                                      pw.Row(
+                                        mainAxisAlignment:
+                                            pw.MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          pw.Text(
+                                            '21% BTW',
+                                            style: pw.TextStyle(
+                                              font: fontRegular,
+                                              color: PdfColors.grey800,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                          pw.Text(
+                                            '€ ${btwBedrag.toStringAsFixed(2)}',
+                                            style: pw.TextStyle(fontSize: 10),
+                                          ),
+                                        ],
+                                      ),
+                                      pw.Divider(
+                                        color: PdfColors.grey400,
+                                        height: 20,
+                                      ),
+                                      pw.Row(
+                                        mainAxisAlignment:
+                                            pw.MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          pw.Text(
+                                            'TOTAAL INCLUSIEF BTW',
+                                            style: pw.TextStyle(
+                                              font: fontBold,
+                                              fontSize: 14,
+                                              color: primaryOrange,
+                                            ),
+                                          ),
+                                          pw.Text(
+                                            '€ ${totaalInclBtw.toStringAsFixed(2)}$bedragSuffix',
+                                            style: pw.TextStyle(
+                                              font: fontBold,
+                                              fontSize: 14,
+                                              color: primaryOrange,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
-                                  pw.Divider(color: PdfColors.grey400, height: 20),
-                                  pw.Row(
-                                    mainAxisAlignment:
-                                        pw.MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      pw.Text(
-                                        'TOTAAL INCLUSIEF BTW',
-                                        style: pw.TextStyle(
-                                          font: fontBold,
-                                          fontSize: 14,
-                                          color: primaryOrange,
-                                        ),
-                                      ),
-                                      pw.Text(
-                                        '€ ${totaalInclBtw.toStringAsFixed(2)}$bedragSuffix',
-                                        style: pw.TextStyle(
-                                          font: fontBold,
-                                          fontSize: 14,
-                                          color: primaryOrange,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    pw.SizedBox(width: 30),
-                    pw.Expanded(
-                      flex: 4,
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(20),
-                        decoration: pw.BoxDecoration(
-                          color: lightGrey,
-                          borderRadius: pw.BorderRadius.circular(12),
-                          border: pw.Border.all(color: PdfColors.grey300),
-                        ),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              'Inbegrepen in de prijs',
-                              style: pw.TextStyle(
-                                font: fontBold,
-                                fontSize: 14,
-                                color: blueColor,
+                      pw.SizedBox(width: 30),
+                      pw.Expanded(
+                        flex: 4,
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.all(20),
+                          decoration: pw.BoxDecoration(
+                            color: lightGrey,
+                            borderRadius: pw.BorderRadius.circular(12),
+                            border: pw.Border.all(color: PdfColors.grey300),
+                          ),
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(
+                                'Inbegrepen in de prijs',
+                                style: pw.TextStyle(
+                                  font: fontBold,
+                                  fontSize: 14,
+                                  color: blueColor,
+                                ),
                               ),
-                            ),
-                            pw.SizedBox(height: 16),
-                            pw.SizedBox(height: 12),
-                            pw.Text(
-                              'Verwachte inzet (indicatie per beurt)',
-                              style: pw.TextStyle(
-                                font: fontBold,
-                                fontSize: 10,
-                                color: blueColor,
+                              pw.SizedBox(height: 16),
+                              pw.SizedBox(height: 12),
+                              pw.Text(
+                                'Verwachte inzet (indicatie per beurt)',
+                                style: pw.TextStyle(
+                                  font: fontBold,
+                                  fontSize: 10,
+                                  color: blueColor,
+                                ),
                               ),
-                            ),
-                            pw.SizedBox(height: 6),
-                            if (regUren > 0)
+                              pw.SizedBox(height: 6),
+                              if (regUren > 0)
+                                _buildCheckItem(
+                                  checkIconSvg,
+                                  'Regulier: ${regUren.toStringAsFixed(2)} uur',
+                                  fontRegular,
+                                ),
+                              if (freqUren > 0)
+                                _buildCheckItem(
+                                  checkIconSvg,
+                                  'Frequent: ${freqUren.toStringAsFixed(2)} uur',
+                                  fontRegular,
+                                ),
+                              if (perUren > 0)
+                                _buildCheckItem(
+                                  checkIconSvg,
+                                  'Periodiek: ${perUren.toStringAsFixed(2)} uur',
+                                  fontRegular,
+                                ),
+                              pw.SizedBox(height: 12),
+                              pw.Divider(color: PdfColors.grey300),
+                              pw.SizedBox(height: 12),
                               _buildCheckItem(
                                 checkIconSvg,
-                                'Regulier: ${regUren.toStringAsFixed(2)} uur',
+                                'Inzet van gekwalificeerd personeel',
                                 fontRegular,
                               ),
-                            if (freqUren > 0)
                               _buildCheckItem(
                                 checkIconSvg,
-                                'Frequent: ${freqUren.toStringAsFixed(2)} uur',
+                                'Alle benodigde schoonmaakmiddelen',
                                 fontRegular,
                               ),
-                            if (perUren > 0)
                               _buildCheckItem(
                                 checkIconSvg,
-                                'Periodiek: ${perUren.toStringAsFixed(2)} uur',
+                                'Inzet van materialen en apparatuur',
                                 fontRegular,
                               ),
-                            pw.SizedBox(height: 12),
-                            pw.Divider(color: PdfColors.grey300),
-                            pw.SizedBox(height: 12),
-                            _buildCheckItem(
-                              checkIconSvg,
-                              'Inzet van gekwalificeerd personeel',
-                              fontRegular,
-                            ),
-                            _buildCheckItem(
-                              checkIconSvg,
-                              'Alle benodigde schoonmaakmiddelen',
-                              fontRegular,
-                            ),
-                            _buildCheckItem(
-                              checkIconSvg,
-                              'Inzet van materialen en apparatuur',
-                              fontRegular,
-                            ),
-                            _buildCheckItem(
-                              checkIconSvg,
-                              'Proactieve DKS-kwaliteitscontroles',
-                              fontRegular,
-                            ),
-                            _buildCheckItem(
-                              checkIconSvg,
-                              'Vaste contactpersoon',
-                              fontRegular,
-                            ),
-                            _buildCheckItem(
-                              checkIconSvg,
-                              'Ziektevervanging',
-                              fontRegular,
-                            ),
-                          ],
+                              _buildCheckItem(
+                                checkIconSvg,
+                                'Proactieve DKS-kwaliteitscontroles',
+                                fontRegular,
+                              ),
+                              _buildCheckItem(
+                                checkIconSvg,
+                                'Vaste contactpersoon',
+                                fontRegular,
+                              ),
+                              _buildCheckItem(
+                                checkIconSvg,
+                                'Ziektevervanging',
+                                fontRegular,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
               ],
             ),
           );
@@ -1766,8 +1868,7 @@ class PdfGeneratorService {
     if (!heeftLabels) {
       switch (label) {
         case 'regulier':
-          final reg =
-              diensten.where((d) => d['in_regulier'] == true).toList();
+          final reg = diensten.where((d) => d['in_regulier'] == true).toList();
           return reg.isEmpty ? diensten : reg;
         case 'frequent':
           return diensten.where((d) => d['in_frequent'] == true).toList();
@@ -1872,21 +1973,13 @@ class PdfGeneratorService {
     return s.isEmpty ? fallback : s;
   }
 
-  static pw.Widget _buildCheckItem(
-    String svg,
-    String tekst,
-    pw.Font font,
-  ) {
+  static pw.Widget _buildCheckItem(String svg, String tekst, pw.Font font) {
     return pw.Padding(
       padding: const pw.EdgeInsets.only(bottom: 8),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Container(
-            width: 14,
-            height: 14,
-            child: pw.SvgImage(svg: svg),
-          ),
+          pw.Container(width: 14, height: 14, child: pw.SvgImage(svg: svg)),
           pw.SizedBox(width: 8),
           pw.Expanded(
             child: pw.Text(
@@ -1907,7 +2000,8 @@ class PdfGeneratorService {
     final mb = dienst['moeder_bestek'];
     if (mb is Map) {
       final m = Map<String, dynamic>.from(mb);
-      final String taakNaam = m['volledige_naam']?.toString() ??
+      final String taakNaam =
+          m['volledige_naam']?.toString() ??
           m['taak_naam']?.toString() ??
           m['taak']?.toString() ??
           m['naam']?.toString() ??
@@ -1926,10 +2020,14 @@ class PdfGeneratorService {
     if (cat.contains('kantoor') || cat.contains('werkplek')) {
       return 'Een opgeruimde werkplek verhoogt direct de productiviteit en focus. Wij zorgen voor een stofvrije, geordende en frisse omgeving waarin uw team optimaal kan presteren.';
     }
-    if (cat.contains('vloer') || cat.contains('gang') || cat.contains('entree')) {
+    if (cat.contains('vloer') ||
+        cat.contains('gang') ||
+        cat.contains('entree')) {
       return 'De entree en vloeren zijn het absolute visitekaartje van uw pand. Wij zorgen voor een stralende en representatieve uitstraling vanaf de eerste stap binnen.';
     }
-    if (cat.contains('keuken') || cat.contains('pantry') || cat.contains('kantine')) {
+    if (cat.contains('keuken') ||
+        cat.contains('pantry') ||
+        cat.contains('kantine')) {
       return 'In de kantine komen mensen samen om op te laden. Hygiëne is hier van het grootste belang. Wij reinigen grondig en zorgen voor een prettige pauze-omgeving.';
     }
     return 'Regelmatig en grondig onderhoud verlengt de levensduur van uw interieur en zorgt voor een uiterst representatieve, gezonde leef- en werkomgeving.';
@@ -1967,10 +2065,7 @@ class PdfGeneratorService {
             flex: 4,
             child: pw.Text(
               left,
-              style: pw.TextStyle(
-                font: labelFont,
-                fontSize: 10,
-              ),
+              style: pw.TextStyle(font: labelFont, fontSize: 10),
             ),
           ),
           pw.Expanded(

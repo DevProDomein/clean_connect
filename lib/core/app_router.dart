@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/facilitator/screens/bedrijfs_instellingen_screen.dart';
+import '../features/facilitator/screens/brongegevens_screen.dart';
 import '../features/facilitator/screens/pdf_preview_screen.dart';
 
 /// Facilitator / generator routes buiten de operator mobile shell.
@@ -12,6 +13,11 @@ abstract final class AppRouter {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => const BedrijfsInstellingenScreen(),
+        );
+      case '/brongegevens':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => const BrongegevensScreen(),
         );
       case '/facilitator/quotes/pdf-preview':
         final offerteId = settings.arguments as String?;

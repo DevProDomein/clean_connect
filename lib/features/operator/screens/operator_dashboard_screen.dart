@@ -42,6 +42,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
   Map<String, dynamic>? _statsRow;
   String? _profielfotoUrl;
   List<Map<String, dynamic>> _recentVoltooid = [];
+
   /// DKS: komt uit RPC [bereken_dks_voor_operator] (geen directe query op dks_rapporten).
   int _dksScore = 0;
   List<Map<String, dynamic>> _vandaagRows = [];
@@ -214,7 +215,9 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
       try {
         final r = await _client
             .from('opdracht_planning')
-            .select('*, opdrachten(bedrijfsnaam)')
+            .select(
+              '*, opdrachten!opdracht_planning_opdracht_id_fkey(bedrijfsnaam)',
+            )
             .eq('operator_id', uid)
             .eq('status', 'voltooid')
             .order('geplande_datum', ascending: false)
@@ -246,13 +249,11 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
             .select()
             .eq('operator_id', uid)
             .order('rooster_starttijd', ascending: true);
-        final todayStr =
-            DateTime.now().toIso8601String().substring(0, 10);
+        final todayStr = DateTime.now().toIso8601String().substring(0, 10);
         for (final row in tv as List) {
           final m = Map<String, dynamic>.from(row as Map);
           final gd = m['geplande_datum']?.toString() ?? '';
-          final dateHead =
-              gd.length >= 10 ? gd.substring(0, 10) : gd;
+          final dateHead = gd.length >= 10 ? gd.substring(0, 10) : gd;
           if (dateHead == todayStr) vandaag.add(m);
         }
       } catch (e, st) {
@@ -291,10 +292,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
   double _urenDezeWeekStat() =>
       _dashboardStatDouble(_statsRow?['uren_deze_week']);
 
-  BoxDecoration _softCard({
-    Color color = Colors.white,
-    Color? borderColor,
-  }) {
+  BoxDecoration _softCard({Color color = Colors.white, Color? borderColor}) {
     return BoxDecoration(
       color: color,
       borderRadius: BorderRadius.circular(_radiusMain),
@@ -329,25 +327,19 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
 
   void _openRooster() {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => const OperatorRoosterScreen(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const OperatorRoosterScreen()),
     );
   }
 
   void _openUren() {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => const OperatorUrenScreen(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const OperatorUrenScreen()),
     );
   }
 
   void _openMeldingen() {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => const OperatorMeldingenScreen(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const OperatorMeldingenScreen()),
     );
   }
 
@@ -481,10 +473,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(_radiusMain),
               gradient: LinearGradient(
-                colors: [
-                  _coral,
-                  _coral.withValues(alpha: 0.88),
-                ],
+                colors: [_coral, _coral.withValues(alpha: 0.88)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -513,8 +502,11 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Icon(Icons.schedule_rounded,
-                          color: Colors.white.withValues(alpha: 0.95), size: 22),
+                      Icon(
+                        Icons.schedule_rounded,
+                        color: Colors.white.withValues(alpha: 0.95),
+                        size: 22,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         t,
@@ -681,8 +673,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
   Widget _dksSquareCard() {
     final raw = _dksScore > 0 ? _dksScore.toDouble() : null;
     final cijfer = _displayDksCijfer(raw);
-    final progress =
-        (cijfer == null) ? 0.0 : (cijfer / 10).clamp(0.0, 1.0);
+    final progress = (cijfer == null) ? 0.0 : (cijfer / 10).clamp(0.0, 1.0);
 
     return Expanded(
       child: Container(
@@ -716,12 +707,17 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
                           strokeWidth: 6,
                           strokeCap: StrokeCap.round,
                           backgroundColor: Colors.grey.shade200,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(_electricBlue),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _electricBlue,
+                          ),
                         ),
                       ),
                       Text(
-                        cijfer == null ? '—' : NumberFormat.decimalPattern('nl_NL').format(cijfer),
+                        cijfer == null
+                            ? '—'
+                            : NumberFormat.decimalPattern(
+                                'nl_NL',
+                              ).format(cijfer),
                         style: GoogleFonts.lato(
                           fontSize: 20,
                           fontWeight: FontWeight.w900,
@@ -992,47 +988,45 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
         child: _loading
             ? const Center(child: CupertinoActivityIndicator(radius: 18))
             : _loadError != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Kon dashboard niet laden.\n$_loadError',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.lato(
-                              color: Colors.red.shade800,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton(
-                            onPressed: _loadDashboardData,
-                            child: const Text('Opnieuw'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : RefreshIndicator(
-                    color: _electricBlue,
-                    onRefresh: _loadDashboardData,
-                    child: CustomScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: _buildHeroBanner(voorNaam),
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Kon dashboard niet laden.\n$_loadError',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.lato(
+                          color: Colors.red.shade800,
+                          fontWeight: FontWeight.w600,
                         ),
-                        SliverToBoxAdapter(child: _bentoBlock()),
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: mobileNavBuffer),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _loadDashboardData,
+                        child: const Text('Opnieuw'),
+                      ),
+                    ],
                   ),
+                ),
+              )
+            : RefreshIndicator(
+                color: _electricBlue,
+                onRefresh: _loadDashboardData,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildHeroBanner(voorNaam)),
+                    SliverToBoxAdapter(child: _bentoBlock()),
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: mobileNavBuffer),
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }

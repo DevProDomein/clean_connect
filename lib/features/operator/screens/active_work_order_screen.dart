@@ -42,15 +42,22 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
   String _elapsedTime = '00:00:00';
   double? _benodigdeUren;
   String? _headerBedrijfsnaam;
+
   /// Opdrachtnummer / titel / projectnaam — hoofdregel boven timer.
   String? _headerOpdrachtTitel;
   String? _headerAdres;
   String? _headerTijdLabel;
 
+  /// Rij van `opdrachten` (o.a. `project_id`, `frequentie_type`) voor paklijst/werkprogramma.
+  Map<String, dynamic>? _actieveOpdracht;
+
   @override
   void initState() {
     super.initState();
-    _checkedTasks = _checkedByOpdracht.putIfAbsent(widget.opdrachtId, () => <String>{});
+    _checkedTasks = _checkedByOpdracht.putIfAbsent(
+      widget.opdrachtId,
+      () => <String>{},
+    );
     _initLiveTimer();
     _loadChecklist();
   }
@@ -71,7 +78,10 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
         parts.length > 2 ? int.parse(parts[2].split('.').first) : 0,
       );
       _tickElapsed();
-      _liveTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickElapsed());
+      _liveTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _tickElapsed(),
+      );
     } catch (_) {
       _parsedStartTime = null;
     }
@@ -100,17 +110,19 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
     String? headerOpdrachtTitel;
     String? headerAdres;
     String? headerTijdLabel;
+    Map<String, dynamic>? actieveOpdracht;
     try {
       final opdrachtRow = await _supabase
           .from('opdrachten')
           .select(
             'benodigde_uren_totaal, benodigde_uren, uitvoer_adres_volledig, '
-            'project_naam, opdracht_nummer, titel',
+            'project_naam, opdracht_nummer, titel, project_id, frequentie_type',
           )
           .eq('id', widget.opdrachtId)
           .maybeSingle();
       if (opdrachtRow != null) {
         final m = Map<String, dynamic>.from(opdrachtRow as Map);
+        actieveOpdracht = m;
         headerAdres = m['uitvoer_adres_volledig']?.toString();
         headerOpdrachtTitel = _composeOpdrachtTitel(m);
         final raw = m['benodigde_uren_totaal'] ?? m['benodigde_uren'];
@@ -158,6 +170,7 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
           _headerOpdrachtTitel = headerOpdrachtTitel;
           _headerAdres = headerAdres;
           _headerTijdLabel = headerTijdLabel;
+          _actieveOpdracht = actieveOpdracht;
           _isLoading = false;
         });
       }
@@ -170,8 +183,369 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
           _headerOpdrachtTitel = headerOpdrachtTitel;
           _headerAdres = headerAdres;
           _headerTijdLabel = headerTijdLabel;
+          _actieveOpdracht = actieveOpdracht;
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  Future<void> _openKogelvrijePaklijst(
+    BuildContext context,
+    String opdrachtId,
+  ) async {
+    if (opdrachtId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kan opdracht-ID niet vinden.')),
+      );
+      return;
+    }
+
+    // 1. Toon direct een lader
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      // STAP 1: Haal de Opdracht op (voor project_id en frequentie)
+      final opdrachtData = await supabase
+          .from('opdrachten')
+          .select('project_id, frequentie_type')
+          .eq('id', opdrachtId)
+          .maybeSingle();
+      if (opdrachtData == null) {
+        throw Exception('Opdracht niet gevonden in database.');
+      }
+
+      final projectId = opdrachtData['project_id'];
+      final freqType =
+          opdrachtData['frequentie_type']?.toString().toLowerCase() ?? '';
+
+      if (freqType == 'incidenteel' || freqType == 'eenmalig') {
+        if (context.mounted) Navigator.of(context).pop();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Geen standaard materialenlijst voor losse klussen.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // STAP 2: Haal het Project op (voor offerte_id)
+      final projectData = await supabase
+          .from('projecten')
+          .select('offerte_id')
+          .eq('id', projectId)
+          .maybeSingle();
+      final offerteId = projectData?['offerte_id'];
+
+      if (offerteId == null) {
+        if (context.mounted) Navigator.of(context).pop();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Geen blauwdruk (offerte) gekoppeld aan dit project.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // STAP 3: Haal de Ruimtes en Materialen op (Geen alias, puur de tabellen)
+      final ruimtes = await supabase
+          .from('offerte_ruimtes')
+          .select('''
+          naam_in_pand, 
+          ruimte_categorie, 
+          offerte_ruimte_diensten (
+            in_regulier, 
+            in_frequent, 
+            in_periodiek, 
+            moeder_bestek (
+              volledige_naam, 
+              taak_naam, 
+              bestek_materialen (
+                materialen (*)
+              )
+            )
+          )
+        ''')
+          .eq('offerte_id', offerteId);
+
+      if (context.mounted) Navigator.of(context).pop();
+
+      // STAP 4: Filteren en Data Verzamelen met Kogelvrije Parsing
+      List<Widget> ruimteWidgets = [];
+      Set<String> globaleMaterialen = {};
+
+      String getMatNaam(dynamic item) {
+        if (item == null) return '';
+        final Map<String, dynamic> d = item is Map<String, dynamic> ? item : {};
+        return (d['artikelnaam'] ??
+                d['artikel_naam'] ??
+                d['materiaal_naam'] ??
+                d['naam'] ??
+                d['omschrijving'] ??
+                '')
+            .toString()
+            .trim();
+      }
+
+      for (var ruimte in ruimtes) {
+        final ruimtesDienstenRaw = ruimte['offerte_ruimte_diensten'];
+        final List<dynamic> diensten = ruimtesDienstenRaw is List
+            ? ruimtesDienstenRaw
+            : (ruimtesDienstenRaw != null ? [ruimtesDienstenRaw] : []);
+        Set<String> ruimteMaterialen = {};
+
+        for (var d in diensten) {
+          bool isActief = false;
+          if (freqType == 'regulier' && d['in_regulier'] == true) {
+            isActief = true;
+          }
+          if (freqType == 'frequent' && d['in_frequent'] == true) {
+            isActief = true;
+          }
+          if (freqType == 'periodiek' && d['in_periodiek'] == true) {
+            isActief = true;
+          }
+
+          if (isActief && d['moeder_bestek'] != null) {
+            // KOGELVRIJ UITPAKKEN: Supabase kan joins soms als array doorgeven!
+            final mbRaw = d['moeder_bestek'];
+            final Map<String, dynamic> mb = (mbRaw is List && mbRaw.isNotEmpty)
+                ? (mbRaw.first is Map
+                      ? Map<String, dynamic>.from(mbRaw.first as Map)
+                      : <String, dynamic>{})
+                : (mbRaw is Map<String, dynamic> ? mbRaw : <String, dynamic>{});
+
+            final bestekMatRaw = mb['bestek_materialen'];
+            final List<dynamic> gekoppeldeMaterialen = bestekMatRaw is List
+                ? bestekMatRaw
+                : (bestekMatRaw != null ? [bestekMatRaw] : []);
+
+            for (var koppeling in gekoppeldeMaterialen) {
+              // SLIMME FALLBACKS: We kijken op elke mogelijke key waar Supabase de data verstopte!
+              final matRaw =
+                  koppeling['materialen'] ??
+                  koppeling['materiaal'] ??
+                  koppeling;
+
+              // Supabase geeft een Foreign Key soms als Object en soms als Lijst met 1 item.
+              final Map<String, dynamic> materiaalData =
+                  (matRaw is List && matRaw.isNotEmpty)
+                  ? (matRaw.first is Map<String, dynamic>
+                        ? matRaw.first
+                        : <String, dynamic>{})
+                  : (matRaw is Map<String, dynamic> ? matRaw : {});
+
+              final String naam = getMatNaam(materiaalData);
+              if (naam.isNotEmpty) {
+                ruimteMaterialen.add(naam);
+                globaleMaterialen.add(naam);
+              }
+            }
+          }
+        }
+
+        if (ruimteMaterialen.isNotEmpty) {
+          ruimteWidgets.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      ruimte['naam_in_pand']?.toString() ??
+                          ruimte['ruimte_categorie']?.toString() ??
+                          'Ruimte',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...ruimteMaterialen.map(
+                    (m) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6, left: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.subdirectory_arrow_right,
+                            size: 16,
+                            color: Colors.blueGrey,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              m,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      }
+
+      // STAP 5: Toon de Modal met de resultaten
+      if (!context.mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Materialenlijst ($freqType)'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 500,
+            child: globaleMaterialen.isEmpty
+                ? SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Geen materialen gevonden. RAW DATABASE DUMP:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          ruimtes.toString(),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontFamily: 'monospace',
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView(
+                    children: [
+                      // HET TOTALE OVERZICHT (Bovenaan, Afwijkende Kleur)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          border: Border.all(color: Colors.orange.shade200),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.shopping_cart,
+                                  color: Colors.orange.shade800,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Totale Paklijst (Kar)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 24),
+                            ...globaleMaterialen.map(
+                              (m) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(
+                                      Icons.check_box_outline_blank,
+                                      size: 18,
+                                      color: Colors.orange,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        m,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Text(
+                        'Specificatie per ruimte',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // DE UITGESPLITSTE RUIMTES ERONDER
+                      ...ruimteWidgets,
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Sluiten'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      // Vang het veilig af en sluit de lader als die er nog is
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Fout bij ophalen paklijst: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -206,7 +580,9 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
       context: context,
       builder: (c) => SelectionArea(
         child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text('Uitklokken'),
           content: const Text(
             'Weet u zeker dat u wilt uitklokken? Dit sluit de werkbon definitief af en registreert uw uren.',
@@ -217,7 +593,9 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
               child: const Text('Annuleren'),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+              ),
               onPressed: () => Navigator.pop(c, true),
               child: const Text(
                 'Uitklokken',
@@ -234,19 +612,25 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
     setState(() => _isClockingOut = true);
     try {
       final nowString = DateTime.now().toIso8601String().substring(11, 19);
-      debugPrint('X-RAY: Attempting to Clock Out for planning_id: ${widget.planningId}');
+      debugPrint(
+        'X-RAY: Attempting to Clock Out for planning_id: ${widget.planningId}',
+      );
 
-      final updateResponse = await _supabase.from('opdracht_planning').update({
-        'status': 'voltooid',
-        'werkelijke_eindtijd': nowString,
-      }).eq('id', widget.planningId.toString()).select();
+      final updateResponse = await _supabase
+          .from('opdracht_planning')
+          .update({'status': 'voltooid', 'werkelijke_eindtijd': nowString})
+          .eq('id', widget.planningId.toString())
+          .select();
 
       debugPrint('X-RAY: Clock Out Success! Response: $updateResponse');
 
       if (mounted) {
         _checkedByOpdracht.remove(widget.opdrachtId);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Klus voltooid en afgemeld!'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('Klus voltooid en afgemeld!'),
+            backgroundColor: Colors.green,
+          ),
         );
         LiveActivityService.stopLiveTimer();
         Navigator.pop(context, true);
@@ -256,7 +640,10 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
       debugPrint('$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fout bij uitklokken: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Fout bij uitklokken: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -290,18 +677,22 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
               child: _isLoading
                   ? const Center(child: CupertinoActivityIndicator(radius: 16))
                   : _errorMessage.isNotEmpty
-                      ? Center(
-                          child: Text(
-                            'Fout: $_errorMessage',
-                            style: TextStyle(color: Theme.of(context).colorScheme.error),
-                          ),
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.all(16),
-                          children: _groupedTasks.entries
-                              .map((entry) => _buildRoomCard(entry.key, entry.value))
-                              .toList(),
+                  ? Center(
+                      child: Text(
+                        'Fout: $_errorMessage',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
                         ),
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: _groupedTasks.entries
+                          .map(
+                            (entry) => _buildRoomCard(entry.key, entry.value),
+                          )
+                          .toList(),
+                    ),
             ),
             if (!_isLoading && _errorMessage.isEmpty) _buildFooter(),
           ],
@@ -312,8 +703,9 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
 
   Widget _buildLiveTimerHeader() {
     final benodigdeUren = _benodigdeUren;
-    final urenForRing =
-        (benodigdeUren != null && benodigdeUren > 0) ? benodigdeUren : 1.0;
+    final urenForRing = (benodigdeUren != null && benodigdeUren > 0)
+        ? benodigdeUren
+        : 1.0;
     final totaalSecondenNodig = urenForRing * 3600;
     var verstrekenSeconden = 0;
     final start = _parsedStartTime;
@@ -328,14 +720,16 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
     final urenLabel = benodigdeUren == null
         ? null
         : (benodigdeUren == benodigdeUren.roundToDouble()
-            ? benodigdeUren.toInt().toString()
-            : benodigdeUren.toStringAsFixed(1));
+              ? benodigdeUren.toInt().toString()
+              : benodigdeUren.toStringAsFixed(1));
 
     final opdrachtTitelDisp =
-        (_headerOpdrachtTitel != null && _headerOpdrachtTitel!.trim().isNotEmpty)
-            ? _headerOpdrachtTitel!.trim()
-            : 'Opdracht';
-    final bedrijfsNaamDisp = (_headerBedrijfsnaam != null && _headerBedrijfsnaam!.trim().isNotEmpty)
+        (_headerOpdrachtTitel != null &&
+            _headerOpdrachtTitel!.trim().isNotEmpty)
+        ? _headerOpdrachtTitel!.trim()
+        : 'Opdracht';
+    final bedrijfsNaamDisp =
+        (_headerBedrijfsnaam != null && _headerBedrijfsnaam!.trim().isNotEmpty)
         ? _headerBedrijfsnaam!.trim()
         : '';
     final adresDisp = (_headerAdres != null && _headerAdres!.trim().isNotEmpty)
@@ -343,8 +737,8 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
         : 'Adres onbekend';
     final tijdDisp =
         (_headerTijdLabel != null && _headerTijdLabel!.trim().isNotEmpty)
-            ? _headerTijdLabel!.trim()
-            : '--:-- - --:--';
+        ? _headerTijdLabel!.trim()
+        : '--:-- - --:--';
 
     return Material(
       elevation: 2,
@@ -397,7 +791,11 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.location_on, size: 20, color: Colors.grey.shade700),
+                        Icon(
+                          Icons.location_on,
+                          size: 20,
+                          color: Colors.grey.shade700,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -410,7 +808,11 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Icon(Icons.access_time, size: 20, color: Colors.grey.shade700),
+                        Icon(
+                          Icons.access_time,
+                          size: 20,
+                          color: Colors.grey.shade700,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -451,7 +853,10 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
                       const SizedBox(height: 4),
                       Text(
                         urenLabel != null ? 'van $urenLabel u' : '—',
-                        style: const TextStyle(fontSize: 16, color: Colors.grey),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey,
+                        ),
                       ),
                     ],
                   ),
@@ -471,14 +876,21 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: ExpansionTile(
         initiallyExpanded: true,
         shape: const Border(),
         collapsedShape: const Border(),
-        title: Text(roomName, style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold)),
+        title: Text(
+          roomName,
+          style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         children: [
           for (var i = 0; i < tasks.length; i++)
             _buildTaskTile(roomName, i, tasks[i]),
@@ -522,30 +934,63 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, -4)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
         ],
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(28), topRight: Radius.circular(28)),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(28),
+          topRight: Radius.circular(28),
+        ),
       ),
       child: SafeArea(
-        child: SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: ElevatedButton(
-            onPressed: _isClockingOut ? null : _onUitklokken,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: Colors.red.shade200,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              elevation: 0,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.checklist),
+                label: const Text('Bekijk Paklijst & Programma'),
+                onPressed: () {
+                  final actieveOpdracht = _actieveOpdracht;
+                  final actueelId =
+                      actieveOpdracht?['id']?.toString() ?? widget.opdrachtId;
+                  _openKogelvrijePaklijst(context, actueelId);
+                },
+              ),
             ),
-            child: _isClockingOut
-                ? const CupertinoActivityIndicator(color: Colors.white)
-                : Text(
-                    '⏹ UITKLOKKEN & AFRONDEN',
-                    style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _isClockingOut ? null : _onUitklokken,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.red.shade200,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
-          ),
+                  elevation: 0,
+                ),
+                child: _isClockingOut
+                    ? const CupertinoActivityIndicator(color: Colors.white)
+                    : Text(
+                        '⏹ UITKLOKKEN & AFRONDEN',
+                        style: GoogleFonts.lato(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+              ),
+            ),
+          ],
         ),
       ),
     );

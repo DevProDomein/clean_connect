@@ -41,6 +41,7 @@ import '../../features/facilitator/screens/agenda_screen.dart';
 import '../../features/facilitator/screens/sales_centre_screen.dart';
 import '../../features/facilitator/screens/ticket_overview_screen.dart';
 import '../../features/facilitator/screens/hr_beheer_screen.dart';
+import '../../features/facilitator/screens/brongegevens_screen.dart';
 import '../../features/klant/client_dashboard.dart';
 import '../../features/operator/screens/operator_dashboard_screen.dart';
 import '../../features/operator/screens/operator_agenda_screen.dart';
@@ -123,6 +124,23 @@ class AppDrawerContent extends StatelessWidget {
       if (routeName == name) return;
       // Mobiel: pushNamed (stack). Desktop: zelfde flow via geregistreerde route.
       Navigator.of(context).pushNamed(name);
+    }
+
+    void navigateBrongegevens() {
+      const name = '/brongegevens';
+      Navigator.of(context).maybePop();
+      if (routeName == name) return;
+      final isMobile = MediaQuery.of(context).size.width < 600;
+      if (isMobile) {
+        Navigator.of(context).pushNamed(name);
+      } else {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            settings: const RouteSettings(name: name),
+            builder: (_) => const BrongegevensScreen(),
+          ),
+        );
+      }
     }
 
     Widget leadingOrSpacer(IconData icon) {
@@ -599,6 +617,30 @@ class AppDrawerContent extends StatelessWidget {
                             ),
                             onTap: navigateBedrijfsInstellingen,
                           ),
+                          ListTile(
+                            leading: isDesktop
+                                ? null
+                                : const Icon(Icons.source),
+                            minLeadingWidth: isDesktop ? 0 : null,
+                            selected: routeName == '/brongegevens',
+                            selectedColor:
+                                Theme.of(context).colorScheme.primary,
+                            selectedTileColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: isDark ? 0.18 : 0.10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            title: const Text(
+                              'Brongegevens (Bestek)',
+                              style: TextStyle(
+                                fontSize: _fontSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onTap: navigateBrongegevens,
+                          ),
                         ],
                       ),
                     ],
@@ -688,6 +730,27 @@ class AppDrawerContent extends StatelessWidget {
                     icon: Icons.account_balance_wallet_outlined,
                     title: 'Salarisadministratie',
                     screen: const SalarisAdministratieScreen(),
+                  ),
+                  ListTile(
+                    leading: isDesktop ? null : const Icon(Icons.source),
+                    minLeadingWidth: isDesktop ? 0 : null,
+                    selected: routeName == '/brongegevens',
+                    selectedColor: Theme.of(context).colorScheme.primary,
+                    selectedTileColor: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: isDark ? 0.18 : 0.10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    title: const Text(
+                      'Brongegevens (Bestek)',
+                      style: TextStyle(
+                        fontSize: _fontSize,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onTap: navigateBrongegevens,
                   ),
                 ],
               ],

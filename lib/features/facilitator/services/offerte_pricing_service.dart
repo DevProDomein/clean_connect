@@ -60,7 +60,9 @@ abstract final class OffertePricingService {
   }
 
   /// Aggregatie op basis van reeds geladen offerte-map (zonder extra query).
-  static OfferteBerekenResult berekenTotalenUitMap(Map<String, dynamic> offerte) {
+  static OfferteBerekenResult berekenTotalenUitMap(
+    Map<String, dynamic> offerte,
+  ) {
     final cType = (offerte['contract_type'] ?? 'vast').toString().toLowerCase();
     final losseKlus = isLosseKlus(cType);
 
@@ -73,8 +75,9 @@ abstract final class OffertePricingService {
     final totaalDb = _asDouble(offerte['totaal_prijs_ex_btw']);
 
     if (losseKlus) {
-      final prijsPerBeurtExBtw =
-          totaalDb > 0 ? totaalDb : (maandDb > 0 ? maandDb : 0.0);
+      final prijsPerBeurtExBtw = totaalDb > 0
+          ? totaalDb
+          : (maandDb > 0 ? maandDb : 0.0);
       return OfferteBerekenResult(
         totaalExBtw: prijsPerBeurtExBtw,
         totaleMinuten: urenPerBeurt * 60.0,
@@ -113,7 +116,9 @@ abstract final class OffertePricingService {
     }
     final offerte = Map<String, dynamic>.from(offerteRaw as Map);
     final cType = (offerte['contract_type'] ?? 'vast').toString().toLowerCase();
+    final String actueelType = cType.trim().toLowerCase();
     final losseKlus = isLosseKlus(cType);
+    final bool inclusiefMaterialen = offerte['inclusief_materialen'] == true;
 
     final override = _asDouble(offerte['vaste_prijs_override']);
     if (override > 0) {
@@ -153,9 +158,7 @@ abstract final class OffertePricingService {
 
       final dienstenRaw = ruimte['offerte_ruimte_diensten'];
       final diensten = dienstenRaw is List
-          ? dienstenRaw
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList()
+          ? dienstenRaw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
           : <Map<String, dynamic>>[];
 
       for (final dienst in diensten) {
@@ -168,6 +171,18 @@ abstract final class OffertePricingService {
           moederBestek: mb,
           grootteLabel: grootte,
         );
+
+        if (actueelType == 'incidenteel') {
+          // Incidenteel: exact 1 uitvoering (geen 52-weken/frequentie vermenigvuldiging).
+          final minuten = minutenPerBeurt * aantalIdentiek;
+          final uren = minuten / 60.0;
+          final prijsVoorEenBeurt = uren * uurtarief;
+
+          nieuwTotaalExBtw += prijsVoorEenBeurt;
+          nieuweTotaleMinuten += minuten;
+          ruweBeurtExBtw += prijsVoorEenBeurt;
+          continue;
+        }
 
         if (losseKlus) {
           // Incidenteel / eenmalig: exact 1 beurt, geen frequentie-factor.
@@ -196,10 +211,31 @@ abstract final class OffertePricingService {
       }
     }
 
+    // Optionele materialen: € 15,00 per beurt, maandelijks doorberekend
+    if (inclusiefMaterialen) {
+      double totaalBeurtenPerMaand = 0.0;
+      if (losseKlus) {
+        totaalBeurtenPerMaand = 1.0;
+      } else {
+        final rawWeekdagen = offerte['reguliere_weekdagen'];
+        final List<dynamic> weekdagen = rawWeekdagen is List
+            ? rawWeekdagen
+            : const <dynamic>[];
+        totaalBeurtenPerMaand = weekdagen.length * (52.0 / 12.0);
+      }
+
+      final double materiaalKostenMaand = totaalBeurtenPerMaand * 15.0;
+      nieuwTotaalExBtw += materiaalKostenMaand;
+      if (losseKlus) {
+        ruweBeurtExBtw += 15.0;
+      }
+    }
+
     if (nieuwTotaalExBtw <= 0) {
       final maandDb = _asDouble(offerte['maandprijs_ex_btw']);
       final totaalDb = _asDouble(offerte['totaal_prijs_ex_btw']);
-      final urenPerBeurt = _asDouble(offerte['regulier_uren_per_beurt_afgerond']) +
+      final urenPerBeurt =
+          _asDouble(offerte['regulier_uren_per_beurt_afgerond']) +
           _asDouble(offerte['frequent_uren_per_beurt_afgerond']) +
           _asDouble(offerte['periodiek_uren_per_beurt_afgerond']);
 
@@ -257,7 +293,11 @@ abstract final class OffertePricingService {
       if (v > 0) return v;
     }
     if (bedrijf != null) {
-      for (final key in ['uurtarief_ex_btw', 'standaard_uurtarief', 'uurtarief']) {
+      for (final key in [
+        'uurtarief_ex_btw',
+        'standaard_uurtarief',
+        'uurtarief',
+      ]) {
         final v = _asDouble(bedrijf[key]);
         if (v > 0) return v;
       }
@@ -274,8 +314,8 @@ abstract final class OffertePricingService {
     final suffix = g == 'B'
         ? '_b'
         : g == 'C'
-            ? '_c'
-            : '_a';
+        ? '_c'
+        : '_a';
     final candidates = <String>[
       'norm_minuten$suffix',
       'minuten$suffix',
@@ -345,12 +385,14 @@ abstract final class OffertePricingService {
         ? result.totaalExBtw
         : result.prijsPerBeurtExBtw;
 
-    await AppSupabase.client.from('offertes').update({
-      'maandprijs_ex_btw': result.totaalExBtw,
-      'maand_btw_bedrag': btw,
-      'maandprijs_inc_btw': incl,
-      'totaal_prijs_ex_btw': totaalContractExBtw,
-    }).eq('id', offerteId);
+    await AppSupabase.client
+        .from('offertes')
+        .update({
+          'maandprijs_ex_btw': result.totaalExBtw,
+          'maand_btw_bedrag': btw,
+          'maandprijs_inc_btw': incl,
+          'totaal_prijs_ex_btw': totaalContractExBtw,
+        })
+        .eq('id', offerteId);
   }
 }
-
