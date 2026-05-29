@@ -1182,7 +1182,6 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
   @override
   Widget build(BuildContext context) {
     final up = context.watch<UserProvider>();
-    final bool isMobile = MediaQuery.of(context).size.width < 800;
     if (!_canAccess(up)) {
       return Scaffold(
         appBar: AppBar(title: const Text('Uren accorderen')),
@@ -1234,8 +1233,9 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                 // 1. Stop de split-view sectie in een lokale variabele.
                 final Widget splitViewSectie = _buildMasterDetailSplit();
 
-                // 2. Bouw de body Column
+                // 2. Bouw de body Column (hoogte = inhoud, geen verticale Expanded)
                 final Widget pageContent = Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
@@ -1413,20 +1413,14 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                       ),
                     ),
 
-                    // Fix: Responsieve Pagina Lay-out (De Root)
-                    isMobile
-                        ? splitViewSectie
-                        : Expanded(child: splitViewSectie),
+                    splitViewSectie,
 
                     _buildBottomPayrollBar(),
-                    if (isMobile) const SizedBox(height: 120),
+                    const SizedBox(height: 120),
                   ],
                 );
 
-                // Fix: Mobiel globaal scrollen, desktop vaste layout.
-                return isMobile
-                    ? SingleChildScrollView(child: pageContent)
-                    : pageContent;
+                return SingleChildScrollView(child: pageContent);
               },
             ),
     );
@@ -1503,12 +1497,8 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      // Op mobiel moet de lijst zijn volledige hoogte pakken (shrinkWrap) omdat de pagina zélf scrolt.
-      // Op desktop moet hij false zijn, omdat hij in een Expanded zit en zélf moet scrollen.
-      shrinkWrap: MediaQuery.of(context).size.width < 800,
-      physics: MediaQuery.of(context).size.width < 800
-          ? const NeverScrollableScrollPhysics()
-          : const AlwaysScrollableScrollPhysics(),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: lijst.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
@@ -1744,7 +1734,6 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
     final inTeDienenLijst = _inTeDienenLijst();
     final geaccordeerdeLijst = _geaccordeerdeLijst();
     final detailBreedte = _detailPaneBreedte(context);
-    final bool isMobile = MediaQuery.of(context).size.width < 800;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -1762,7 +1751,7 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
       ),
       clipBehavior: Clip.antiAlias,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Container(
@@ -1772,6 +1761,7 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
               child: DefaultTabController(
                 length: 2,
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     TabBar(
                       onTap: (index) => setState(() => _actieveTab = index),
@@ -1788,35 +1778,18 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                         ),
                       ],
                     ),
-                    // Op mobiel geen verticale Expanded widgets (pagina scrolt globaal).
-                    if (isMobile)
-                      ColoredBox(
-                        color: const Color(0xFFF2F2F7),
-                        child: _actieveTab == 0
-                            ? _buildTaakLijst(
-                                inTeDienenLijst,
-                                isGeaccordeerdTab: false,
-                              )
-                            : _buildTaakLijst(
-                                geaccordeerdeLijst,
-                                isGeaccordeerdTab: true,
-                              ),
-                      )
-                    else
-                      Expanded(
-                        child: ColoredBox(
-                          color: const Color(0xFFF2F2F7),
-                          child: _actieveTab == 0
-                              ? _buildTaakLijst(
-                                  inTeDienenLijst,
-                                  isGeaccordeerdTab: false,
-                                )
-                              : _buildTaakLijst(
-                                  geaccordeerdeLijst,
-                                  isGeaccordeerdTab: true,
-                                ),
-                        ),
-                      ),
+                    ColoredBox(
+                      color: const Color(0xFFF2F2F7),
+                      child: _actieveTab == 0
+                          ? _buildTaakLijst(
+                              inTeDienenLijst,
+                              isGeaccordeerdTab: false,
+                            )
+                          : _buildTaakLijst(
+                              geaccordeerdeLijst,
+                              isGeaccordeerdTab: true,
+                            ),
+                    ),
                   ],
                 ),
               ),
