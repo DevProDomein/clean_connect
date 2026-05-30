@@ -52,6 +52,11 @@ class _BrongegevensScreenState extends State<BrongegevensScreen> {
 
   String _text(dynamic v) => (v ?? '').toString().trim();
 
+  String _materiaalCategorie(Map<String, dynamic> row) {
+    final cat = _text(row['categorie']);
+    return cat.isEmpty ? 'Overig' : cat;
+  }
+
   String _getSafeMaterialName(dynamic item) {
     if (item == null) return 'Onbekend materiaal';
     final Map<String, dynamic> data = item is Map<String, dynamic> ? item : {};
@@ -269,11 +274,21 @@ class _BrongegevensScreenState extends State<BrongegevensScreen> {
               laadMaterialen();
             }
 
+            final zoekLower = materiaalZoek.toLowerCase();
             final gefilterd = alleMaterialen.where((m) {
               if (materiaalZoek.isEmpty) return true;
               final naam = _getSafeMaterialName(m).toLowerCase();
-              return naam.contains(materiaalZoek.toLowerCase());
+              final cat = _materiaalCategorie(m).toLowerCase();
+              return naam.contains(zoekLower) || cat.contains(zoekLower);
             }).toList();
+
+            final perCategorie = <String, List<Map<String, dynamic>>>{};
+            for (final m in gefilterd) {
+              final cat = _materiaalCategorie(m);
+              perCategorie.putIfAbsent(cat, () => []).add(m);
+            }
+            final categorieKeys = perCategorie.keys.toList()
+              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
             Future<void> opslaan() async {
               try {
@@ -342,36 +357,64 @@ class _BrongegevensScreenState extends State<BrongegevensScreen> {
                           ? const Center(
                               child: Text('Geen materialen gevonden.'),
                             )
-                          : ListView.builder(
-                              itemCount: gefilterd.length,
-                              itemBuilder: (_, i) {
-                                final m = gefilterd[i];
-                                final mid = _text(m['id']);
-                                final checked = geselecteerdeMateriaalIds
-                                    .contains(mid);
-                                return CheckboxListTile(
-                                  value: checked,
-                                  onChanged: (val) {
-                                    setModalState(() {
-                                      if (val == true) {
-                                        if (!geselecteerdeMateriaalIds.contains(
-                                          mid,
-                                        )) {
-                                          geselecteerdeMateriaalIds.add(mid);
-                                        }
-                                      } else {
-                                        geselecteerdeMateriaalIds.remove(mid);
-                                      }
-                                    });
-                                  },
-                                  title: Text(
-                                    _getSafeMaterialName(m),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                          : ListView(
+                              children: [
+                                for (final cat in categorieKeys) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(
+                                      top: 8,
+                                      bottom: 4,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade200,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      cat,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.blue.shade800,
+                                        fontSize: 14,
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
+                                  ...perCategorie[cat]!.map((m) {
+                                    final mid = _text(m['id']);
+                                    final checked = geselecteerdeMateriaalIds
+                                        .contains(mid);
+                                    return CheckboxListTile(
+                                      value: checked,
+                                      onChanged: (val) {
+                                        setModalState(() {
+                                          if (val == true) {
+                                            if (!geselecteerdeMateriaalIds
+                                                .contains(mid)) {
+                                              geselecteerdeMateriaalIds.add(
+                                                mid,
+                                              );
+                                            }
+                                          } else {
+                                            geselecteerdeMateriaalIds.remove(
+                                              mid,
+                                            );
+                                          }
+                                        });
+                                      },
+                                      title: Text(
+                                        _getSafeMaterialName(m),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ],
                             ),
                     ),
                   ],
@@ -730,6 +773,12 @@ class _BrongegevensScreenState extends State<BrongegevensScreen> {
           style: GoogleFonts.lato(fontWeight: FontWeight.w900),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Materialen beheer',
+            onPressed: () =>
+                Navigator.of(context).pushNamed('/materialen-beheer'),
+            icon: const Icon(Icons.inventory_2_outlined),
+          ),
           IconButton(
             tooltip: 'Vernieuwen',
             onPressed: _fetchBrongegevens,
