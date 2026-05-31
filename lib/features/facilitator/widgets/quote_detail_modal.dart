@@ -81,36 +81,6 @@ class _QuoteDetailModalState extends State<QuoteDetailModal> {
     }
   }
 
-  Future<void> _openDefinitievePdf() async {
-    final url = _text(widget.offerte['definitieve_pdf_url']);
-    if (url.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            'Geen definitieve PDF beschikbaar.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
-        ),
-      );
-      return;
-    }
-    final uri = Uri.tryParse(url);
-    if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            'Kon PDF niet openen.',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
-        ),
-      );
-    }
-  }
-
   Future<void> _confirmCancel() async {
     if (_busy) return;
     final ok = await showDialog<bool>(
@@ -156,7 +126,7 @@ class _QuoteDetailModalState extends State<QuoteDetailModal> {
     final totaal = _asDouble(widget.offerte['totaal_prijs_ex_btw']);
     final status = _text(widget.offerte['status']).toLowerCase();
 
-    final isVerzonden = status == 'send' || status == 'verzonden';
+    final isVerzonden = status == 'send';
     final isGetekend = status == 'signed' || status == 'getekend';
 
     String badgeLabel() {
@@ -304,19 +274,56 @@ class _QuoteDetailModalState extends State<QuoteDetailModal> {
                   if (isVerzonden || isGetekend) ...[
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _busy ? null : _openDefinitievePdf,
-                        icon: const Icon(Icons.picture_as_pdf_outlined),
-                        label: Text(
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.picture_as_pdf),
+                        label: const Text(
                           'Toon Definitieve PDF',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                          style: TextStyle(fontSize: 16),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
+                        onPressed: _busy
+                            ? null
+                            : () async {
+                                final offerte = widget.offerte;
+                                final String? pdfUrl =
+                                    offerte['definitieve_pdf_url']?.toString();
+
+                                if (pdfUrl == null ||
+                                    pdfUrl.trim().isEmpty ||
+                                    pdfUrl == 'null') {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Fout: Geen definitieve PDF URL gevonden in de database. Vink de offerte opnieuw aan als verzonden.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                try {
+                                  final Uri url = Uri.parse(pdfUrl);
+                                  if (!await launchUrl(
+                                    url,
+                                    mode: LaunchMode.externalApplication,
+                                  )) {
+                                    throw Exception('Kan browser niet openen.');
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Kan PDF niet openen: $e'),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
                       ),
                     ),
                     const SizedBox(height: 12),

@@ -127,6 +127,10 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
       // DE CRUCIALE FIX: Wis de weekdagen direct als het contracttype geen weekdagen ondersteunt!
       if (t == 'eenmalig' || t == 'incidenteel') {
         _reguliereWeekdagen.clear();
+        _heeftAfwijkendePeriode = false;
+        _afwijkendePeriodeStart = null;
+        _afwijkendePeriodeEind = null;
+        _afwijkendeWeekdagen.clear();
       }
     });
   }
@@ -422,7 +426,9 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
       return false;
     }
 
-    if (_heeftAfwijkendePeriode) {
+    if (_heeftAfwijkendePeriode &&
+        _contractType != 'eenmalig' &&
+        _contractType != 'incidenteel') {
       if (_afwijkendePeriodeStart == null || _afwijkendePeriodeEind == null) {
         _showError('Selecteer start en eind van de afwijkende periode.');
         return false;
@@ -459,7 +465,9 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
 
     final contractTypeDb = _contractType.toLowerCase();
     final isEenmalig = contractTypeDb == 'eenmalig';
-    final hideWeekdagen = isEenmalig || contractTypeDb == 'incidenteel';
+    final isIncidenteel = contractTypeDb == 'incidenteel';
+    final isLos = isEenmalig || isIncidenteel;
+    final hideWeekdagen = isLos;
 
     DateTime? contractEinddatum;
     if (!isEenmalig) {
@@ -506,7 +514,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         'contact_email': _contactEmail.text.trim(),
         'contact_telefoon': _contactTelefoon.text.trim(),
         'contract_type': contractTypeDb,
-        'periodieke_frequentie': frequentieDb,
+        'periodieke_frequentie': isIncidenteel ? 'op_afroep' : frequentieDb,
         'uitvoer_datum': isEenmalig
             ? geselecteerdeUitvoerDatum?.toIso8601String()
             : null,
@@ -519,15 +527,19 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         'reguliere_weekdagen': reguliereWeekdagenDb,
         'tijdslot_start': _fmtTimeDb(_tijdslotStart!),
         'tijdslot_eind': _fmtTimeDb(_tijdslotEind!),
-        'afwijkende_periode_start': _heeftAfwijkendePeriode
-            ? _fmtDate(_afwijkendePeriodeStart!)
-            : null,
-        'afwijkende_periode_eind': _heeftAfwijkendePeriode
-            ? _fmtDate(_afwijkendePeriodeEind!)
-            : null,
-        'afwijkende_weekdagen': _heeftAfwijkendePeriode
-            ? afwijkendeWeekdagenDb
-            : null,
+        'afwijkende_periode_start': isLos
+            ? null
+            : (_heeftAfwijkendePeriode
+                  ? _fmtDate(_afwijkendePeriodeStart!)
+                  : null),
+        'afwijkende_periode_eind': isLos
+            ? null
+            : (_heeftAfwijkendePeriode
+                  ? _fmtDate(_afwijkendePeriodeEind!)
+                  : null),
+        'afwijkende_weekdagen': isLos
+            ? null
+            : (_heeftAfwijkendePeriode ? afwijkendeWeekdagenDb : null),
         'status': 'concept',
         // ignore: use_null_aware_elements — explicit null-skip for Supabase insert
         if (userId != null) 'aangemaakt_door_id': userId,
@@ -1084,28 +1096,30 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                     )
                                     .toList(growable: false),
                               ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                initialValue: _periodiekeFrequentie,
-                                decoration: _fieldDecoration(
-                                  context,
-                                  'Frequentie *',
+                              if (_contractType != 'eenmalig') ...[
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<String>(
+                                  initialValue: _periodiekeFrequentie,
+                                  decoration: _fieldDecoration(
+                                    context,
+                                    'Frequentie *',
+                                  ),
+                                  items: _frequenties
+                                      .map(
+                                        (o) => DropdownMenuItem(
+                                          value: o.value,
+                                          child: Text(o.label),
+                                        ),
+                                      )
+                                      .toList(growable: false),
+                                  onChanged: _saving
+                                      ? null
+                                      : (v) => setState(
+                                          () => _periodiekeFrequentie =
+                                              v ?? _periodiekeFrequentie,
+                                        ),
                                 ),
-                                items: _frequenties
-                                    .map(
-                                      (o) => DropdownMenuItem(
-                                        value: o.value,
-                                        child: Text(o.label),
-                                      ),
-                                    )
-                                    .toList(growable: false),
-                                onChanged: _saving
-                                    ? null
-                                    : (v) => setState(
-                                        () => _periodiekeFrequentie =
-                                            v ?? _periodiekeFrequentie,
-                                      ),
-                              ),
+                              ],
                               CheckboxListTile(
                                 title: const Text(
                                   'Wij leveren schoonmaakmaterialen aan',
@@ -1366,127 +1380,135 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        if (_contractType != 'incidenteel' &&
+                            _contractType != 'eenmalig') ...[
+                          const SizedBox(height: 16),
 
-                        // Section 4 - Afwijkende periode
-                        sectionCard(
-                          title: '4. Afwijkende periode',
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SwitchListTile.adaptive(
-                                value: _heeftAfwijkendePeriode,
-                                onChanged: _saving
-                                    ? null
-                                    : (v) => setState(() {
-                                        _heeftAfwijkendePeriode = v;
-                                        if (!v) {
-                                          _afwijkendePeriodeStart = null;
-                                          _afwijkendePeriodeEind = null;
-                                          _afwijkendeWeekdagen.clear();
-                                        }
-                                      }),
-                                title: Text(
-                                  'Afwijkende periode?',
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700,
+                          // Section 4 - Afwijkende periode
+                          sectionCard(
+                            title: '4. Afwijkende periode',
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SwitchListTile.adaptive(
+                                  value: _heeftAfwijkendePeriode,
+                                  onChanged: _saving
+                                      ? null
+                                      : (v) => setState(() {
+                                          _heeftAfwijkendePeriode = v;
+                                          if (!v) {
+                                            _afwijkendePeriodeStart = null;
+                                            _afwijkendePeriodeEind = null;
+                                            _afwijkendeWeekdagen.clear();
+                                          }
+                                        }),
+                                  title: Text(
+                                    'Afwijkende periode?',
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
+                                  contentPadding: EdgeInsets.zero,
                                 ),
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                              AnimatedSize(
-                                duration: const Duration(milliseconds: 230),
-                                curve: Curves.easeInOut,
-                                child: !_heeftAfwijkendePeriode
-                                    ? const SizedBox.shrink()
-                                    : Column(
-                                        children: [
-                                          const SizedBox(height: 8),
-                                          twoCol(
-                                            left: pickerField(
-                                              label: 'Start seizoen *',
-                                              value: _fmtDateHuman(
-                                                _afwijkendePeriodeStart,
-                                              ),
-                                              icon:
-                                                  Icons.calendar_month_rounded,
-                                              onTap: () => _pickDate(
-                                                initial:
-                                                    _afwijkendePeriodeStart,
-                                                helpText:
-                                                    'Selecteer start seizoen',
-                                                onPicked: (d) =>
-                                                    _afwijkendePeriodeStart = d,
-                                              ),
-                                              validator: (v) {
-                                                if (!_heeftAfwijkendePeriode) {
+                                AnimatedSize(
+                                  duration: const Duration(milliseconds: 230),
+                                  curve: Curves.easeInOut,
+                                  child: !_heeftAfwijkendePeriode
+                                      ? const SizedBox.shrink()
+                                      : Column(
+                                          children: [
+                                            const SizedBox(height: 8),
+                                            twoCol(
+                                              left: pickerField(
+                                                label: 'Start seizoen *',
+                                                value: _fmtDateHuman(
+                                                  _afwijkendePeriodeStart,
+                                                ),
+                                                icon: Icons
+                                                    .calendar_month_rounded,
+                                                onTap: () => _pickDate(
+                                                  initial:
+                                                      _afwijkendePeriodeStart,
+                                                  helpText:
+                                                      'Selecteer start seizoen',
+                                                  onPicked: (d) =>
+                                                      _afwijkendePeriodeStart =
+                                                          d,
+                                                ),
+                                                validator: (v) {
+                                                  if (!_heeftAfwijkendePeriode) {
+                                                    return null;
+                                                  }
+                                                  if (v == null ||
+                                                      v.trim().isEmpty) {
+                                                    return 'Start seizoen is verplicht';
+                                                  }
                                                   return null;
-                                                }
-                                                if (v == null ||
-                                                    v.trim().isEmpty) {
-                                                  return 'Start seizoen is verplicht';
-                                                }
-                                                return null;
+                                                },
+                                              ),
+                                              right: pickerField(
+                                                label: 'Eind seizoen *',
+                                                value: _fmtDateHuman(
+                                                  _afwijkendePeriodeEind,
+                                                ),
+                                                icon: Icons
+                                                    .calendar_month_rounded,
+                                                onTap: () => _pickDate(
+                                                  initial:
+                                                      _afwijkendePeriodeEind,
+                                                  helpText:
+                                                      'Selecteer eind seizoen',
+                                                  onPicked: (d) =>
+                                                      _afwijkendePeriodeEind =
+                                                          d,
+                                                ),
+                                                validator: (v) {
+                                                  if (!_heeftAfwijkendePeriode) {
+                                                    return null;
+                                                  }
+                                                  if (v == null ||
+                                                      v.trim().isEmpty) {
+                                                    return 'Eind seizoen is verplicht';
+                                                  }
+                                                  return null;
+                                                },
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: Text(
+                                                'Afwijkende weekdagen *',
+                                                style: GoogleFonts.inter(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            weekdayWrap(
+                                              selected: _afwijkendeWeekdagen,
+                                              onToggle: (day, enabled) {
+                                                setState(() {
+                                                  if (enabled) {
+                                                    _afwijkendeWeekdagen.add(
+                                                      day,
+                                                    );
+                                                  } else {
+                                                    _afwijkendeWeekdagen.remove(
+                                                      day,
+                                                    );
+                                                  }
+                                                });
                                               },
                                             ),
-                                            right: pickerField(
-                                              label: 'Eind seizoen *',
-                                              value: _fmtDateHuman(
-                                                _afwijkendePeriodeEind,
-                                              ),
-                                              icon:
-                                                  Icons.calendar_month_rounded,
-                                              onTap: () => _pickDate(
-                                                initial: _afwijkendePeriodeEind,
-                                                helpText:
-                                                    'Selecteer eind seizoen',
-                                                onPicked: (d) =>
-                                                    _afwijkendePeriodeEind = d,
-                                              ),
-                                              validator: (v) {
-                                                if (!_heeftAfwijkendePeriode) {
-                                                  return null;
-                                                }
-                                                if (v == null ||
-                                                    v.trim().isEmpty) {
-                                                  return 'Eind seizoen is verplicht';
-                                                }
-                                                return null;
-                                              },
-                                            ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: Text(
-                                              'Afwijkende weekdagen *',
-                                              style: GoogleFonts.inter(
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          weekdayWrap(
-                                            selected: _afwijkendeWeekdagen,
-                                            onToggle: (day, enabled) {
-                                              setState(() {
-                                                if (enabled) {
-                                                  _afwijkendeWeekdagen.add(day);
-                                                } else {
-                                                  _afwijkendeWeekdagen.remove(
-                                                    day,
-                                                  );
-                                                }
-                                              });
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                              ),
-                            ],
+                                          ],
+                                        ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 24),
+                          const SizedBox(height: 24),
+                        ],
 
                         SizedBox(
                           width: double.infinity,

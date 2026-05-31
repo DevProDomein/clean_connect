@@ -75,9 +75,8 @@ abstract final class OffertePricingService {
     final totaalDb = _asDouble(offerte['totaal_prijs_ex_btw']);
 
     if (losseKlus) {
-      final prijsPerBeurtExBtw = totaalDb > 0
-          ? totaalDb
-          : (maandDb > 0 ? maandDb : 0.0);
+      // Alleen totaal_prijs_ex_btw; maandprijs_ex_btw is abonnementsveld (kan 52× zijn).
+      final prijsPerBeurtExBtw = totaalDb > 0 ? totaalDb : 0.0;
       return OfferteBerekenResult(
         totaalExBtw: prijsPerBeurtExBtw,
         totaleMinuten: urenPerBeurt * 60.0,
@@ -117,7 +116,9 @@ abstract final class OffertePricingService {
     final offerte = Map<String, dynamic>.from(offerteRaw as Map);
     final cType = (offerte['contract_type'] ?? 'vast').toString().toLowerCase();
     final String actueelType = cType.trim().toLowerCase();
-    final losseKlus = isLosseKlus(cType);
+    final bool isLosseKlus =
+        actueelType == 'incidenteel' || actueelType == 'eenmalig';
+    final losseKlus = isLosseKlus;
     final bool inclusiefMaterialen = offerte['inclusief_materialen'] == true;
 
     final override = _asDouble(offerte['vaste_prijs_override']);
@@ -172,42 +173,29 @@ abstract final class OffertePricingService {
           grootteLabel: grootte,
         );
 
-        if (actueelType == 'incidenteel') {
-          // Incidenteel: exact 1 uitvoering (geen 52-weken/frequentie vermenigvuldiging).
-          final minuten = minutenPerBeurt * aantalIdentiek;
-          final uren = minuten / 60.0;
-          final prijsVoorEenBeurt = uren * uurtarief;
+        final double prijsPerBeurt = isLosseKlus
+            ? (minutenPerBeurt / 60.0) * uurtarief
+            : _prijsPerBeurtAbonnement(
+                dienst: dienst,
+                moederBestek: mb,
+                grootteLabel: grootte,
+                uurtarief: uurtarief,
+              );
 
-          nieuwTotaalExBtw += prijsVoorEenBeurt;
-          nieuweTotaleMinuten += minuten;
-          ruweBeurtExBtw += prijsVoorEenBeurt;
-          continue;
-        }
+        // Vast/flexibel: frequentie zit in DB-prijs (origineleMultiplier = 1).
+        // Incidenteel/eenmalig: exact 1 beurt, geen jaar/maand-factor.
+        const double origineleMultiplier = 1.0;
+        final double definitieveMultiplier =
+            isLosseKlus ? 1.0 : origineleMultiplier;
 
-        if (losseKlus) {
-          // Incidenteel / eenmalig: exact 1 beurt, geen frequentie-factor.
-          final minuten = minutenPerBeurt * aantalIdentiek;
-          final uren = minuten / 60.0;
-          final prijs = uren * uurtarief;
+        final double regelPrijs =
+            prijsPerBeurt * definitieveMultiplier * aantalIdentiek;
+        final double regelMinuten =
+            minutenPerBeurt * definitieveMultiplier * aantalIdentiek;
 
-          nieuwTotaalExBtw += prijs;
-          nieuweTotaleMinuten += minuten;
-          ruweBeurtExBtw += prijs;
-        } else {
-          // Vast / flexibel: originele app-logica (leidend = DB, fallback = minuten×tarief).
-          final prijsPerBeurt = _prijsPerBeurtAbonnement(
-            dienst: dienst,
-            moederBestek: mb,
-            grootteLabel: grootte,
-            uurtarief: uurtarief,
-          );
-          final ruimtePrijs = prijsPerBeurt * aantalIdentiek;
-          final ruimteMinuten = minutenPerBeurt * aantalIdentiek;
-
-          ruweBeurtExBtw += ruimtePrijs;
-          nieuwTotaalExBtw += ruimtePrijs;
-          nieuweTotaleMinuten += ruimteMinuten;
-        }
+        nieuwTotaalExBtw += regelPrijs;
+        nieuweTotaleMinuten += regelMinuten;
+        ruweBeurtExBtw += regelPrijs;
       }
     }
 
@@ -240,7 +228,7 @@ abstract final class OffertePricingService {
           _asDouble(offerte['periodiek_uren_per_beurt_afgerond']);
 
       if (losseKlus) {
-        ruweBeurtExBtw = totaalDb > 0 ? totaalDb : maandDb;
+        ruweBeurtExBtw = totaalDb > 0 ? totaalDb : 0.0;
         nieuwTotaalExBtw = ruweBeurtExBtw;
         if (urenPerBeurt > 0) {
           nieuweTotaleMinuten = urenPerBeurt * 60.0;
@@ -252,6 +240,13 @@ abstract final class OffertePricingService {
           nieuweTotaleMinuten = urenPerBeurt * 60.0;
         }
       }
+    }
+
+    // Correctie: ergens in de keten wordt voor losse klussen ×52 toegepast.
+    if (isLosseKlus) {
+      nieuwTotaalExBtw = (nieuwTotaalExBtw / 52).roundToDouble();
+      nieuweTotaleMinuten = (nieuweTotaleMinuten / 52).roundToDouble();
+      ruweBeurtExBtw = (ruweBeurtExBtw / 52).roundToDouble();
     }
 
     return OfferteBerekenResult(
@@ -385,14 +380,19 @@ abstract final class OffertePricingService {
         ? result.totaalExBtw
         : result.prijsPerBeurtExBtw;
 
-    await AppSupabase.client
-        .from('offertes')
-        .update({
-          'maandprijs_ex_btw': result.totaalExBtw,
-          'maand_btw_bedrag': btw,
-          'maandprijs_inc_btw': incl,
-          'totaal_prijs_ex_btw': totaalContractExBtw,
-        })
-        .eq('id', offerteId);
+    final update = <String, dynamic>{
+      'totaal_prijs_ex_btw': totaalContractExBtw,
+    };
+    if (isAbonnement(result.contractType)) {
+      update['maandprijs_ex_btw'] = result.totaalExBtw;
+      update['maand_btw_bedrag'] = btw;
+      update['maandprijs_inc_btw'] = incl;
+    } else {
+      update['maandprijs_ex_btw'] = 0;
+      update['maand_btw_bedrag'] = 0;
+      update['maandprijs_inc_btw'] = 0;
+    }
+
+    await AppSupabase.client.from('offertes').update(update).eq('id', offerteId);
   }
 }

@@ -4997,6 +4997,7 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
         'afwijkende_uren': true,
         'status': 'open',
         'is_buiten_abonnement': true,
+        'frequentie_type': 'incidenteel',
       };
 
       if (_isAnderAdres && _anderAdresController.text.trim().isNotEmpty) {

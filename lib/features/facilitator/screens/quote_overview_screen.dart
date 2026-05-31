@@ -23,7 +23,7 @@ class QuoteOverviewScreen extends StatefulWidget {
 class _QuoteOverviewScreenState extends State<QuoteOverviewScreen> {
   // Status buckets per tab.
   static const List<String> _conceptStatuses = ['concept', 'new'];
-  static const List<String> _verzondenStatuses = ['send', 'verzonden'];
+  static const List<String> _verzondenStatuses = ['send'];
   static const List<String> _getekendStatuses = ['signed'];
 
   bool _loading = true;

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +15,7 @@ import '../widgets/room_add_modal.dart';
 import 'pdf_preview_screen.dart';
 import 'project_overview_screen.dart';
 import 'quote_create_header_screen.dart';
+import 'quote_overview_screen.dart';
 
 class QuoteSurveyScreen extends StatefulWidget {
   const QuoteSurveyScreen({
@@ -174,14 +177,14 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   String _statusOf(Map<String, dynamic>? offerte) {
     final s = _text(offerte?['status']).toLowerCase();
     if (s == 'getekend') return 'signed';
-    if (s == 'verzonden') return 'verzonden';
+    if (s == 'verzonden') return 'send';
     if (s == 'send') return 'send';
     return s;
   }
 
   bool _isConceptStatus(String status) => status == 'concept' || status == 'new';
 
-  bool _isSentStatus(String status) => status == 'send' || status == 'verzonden';
+  bool _isSentStatus(String status) => status == 'send';
 
   bool _isSignedStatus(String status) => status == 'signed' || status == 'getekend';
 
@@ -242,7 +245,17 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     setState(() => isVerzenden = true);
     try {
       final supabase = Supabase.instance.client;
-      final pdfBytes =
+
+      await OffertePricingService.herberekenEnPersist(widget.offerteId);
+
+      await supabase.from('offertes').update({
+        'status': 'send',
+        'verzonden_op': DateTime.now().toIso8601String(),
+      }).eq('id', widget.offerteId);
+
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      final Uint8List pdfBytes =
           await PdfGeneratorService.generateOffertePdf(widget.offerteId);
 
       final fileName =
@@ -251,44 +264,43 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
       await supabase.storage.from('offerte_pdfs').uploadBinary(
             fileName,
             pdfBytes,
-            fileOptions: const FileOptions(contentType: 'application/pdf'),
+            fileOptions: const FileOptions(
+              contentType: 'application/pdf',
+              upsert: true,
+            ),
           );
 
       final pdfUrl = supabase.storage.from('offerte_pdfs').getPublicUrl(fileName);
 
       await supabase.from('offertes').update({
-        'status': 'verzonden',
-        'verzonden_op': DateTime.now().toIso8601String(),
         'definitieve_pdf_url': pdfUrl,
       }).eq('id', widget.offerteId);
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1E8E3E),
-          content: Text(
-            'Offerte definitief gemaakt en verzonden!',
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
+        const SnackBar(
+          content: Text('Offerte definitief gemaakt en verzonden!'),
+          backgroundColor: Colors.green,
         ),
       );
-      Navigator.of(context).pop(true);
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: '/facilitator/quotes'),
+          builder: (_) => const QuoteOverviewScreen(),
+        ),
+        (route) => route.isFirst,
+      );
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Colors.red.shade800,
-          content: Text(
-            'Fout bij verzenden: $e',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Fout bij verzenden: $e'),
+            backgroundColor: Colors.red,
           ),
-        ),
-      );
+        );
+      }
     } finally {
       if (mounted) setState(() => isVerzenden = false);
     }
@@ -331,7 +343,9 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
         child: RoomAddModal(
           offerteId: widget.offerteId,
           existingRoom: existingRoom,
-          onSaved: () {
+          onSaved: () async {
+            await OffertePricingService.herberekenEnPersist(widget.offerteId);
+            if (!context.mounted) return;
             setState(() {});
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -903,9 +917,39 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
 
                 Widget buildFinanceColumn() {
                   final isCompact = MediaQuery.of(context).size.width < 600;
-                  final berekening = offerte != null
-                      ? OffertePricingService.berekenTotalenUitMap(offerte)
-                      : null;
+
+                  return FutureBuilder<OfferteBerekenResult>(
+                    key: ValueKey(
+                      'offerte_prijs_${widget.offerteId}_${ruimtes.length}_'
+                      '${offerte?['contract_type']}_$vastePrijsOverride',
+                    ),
+                    future: OffertePricingService.berekenTotalen(
+                      widget.offerteId,
+                    ),
+                    builder: (context, priceSnap) {
+                      if (priceSnap.connectionState ==
+                          ConnectionState.waiting) {
+                        return const SizedBox(
+                          height: 40,
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final berekening = priceSnap.data ??
+                          (offerte != null
+                              ? OffertePricingService.berekenTotalenUitMap(
+                                  offerte,
+                                )
+                              : null);
 
                   final dynamic rawLooptijdMaanden =
                       offerte != null ? offerte['looptijd_maanden'] : null;
@@ -1102,6 +1146,8 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                         ),
                       ],
                     ],
+                  );
+                    },
                   );
                 }
 
