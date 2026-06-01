@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -39,11 +40,76 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   bool _closing = false;
   bool isVerzenden = false;
   double? vastePrijsOverride;
+  final List<Map<String, dynamic>> _ruimtesLijst = [];
+  bool _ruimtesLaden = true;
+  Object? _ruimtesError;
+  StreamSubscription<List<Map<String, dynamic>>>? _ruimtesSub;
 
   @override
   void initState() {
     super.initState();
     _fetchOfferteData();
+    _fetchRuimtes();
+    _ruimtesSub = _ruimtesStream().listen(
+      (rows) {
+        if (!mounted) return;
+        setState(() {
+          _ruimtesLijst
+            ..clear()
+            ..addAll(rows);
+          _ruimtesLaden = false;
+          _ruimtesError = null;
+        });
+      },
+      onError: (Object e) {
+        if (!mounted) return;
+        setState(() {
+          _ruimtesLijst.clear();
+          _ruimtesLaden = false;
+          _ruimtesError = e;
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _ruimtesSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchRuimtes() async {
+    if (!mounted) return;
+    setState(() {
+      _ruimtesLijst.clear();
+      _ruimtesLaden = true;
+      _ruimtesError = null;
+    });
+
+    try {
+      final res = await AppSupabase.client
+          .from('offerte_ruimtes')
+          .select()
+          .eq('offerte_id', widget.offerteId)
+          .order('id', ascending: true);
+
+      if (!mounted) return;
+      setState(() {
+        _ruimtesLijst
+          ..clear()
+          ..addAll(
+            (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+          );
+        _ruimtesLaden = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _ruimtesLijst.clear();
+        _ruimtesLaden = false;
+        _ruimtesError = e;
+      });
+    }
   }
 
   Stream<List<Map<String, dynamic>>> _ruimtesStream() {
@@ -58,7 +124,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     try {
       final offerteData = await AppSupabase.client
           .from('offertes')
-          .select('vaste_prijs_override')
+          .select('vaste_prijs_override, contract_type')
           .eq('id', widget.offerteId)
           .maybeSingle();
       if (!mounted || offerteData == null) return;
@@ -345,8 +411,8 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
           existingRoom: existingRoom,
           onSaved: () async {
             await OffertePricingService.herberekenEnPersist(widget.offerteId);
+            await _fetchRuimtes();
             if (!context.mounted) return;
-            setState(() {});
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 behavior: SnackBarBehavior.floating,
@@ -362,7 +428,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     );
 
     if (didSave == true && mounted) {
-      setState(() {});
+      await _fetchRuimtes();
     }
   }
 
@@ -767,7 +833,6 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     final bg = isDark ? const Color(0xFF0A0912) : const Color(0xFFF5F5F7);
     final offerteStream =
         AppSupabase.client.from('offertes').stream(primaryKey: ['id']).eq('id', widget.offerteId);
-    final ruimtesStream = _ruimtesStream();
 
     return Scaffold(
       backgroundColor: bg,
@@ -811,18 +876,17 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
         ],
       ),
       body: SelectionArea(
-        child: StreamBuilder<List<Map<String, dynamic>>>(
-          stream: ruimtesStream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+        child: Builder(
+          builder: (context) {
+            if (_ruimtesLaden && _ruimtesLijst.isEmpty) {
               return const Center(child: CircularProgressIndicator());
             }
-            if (snapshot.hasError) {
+            if (_ruimtesError != null) {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(
-                    'Kon ruimtes niet laden:\n${snapshot.error}',
+                    'Kon ruimtes niet laden:\n$_ruimtesError',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                   ),
@@ -830,7 +894,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
               );
             }
 
-            final ruimtes = snapshot.data ?? const <Map<String, dynamic>>[];
+            final ruimtes = _ruimtesLijst;
             return Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 800),
@@ -899,23 +963,20 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
             final pUren = _asDouble(offerte?['periodiek_uren_per_beurt_afgerond']);
             double roundToQuarter(double v) => (v * 4).roundToDouble() / 4.0;
 
-            return StreamBuilder<List<Map<String, dynamic>>>(
-              stream: ruimtesStream,
-              builder: (context, ruimtesSnapshot) {
-                final ruimtes = ruimtesSnapshot.data ?? const <Map<String, dynamic>>[];
-                final Map<String, int> roomSummary = {};
-                int totalRooms = 0;
+            final ruimtes = _ruimtesLijst;
+            final Map<String, int> roomSummary = {};
+            int totalRooms = 0;
 
-                for (final room in ruimtes) {
-                  final categoryRaw = _text(room['ruimte_categorie']);
-                  final category = categoryRaw.isEmpty ? 'Onbekend' : categoryRaw;
-                  final parsedCount = _asInt(room['aantal_identiek'], fallback: 1);
-                  final count = parsedCount < 1 ? 1 : parsedCount;
-                  roomSummary[category] = (roomSummary[category] ?? 0) + count;
-                  totalRooms += count;
-                }
+            for (final room in ruimtes) {
+              final categoryRaw = _text(room['ruimte_categorie']);
+              final category = categoryRaw.isEmpty ? 'Onbekend' : categoryRaw;
+              final parsedCount = _asInt(room['aantal_identiek'], fallback: 1);
+              final count = parsedCount < 1 ? 1 : parsedCount;
+              roomSummary[category] = (roomSummary[category] ?? 0) + count;
+              totalRooms += count;
+            }
 
-                Widget buildFinanceColumn() {
+            Widget buildFinanceColumn() {
                   final isCompact = MediaQuery.of(context).size.width < 600;
 
                   return FutureBuilder<OfferteBerekenResult>(
@@ -925,6 +986,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                     ),
                     future: OffertePricingService.berekenTotalen(
                       widget.offerteId,
+                      contractTypeHint: offerte?['contract_type']?.toString(),
                     ),
                     builder: (context, priceSnap) {
                       if (priceSnap.connectionState ==
@@ -1724,8 +1786,6 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                     },
                   ),
                 );
-              },
-            );
           },
         ),
       ),
