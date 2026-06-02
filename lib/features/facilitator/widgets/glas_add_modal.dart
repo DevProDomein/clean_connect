@@ -340,7 +340,7 @@ class _GlasAddDialogState extends State<_GlasAddDialog> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value: _glasFrequentie,
+                      initialValue: _glasFrequentie,
                       decoration: _veldDeco(''),
                       items: const [
                         DropdownMenuItem(

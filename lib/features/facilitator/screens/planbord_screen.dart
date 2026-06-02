@@ -168,7 +168,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     final projectMap = bron['project'] ?? bron['projecten'] ?? bron;
     if (projectMap is Map) {
-      final m = Map<String, dynamic>.from(projectMap as Map);
+      final m = Map<String, dynamic>.from(projectMap);
       final id = _text(m['offerte_id']);
       if (id.isNotEmpty) return id;
     }
