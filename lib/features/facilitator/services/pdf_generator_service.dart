@@ -886,10 +886,120 @@ class PdfGeneratorService {
           : <Map<String, dynamic>>[];
 
       final cat = _text(ruimte['ruimte_categorie'], fallback: 'Ruimte');
-      final beschrijving = _getCategoryDescription(cat);
       final ruimteNaam = _text(ruimte['naam_in_pand']).isNotEmpty
           ? _text(ruimte['naam_in_pand'])
           : cat;
+
+      // ==========================================
+      // GLASBEWASSING (eigen layout)
+      // ==========================================
+      final bool isGlas = cat.toLowerCase().contains('glasbewassing');
+
+      if (isGlas) {
+        final String frequentieRaw =
+            ruimte['specifieke_frequentie']?.toString() ?? 'op_afroep';
+        final String freqMooi = frequentieRaw.replaceAll('_', ' ').toUpperCase();
+
+        final int aKlein =
+            int.tryParse(ruimte['glas_aantal_klein']?.toString() ?? '0') ?? 0;
+        final int aMiddel =
+            int.tryParse(ruimte['glas_aantal_middel']?.toString() ?? '0') ?? 0;
+        final int aGroot =
+            int.tryParse(ruimte['glas_aantal_groot']?.toString() ?? '0') ?? 0;
+
+        final List<dynamic> glasDiensten = diensten;
+
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4.landscape,
+            margin: pw.EdgeInsets.zero,
+            theme: themeData,
+            build: (pw.Context context) {
+              return pageWithBleed(
+                context,
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Specificatie Glasbewassing',
+                      style: pw.TextStyle(
+                        font: fontRegular,
+                        fontSize: 10,
+                        color: PdfColors.grey,
+                      ),
+                    ),
+                    pw.Text(
+                      ruimteNaam,
+                      style: pw.TextStyle(
+                        font: fontBold,
+                        fontSize: 24,
+                        color: blueColor,
+                      ),
+                    ),
+                    pw.Text(
+                      'Frequentie: $freqMooi',
+                      style: pw.TextStyle(
+                        font: fontRegular,
+                        fontSize: 10,
+                        color: primaryOrange,
+                        fontStyle: pw.FontStyle.italic,
+                      ),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Container(
+                      width: double.infinity,
+                      padding: const pw.EdgeInsets.all(20),
+                      decoration: pw.BoxDecoration(
+                        color: lightGrey,
+                        borderRadius: pw.BorderRadius.circular(16),
+                      ),
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildGlasTeller(
+                            'Kleine Ramen',
+                            aKlein,
+                            fontBold,
+                            fontRegular,
+                            blueColor,
+                          ),
+                          _buildGlasTeller(
+                            'Middel Ramen',
+                            aMiddel,
+                            fontBold,
+                            fontRegular,
+                            blueColor,
+                          ),
+                          _buildGlasTeller(
+                            'Grote Ramen',
+                            aGroot,
+                            fontBold,
+                            fontRegular,
+                            blueColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (glasDiensten.isNotEmpty)
+                      ..._buildKogelvrijeDienstenLijst(
+                        'Inbegrepen Werkzaamheden',
+                        glasDiensten,
+                        fontBold,
+                        fontRegular,
+                        primaryOrange,
+                        lightGrey,
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+
+        continue;
+      }
+
+      final beschrijving = _getCategoryDescription(cat);
 
       final regDiensten = _dienstenVoorFrequentieLabel(diensten, 'regulier');
       final freqDiensten = _dienstenVoorFrequentieLabel(diensten, 'frequent');
@@ -2044,6 +2154,60 @@ class PdfGeneratorService {
         .where((s) => s.isNotEmpty)
         .toList();
     return parts.isEmpty ? 'In overleg' : parts.join(', ');
+  }
+
+  static pw.Widget _buildGlasTeller(
+    String label,
+    int aantal,
+    pw.Font bold,
+    pw.Font reg,
+    PdfColor color,
+  ) {
+    return pw.Column(
+      children: [
+        pw.Text(
+          '$aantal',
+          style: pw.TextStyle(font: bold, fontSize: 24, color: color),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          label,
+          style: pw.TextStyle(
+            font: reg,
+            fontSize: 10,
+            color: PdfColors.grey800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Lijst-widgets voor glas-diensten (herbruikbaar in MultiPage-builders).
+  static List<pw.Widget> _buildKogelvrijeDienstenLijst(
+    String titel,
+    List<dynamic> diensten,
+    pw.Font bold,
+    pw.Font reg,
+    PdfColor headerColor,
+    PdfColor bgColor,
+  ) {
+    final typed = diensten
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    return [
+      pw.SizedBox(height: 20),
+      pw.Expanded(
+        child: _buildFrequentieDienstenPane(
+          titel: titel,
+          diensten: typed,
+          headerColor: headerColor,
+          bulletColor: headerColor,
+          bgColor: bgColor,
+          fontBold: bold,
+          fontRegular: reg,
+        ),
+      ),
+    ];
   }
 
   static pw.Widget _buildSleekTableRow(

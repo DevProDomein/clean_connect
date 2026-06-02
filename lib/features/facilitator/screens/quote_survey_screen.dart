@@ -12,6 +12,7 @@ import '../../../core/widgets/app_drawer.dart';
 import '../services/offerte_pricing_service.dart';
 import '../services/pdf_generator_service.dart';
 import '../widgets/quote_summary_modal.dart';
+import '../widgets/glas_add_modal.dart';
 import '../widgets/room_add_modal.dart';
 import 'pdf_preview_screen.dart';
 import 'project_overview_screen.dart';
@@ -45,11 +46,17 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
   Object? _ruimtesError;
   StreamSubscription<List<Map<String, dynamic>>>? _ruimtesSub;
 
+  List<Map<String, dynamic>> alleGlasDiensten = [];
+  bool _glasDienstenLaden = true;
+  Object? _glasDienstenError;
+  int _prijsHerberekenTick = 0;
+
   @override
   void initState() {
     super.initState();
     _fetchOfferteData();
     _fetchRuimtes();
+    _fetchGlasDienstenCatalogus();
     _ruimtesSub = _ruimtesStream().listen(
       (rows) {
         if (!mounted) return;
@@ -78,6 +85,174 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     super.dispose();
   }
 
+  bool _isGlasRuimte(Map<String, dynamic> ruimte) =>
+      _text(ruimte['ruimte_categorie']) == 'Glasbewassing';
+
+  List<Map<String, dynamic>> get _glasRuimtes => _ruimtesLijst
+      .where(_isGlasRuimte)
+      .toList(growable: false);
+
+  Future<void> _fetchGlasDienstenCatalogus() async {
+    if (!mounted) return;
+    setState(() {
+      _glasDienstenLaden = true;
+      _glasDienstenError = null;
+    });
+    try {
+      var bestekRes = await AppSupabase.client
+          .from('moeder_bestek')
+          .select('id, volledige_naam')
+          .eq('is_glasbewassing', true)
+          .order('volledige_naam');
+
+      if ((bestekRes as List).isEmpty) {
+        bestekRes = await AppSupabase.client
+            .from('moeder_bestek')
+            .select('id, volledige_naam')
+            .or('ruimte.ilike.%glas%,volledige_naam.ilike.%glasbewassing%')
+            .order('volledige_naam');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        alleGlasDiensten = (bestekRes as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(growable: false);
+        _glasDienstenLaden = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _glasDienstenLaden = false;
+        _glasDienstenError = e;
+      });
+    }
+  }
+
+  int _glasDienstenCount(Map<String, dynamic> ruimte) {
+    final raw = ruimte['offerte_ruimte_diensten'];
+    if (raw is List) return raw.length;
+    return 0;
+  }
+
+  String _glasTellingenKey() {
+    final buf = StringBuffer();
+    for (final r in _glasRuimtes) {
+      buf
+        ..write(r['glas_aantal_klein'])
+        ..write('_')
+        ..write(r['glas_aantal_middel'])
+        ..write('_')
+        ..write(r['glas_aantal_groot'])
+        ..write('_')
+        ..write(r['specifieke_frequentie'])
+        ..write('|');
+    }
+    return buf.toString();
+  }
+
+  /// Herbereken bottom bar in de UI (geen database-write).
+  void _calculateTotals() {
+    if (!mounted) return;
+    setState(() => _prijsHerberekenTick++);
+  }
+
+  /// Persisteert glasregels + hoofdofferte-prijs naar Supabase.
+  Future<void> _syncOfferteTotalen({bool toonFout = true}) async {
+    try {
+      await OffertePricingService.herberekenEnPersist(widget.offerteId);
+      await _updateHoofdoffertePrijsInDb();
+    } catch (e) {
+      debugPrint('Fout bij syncen van offerte totalen: $e');
+      if (toonFout && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Fout bij opslaan naar database: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Schrijft berekende totaalprijs naar [offertes] (abonnement vs losse klus).
+  Future<void> _updateHoofdoffertePrijsInDb() async {
+    final result = await OffertePricingService.berekenTotalen(widget.offerteId);
+    final btw = result.totaalExBtw * 0.21;
+    final isAbonnement = OffertePricingService.isAbonnement(result.contractType);
+
+    final update = <String, dynamic>{
+      'totaal_prijs_ex_btw': isAbonnement
+          ? result.totaalExBtw
+          : result.prijsPerBeurtExBtw,
+    };
+    if (isAbonnement) {
+      update['maandprijs_ex_btw'] = result.totaalExBtw;
+      update['maand_btw_bedrag'] = btw;
+      update['maandprijs_inc_btw'] = result.totaalExBtw + btw;
+    } else {
+      update['maandprijs_ex_btw'] = 0;
+      update['maand_btw_bedrag'] = 0;
+      update['maandprijs_inc_btw'] = 0;
+    }
+
+    await AppSupabase.client
+        .from('offertes')
+        .update(update)
+        .eq('id', widget.offerteId);
+  }
+
+  int _glasInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.round();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _updateGlasAantal(
+    String ruimteId,
+    String formaat,
+    int delta,
+    int huidigAantal,
+  ) async {
+    int nieuwAantal = huidigAantal + delta;
+    if (nieuwAantal < 0) nieuwAantal = 0;
+
+    final kolom = 'glas_aantal_$formaat';
+
+    setState(() {
+      for (var i = 0; i < _ruimtesLijst.length; i++) {
+        if (_ruimtesLijst[i]['id']?.toString() != ruimteId) continue;
+        final copy = Map<String, dynamic>.from(_ruimtesLijst[i]);
+        copy[kolom] = nieuwAantal;
+        _ruimtesLijst[i] = copy;
+        break;
+      }
+    });
+
+    try {
+      await Supabase.instance.client
+          .from('offerte_ruimtes')
+          .update({kolom: nieuwAantal})
+          .eq('id', ruimteId);
+
+      await _fetchRuimtes();
+      if (!mounted) return;
+      _calculateTotals();
+      await _syncOfferteTotalen(toonFout: true);
+    } catch (e) {
+      debugPrint('Fout bij updaten aantal: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Fout bij opslaan naar database: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _fetchRuimtes() async {
     if (!mounted) return;
     setState(() {
@@ -89,7 +264,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     try {
       final res = await AppSupabase.client
           .from('offerte_ruimtes')
-          .select()
+          .select('*, offerte_ruimte_diensten(id)')
           .eq('offerte_id', widget.offerteId)
           .order('id', ascending: true);
 
@@ -502,6 +677,265 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
     }
   }
 
+  Future<void> _toonGlasbewassingModal({
+    Map<String, dynamic>? bestaandeRegel,
+  }) async {
+    await GlasAddModal.show(
+      context: context,
+      offerteId: widget.offerteId,
+      alleGlasDiensten: alleGlasDiensten,
+      bestaandeRegel: bestaandeRegel,
+      onReloadData: () async {
+        await _fetchRuimtes();
+        await _fetchOfferteData();
+        _calculateTotals();
+        await _syncOfferteTotalen(toonFout: true);
+      },
+    );
+  }
+
+  String _glasFrequentieLabel(String code) {
+    switch (code) {
+      case '12_keer_per_jaar':
+        return '12× per jaar';
+      case '6_keer_per_jaar':
+        return '6× per jaar';
+      case '4_keer_per_jaar':
+        return '4× per jaar';
+      case '2_keer_per_jaar':
+        return '2× per jaar';
+      case '1_keer_per_jaar':
+        return '1× per jaar';
+      default:
+        return 'Op afroep';
+    }
+  }
+
+  Future<void> _verwijderGlasRegel(int index, Map<String, dynamic> regel) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Onderdeel verwijderen?'),
+        content: const Text(
+          'Weet je zeker dat je dit glasbewassing onderdeel wilt verwijderen?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuleren'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Verwijderen'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    final ruimteId = regel['id']?.toString() ?? '';
+    if (ruimteId.isEmpty) return;
+
+    try {
+      await Supabase.instance.client
+          .from('offerte_ruimtes')
+          .delete()
+          .eq('id', ruimteId);
+
+      if (!mounted) return;
+      await _fetchRuimtes();
+      _calculateTotals();
+      await _syncOfferteTotalen(toonFout: true);
+    } catch (e) {
+      debugPrint('Fout bij verwijderen glas: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fout bij verwijderen: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Widget _buildGlasKaart(Map<String, dynamic> ruimte) {
+    final ruimteId = ruimte['id']?.toString() ?? '';
+    final weergaveNaam = _text(ruimte['naam_in_pand']).isNotEmpty
+        ? _text(ruimte['naam_in_pand'])
+        : 'Glasbewassing';
+    final dienstenCount = _glasDienstenCount(ruimte);
+    final freqCode =
+        ruimte['specifieke_frequentie']?.toString() ?? 'op_afroep';
+    final freq = _glasFrequentieLabel(freqCode);
+
+    Widget teller(String label, String formaat) {
+      final aantal = _glasInt(ruimte['glas_aantal_$formaat']);
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.remove_circle_outline,
+                    color: Colors.blue,
+                  ),
+                  onPressed: aantal > 0 && ruimteId.isNotEmpty
+                      ? () => _updateGlasAantal(ruimteId, formaat, -1, aantal)
+                      : null,
+                ),
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    '$aantal',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                    color: Colors.blue,
+                  ),
+                  onPressed: ruimteId.isNotEmpty
+                      ? () => _updateGlasAantal(ruimteId, formaat, 1, aantal)
+                      : null,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Card(
+      color: Colors.blue.shade50,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.blue.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        weergaveNaam,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                      Text(
+                        '$dienstenCount diensten • Frequentie: $freq',
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.blue),
+                      tooltip: 'Bewerken',
+                      onPressed: () => _toonGlasbewassingModal(
+                        bestaandeRegel: ruimte,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      tooltip: 'Verwijderen',
+                      onPressed: () => _verwijderGlasRegel(0, ruimte),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const Divider(),
+            teller('Ramen (Klein)', 'klein'),
+            teller('Ramen (Middel)', 'middel'),
+            teller('Ramen (Groot)', 'groot'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlasbewassingBlok() {
+    final glasRuimtes = _glasRuimtes;
+
+    if (_glasDienstenLaden && glasRuimtes.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_glasDienstenError != null) {
+      return Text(
+        'Glas-diensten laden mislukt: $_glasDienstenError',
+        style: const TextStyle(color: Colors.red),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (glasRuimtes.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Text(
+              'Voeg secties toe voor glas binnen, buiten, of andere zones. '
+              'Per sectie kies je diensten en frequentie; daarna tel je de ramen live.',
+              style: GoogleFonts.inter(fontSize: 13, color: Colors.blueGrey),
+            ),
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Glasbewassing',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          ...glasRuimtes.map(_buildGlasKaart),
+        ],
+      ],
+    );
+  }
+
   Widget _buildEmptyState() {
     return Center(
       child: Padding(
@@ -894,17 +1328,21 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
               );
             }
 
-            final ruimtes = _ruimtesLijst;
+            final normaleRuimtes =
+                _ruimtesLijst.where((r) => !_isGlasRuimte(r)).toList();
             return Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 800),
-                child: ruimtes.isEmpty
-                    ? _buildEmptyState()
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 320),
-                        itemCount: ruimtes.length,
-                        itemBuilder: (context, i) => _buildExpandableRoomTile(ruimtes[i]),
-                      ),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 320),
+                  children: [
+                    _buildGlasbewassingBlok(),
+                    if (normaleRuimtes.isEmpty && _glasRuimtes.isEmpty)
+                      _buildEmptyState()
+                    else
+                      ...normaleRuimtes.map(_buildExpandableRoomTile),
+                  ],
+                ),
               ),
             );
           },
@@ -921,18 +1359,46 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
           final isMobileCompact = MediaQuery.of(context).size.width < 600;
           return Padding(
             padding: EdgeInsets.only(bottom: isMobileCompact ? 200 : 260),
-            child: FloatingActionButton.extended(
-              onPressed: () {
-                _openRoomModal(context: context);
-              },
-              backgroundColor: cs.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              icon: const Icon(Icons.add_rounded, size: 28),
-              label: Text(
-                'Ruimte Toevoegen',
-                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900),
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'fab_ruimte',
+                  onPressed: () => _openRoomModal(context: context),
+                  backgroundColor: cs.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  icon: const Icon(Icons.add_rounded, size: 28),
+                  label: Text(
+                    'Ruimte Toevoegen',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton.extended(
+                  heroTag: 'fab_glas',
+                  onPressed: _toonGlasbewassingModal,
+                  backgroundColor: Colors.blue.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  icon: const Icon(Icons.window, size: 24),
+                  label: Text(
+                    'Glasbewassing Toevoegen',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
             ),
           );
         },
@@ -981,8 +1447,10 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
 
                   return FutureBuilder<OfferteBerekenResult>(
                     key: ValueKey(
-                      'offerte_prijs_${widget.offerteId}_${ruimtes.length}_'
-                      '${offerte?['contract_type']}_$vastePrijsOverride',
+                      'offerte_prijs_${widget.offerteId}_${_ruimtesLijst.length}_'
+                      '${_glasRuimtes.length}_${_glasTellingenKey()}_'
+                      '${offerte?['contract_type']}_$vastePrijsOverride'
+                      '_$_prijsHerberekenTick',
                     ),
                     future: OffertePricingService.berekenTotalen(
                       widget.offerteId,
@@ -1043,6 +1511,9 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                   final double regulierUren = roundToQuarter(rUren);
                   final double frequentUren = roundToQuarter(fUren);
                   final double periodiekUren = roundToQuarter(pUren);
+                  final double glasUren = roundToQuarter(
+                    berekening?.glasUrenPerBeurt ?? 0,
+                  );
 
                   Widget buildUurTag(String label, double uren, Color kleur) {
                     if (uren <= 0) return const SizedBox.shrink();
@@ -1098,6 +1569,11 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                               'Periodiek',
                               periodiekUren,
                               Colors.teal.shade700,
+                            ),
+                            buildUurTag(
+                              'Glasbewassing',
+                              glasUren,
+                              Colors.lightBlue.shade700,
                             ),
                           ],
                         ),
@@ -1175,6 +1651,11 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
                             'Periodiek',
                             periodiekUren,
                             Colors.teal.shade700,
+                          ),
+                          buildUurTag(
+                            'Glasbewassing',
+                            glasUren,
+                            Colors.lightBlue.shade700,
                           ),
                         ],
                       ),

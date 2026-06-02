@@ -159,19 +159,57 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return (h * 60) + m;
   }
 
+  String? _offerteIdUitSmartContext({
+    Map<String, dynamic>? actieveOpdracht,
+    Map<String, dynamic>? project,
+  }) {
+    final bron = actieveOpdracht ?? project ?? _selectedProject;
+    if (bron == null) return null;
+
+    final projectMap = bron['project'] ?? bron['projecten'] ?? bron;
+    if (projectMap is Map) {
+      final m = Map<String, dynamic>.from(projectMap as Map);
+      final id = _text(m['offerte_id']);
+      if (id.isNotEmpty) return id;
+    }
+
+    final direct = _text(bron['offerte_id']);
+    return direct.isEmpty ? null : direct;
+  }
+
+  String? _offerteIdUitPlanningAfspraak(Map<String, dynamic> afspraak) {
+    final opdrachtRaw = afspraak['opdracht'];
+    if (opdrachtRaw is! Map) return null;
+    final opdracht = Map<String, dynamic>.from(opdrachtRaw);
+
+    final projectRaw = opdracht['project'] ?? opdracht['projecten'];
+    if (projectRaw is Map) {
+      final id = _text(Map<String, dynamic>.from(projectRaw)['offerte_id']);
+      if (id.isNotEmpty) return id;
+    }
+    return null;
+  }
+
   Future<void> _berekenVeiligeTijden({
     required String operatorId,
     required List<String> datumsDb, // yyyy-MM-dd
     required double benodigdeUren,
     required String vensterStart, // "HH:mm"
     required String vensterEind, // "HH:mm"
+    String? huidigOfferteId,
   }) async {
     if (_isTijdenLaden) return;
     setState(() => _isTijdenLaden = true);
     try {
+      final huidigOfferteIdNorm =
+          huidigOfferteId ?? _offerteIdUitSmartContext(project: _selectedProject);
+
       final bestaandeAfspraken = await AppSupabase.client
           .from('opdracht_planning')
-          .select('starttijd, eindtijd, geplande_datum')
+          .select(
+            'starttijd, eindtijd, geplande_datum, '
+            'opdracht:opdrachten(project:projecten(offerte_id))',
+          )
           .eq('operator_id', operatorId)
           .inFilter('geplande_datum', datumsDb);
 
@@ -208,9 +246,16 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             if (stRaw.isEmpty || etRaw.isEmpty) continue;
             final aStart = _timeToMinutes(stRaw);
             final aEnd = _timeToMinutes(etRaw);
-            // 15 min travel buffer around existing appointments.
-            final geblokkeerdStart = aStart - 15;
-            final geblokkeerdEind = aEnd + 15;
+
+            final bestaandOfferteId = _offerteIdUitPlanningAfspraak(a);
+            final isZelfdeOfferte = huidigOfferteIdNorm != null &&
+                bestaandOfferteId != null &&
+                bestaandOfferteId == huidigOfferteIdNorm;
+
+            final bufferMinuten = isZelfdeOfferte ? 0 : 15;
+            final geblokkeerdStart = aStart - bufferMinuten;
+            final geblokkeerdEind = aEnd + bufferMinuten;
+
             if (actueleMinuten < geblokkeerdEind &&
                 potentieelEindMinuten > geblokkeerdStart) {
               overlap = true;
@@ -380,6 +425,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         vensterEind: _text(_selectedProject?['tijdslot_eind']).isEmpty
             ? _timeToHuman(windowEnd)
             : _text(_selectedProject?['tijdslot_eind']).substring(0, 5),
+        huidigOfferteId: _offerteIdUitSmartContext(project: _selectedProject),
       );
     }
   }
@@ -755,9 +801,15 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     });
 
     try {
+      final actueelOfferteId = _offerteIdUitSmartContext(project: selectedProject);
+
       final response = await AppSupabase.client.rpc(
         'bereken_slimme_planning',
-        params: {'p_project_id': projectId, 'p_uren_per_shift': parsedHours},
+        params: {
+          'p_project_id': projectId,
+          'p_uren_per_shift': parsedHours,
+          'p_offerte_id': actueelOfferteId,
+        },
       );
       debugPrint('RPC SUCCESS: $response');
 

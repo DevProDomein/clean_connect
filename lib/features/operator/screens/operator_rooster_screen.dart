@@ -898,7 +898,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                                 backgroundColor: Colors.green,
                               ),
                             );
-                          } catch (e) {
+    } catch (e) {
                             if (!ctx.mounted) return;
                             ScaffoldMessenger.of(ctx).showSnackBar(
                               SnackBar(
@@ -1533,13 +1533,13 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
               final start = _safeTime(taak['rooster_starttijd']);
               final eind = _safeTime(taak['rooster_eindtijd']);
 
-              return Container(
+    return Container(
                 width: 280,
                 margin: const EdgeInsets.only(right: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey.shade200),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.03),
@@ -1611,10 +1611,10 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                         ),
                         child: const Text('Paklijst Inzien'),
                       ),
-                    ),
-                  ],
-                ),
-              );
+                  ),
+                ],
+              ),
+            );
             },
           ),
         ),

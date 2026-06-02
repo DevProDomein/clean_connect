@@ -2,6 +2,78 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/supabase_client.dart';
 
+/// Eén regel uit [offerte_glasbewassing].
+class OfferteGlasRegel {
+  const OfferteGlasRegel({
+    this.id,
+    this.naam = 'Glasbewassing',
+    this.moederBestekIds = const [],
+    this.moederBestekId,
+    this.omschrijving = '',
+    this.klein = 0,
+    this.middel = 0,
+    this.groot = 0,
+    this.frequentie = 'op_afroep',
+    this.moederBestek,
+  });
+
+  final String? id;
+  final String naam;
+  final List<String> moederBestekIds;
+  /// Legacy enkelvoudige koppeling.
+  final String? moederBestekId;
+  final String omschrijving;
+  final int klein;
+  final int middel;
+  final int groot;
+  final String frequentie;
+  final Map<String, dynamic>? moederBestek;
+
+  factory OfferteGlasRegel.fromMap(Map<String, dynamic> row) {
+    final ids = <String>[];
+    final rawIds = row['moeder_bestek_ids'];
+    if (rawIds is List) {
+      for (final raw in rawIds) {
+        final id = raw?.toString().trim() ?? '';
+        if (id.isNotEmpty) ids.add(id);
+      }
+    }
+    final legacyId = row['moeder_bestek_id']?.toString().trim() ?? '';
+    if (ids.isEmpty && legacyId.isNotEmpty) {
+      ids.add(legacyId);
+    }
+
+    final naamRaw = (row['naam'] ?? row['omschrijving'] ?? '').toString().trim();
+
+    return OfferteGlasRegel(
+      id: row['id']?.toString(),
+      naam: naamRaw.isEmpty ? 'Glasbewassing' : naamRaw,
+      moederBestekIds: ids,
+      moederBestekId: legacyId.isEmpty ? null : legacyId,
+      omschrijving: (row['omschrijving'] ?? '').toString().trim(),
+      klein: OffertePricingService._asInt(row['aantal_klein']),
+      middel: OffertePricingService._asInt(row['aantal_middel']),
+      groot: OffertePricingService._asInt(row['aantal_groot']),
+      frequentie: (row['frequentie'] ?? 'op_afroep').toString().trim(),
+    );
+  }
+
+  bool get heeftRamen => klein > 0 || middel > 0 || groot > 0;
+}
+
+/// Berekende glascomponent (uren + prijs per beurt + maandgemiddelde).
+class GlasBerekenResult {
+  const GlasBerekenResult({
+    required this.urenPerBeurt,
+    required this.prijsPerBeurt,
+    required this.maandPrijs,
+  });
+
+  final double urenPerBeurt;
+  final double prijsPerBeurt;
+  final double maandPrijs;
+}
+
 /// Resultaat van de offerte-rekenmotor (ex. BTW).
 class OfferteBerekenResult {
   const OfferteBerekenResult({
@@ -10,6 +82,7 @@ class OfferteBerekenResult {
     required this.prijsPerBeurtExBtw,
     required this.periodeFactor,
     required this.contractType,
+    this.glasUrenPerBeurt = 0,
   });
 
   final double totaalExBtw;
@@ -17,6 +90,7 @@ class OfferteBerekenResult {
   final double prijsPerBeurtExBtw;
   final double periodeFactor;
   final String contractType;
+  final double glasUrenPerBeurt;
 }
 
 /// Offerte-prijzen:
@@ -114,12 +188,211 @@ abstract final class OffertePricingService {
     );
   }
 
+  static Future<List<OfferteGlasRegel>> fetchGlasRegels(String offerteId) async {
+    if (offerteId.trim().isEmpty) return const [];
+    try {
+      final raw = await AppSupabase.client
+          .from('offerte_glasbewassing')
+          .select('*')
+          .eq('offerte_id', offerteId)
+          .order('aangemaakt_op', ascending: true);
+      return (raw as List)
+          .map((e) => OfferteGlasRegel.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList(growable: false);
+    } catch (e) {
+      debugPrint('offerte_glasbewassing laden: $e');
+      return const [];
+    }
+  }
+
+  static double _minutenNormGlas(
+    Map<String, dynamic>? moeder, {
+    required String suffix,
+    required double fallback,
+  }) {
+    if (moeder == null) return fallback;
+    for (final key in ['norm_minuten$suffix', 'minuten$suffix']) {
+      final v = _asDouble(moeder[key]);
+      if (v > 0) return v;
+    }
+    return fallback;
+  }
+
+  static Future<Map<String, Map<String, dynamic>>> _glasBestekLookup() async {
+    try {
+      var raw = await AppSupabase.client
+          .from('moeder_bestek')
+          .select('id, volledige_naam, norm_minuten_a, norm_minuten_b, norm_minuten_c, minuten_a, minuten_b, minuten_c')
+          .eq('is_glasbewassing', true);
+
+      if ((raw as List).isEmpty) {
+        raw = await AppSupabase.client
+            .from('moeder_bestek')
+            .select('id, volledige_naam, norm_minuten_a, norm_minuten_b, norm_minuten_c, minuten_a, minuten_b, minuten_c')
+            .or('ruimte.ilike.%glas%,volledige_naam.ilike.%glasbewassing%');
+      }
+
+      final map = <String, Map<String, dynamic>>{};
+      for (final row in raw as List) {
+        final m = Map<String, dynamic>.from(row as Map);
+        final id = m['id']?.toString() ?? '';
+        if (id.isNotEmpty) map[id] = m;
+      }
+      return map;
+    } catch (e) {
+      debugPrint('glas bestek lookup: $e');
+      return {};
+    }
+  }
+
+  static double _minutenVoorBestekEnRamen(
+    Map<String, dynamic>? mb,
+    int klein,
+    int middel,
+    int groot,
+  ) {
+    final minK = _minutenNormGlas(mb, suffix: '_a', fallback: 2);
+    final minM = _minutenNormGlas(mb, suffix: '_b', fallback: 4);
+    final minG = _minutenNormGlas(mb, suffix: '_c', fallback: 6);
+    return klein * minK + middel * minM + groot * minG;
+  }
+
+  /// Minuten per beurt (som over geselecteerde diensten × ramen).
+  static double glasMinutenPerBeurt(
+    OfferteGlasRegel regel, {
+    Map<String, Map<String, dynamic>>? bestekById,
+  }) {
+    final ids = regel.moederBestekIds;
+    if (ids.isEmpty) {
+      return _minutenVoorBestekEnRamen(
+        regel.moederBestek,
+        regel.klein,
+        regel.middel,
+        regel.groot,
+      );
+    }
+
+    var totaal = 0.0;
+    for (final id in ids) {
+      totaal += _minutenVoorBestekEnRamen(
+        bestekById?[id],
+        regel.klein,
+        regel.middel,
+        regel.groot,
+      );
+    }
+    return totaal;
+  }
+
+  static double glasUrenPerBeurtUitRegel(
+    OfferteGlasRegel regel, {
+    Map<String, Map<String, dynamic>>? bestekById,
+  }) {
+    return glasMinutenPerBeurt(regel, bestekById: bestekById) / 60.0;
+  }
+
+  static double _glasMaandPrijsFactor(String glasFrequentie) {
+    switch (glasFrequentie) {
+      case '12_keer_per_jaar':
+        return 1.0;
+      case '6_keer_per_jaar':
+        return 6.0 / 12.0;
+      case '4_keer_per_jaar':
+        return 4.0 / 12.0;
+      case '2_keer_per_jaar':
+        return 2.0 / 12.0;
+      case '1_keer_per_jaar':
+        return 1.0 / 12.0;
+      default:
+        return 0.0;
+    }
+  }
+
+  /// Ruimte uit [offerte_ruimtes] met categorie Glasbewassing.
+  static bool isGlasRuimte(Map<String, dynamic> ruimte) {
+    return (ruimte['ruimte_categorie'] ?? '').toString().trim() ==
+        'Glasbewassing';
+  }
+
+  /// Minuten per beurt uit glas-tellers op de ruimte (2 / 4 / 6 min).
+  static double glasMinutenVanRuimte(Map<String, dynamic> ruimte) {
+    final k = _asInt(ruimte['glas_aantal_klein']);
+    final m = _asInt(ruimte['glas_aantal_middel']);
+    final g = _asInt(ruimte['glas_aantal_groot']);
+    return (k * 2.0) + (m * 4.0) + (g * 6.0);
+  }
+
+  static String glasFrequentieVanRuimte(Map<String, dynamic> ruimte) {
+    return (ruimte['specifieke_frequentie'] ?? 'op_afroep').toString().trim();
+  }
+
+  /// Glasbewassing: prijs per beurt en maandgemiddelde (ex. BTW) voor één regel.
+  static GlasBerekenResult berekenGlasRegel(
+    OfferteGlasRegel regel,
+    double uurtarief, {
+    Map<String, Map<String, dynamic>>? bestekById,
+  }) {
+    final glasUrenPerBeurt =
+        glasUrenPerBeurtUitRegel(regel, bestekById: bestekById);
+    final glasPrijsPerBeurt = glasUrenPerBeurt * uurtarief;
+    final glasMaandPrijs =
+        glasPrijsPerBeurt * _glasMaandPrijsFactor(regel.frequentie);
+    return GlasBerekenResult(
+      urenPerBeurt: glasUrenPerBeurt,
+      prijsPerBeurt: glasPrijsPerBeurt,
+      maandPrijs: glasMaandPrijs,
+    );
+  }
+
+  static GlasBerekenResult _telGlasRegelsOp(
+    List<OfferteGlasRegel> regels,
+    double uurtarief, {
+    Map<String, Map<String, dynamic>>? bestekById,
+  }) {
+    var uren = 0.0;
+    var prijsBeurt = 0.0;
+    var maand = 0.0;
+    for (final regel in regels) {
+      if (!regel.heeftRamen) continue;
+      final c = berekenGlasRegel(regel, uurtarief, bestekById: bestekById);
+      uren += c.urenPerBeurt;
+      prijsBeurt += c.prijsPerBeurt;
+      maand += c.maandPrijs;
+    }
+    return GlasBerekenResult(
+      urenPerBeurt: uren,
+      prijsPerBeurt: prijsBeurt,
+      maandPrijs: maand,
+    );
+  }
+
+  static Future<void> _persistGlasRegelBerekeningen({
+    required String offerteId,
+    required List<OfferteGlasRegel> regels,
+    required double uurtarief,
+    required bool isLosseKlus,
+    Map<String, Map<String, dynamic>>? bestekById,
+  }) async {
+    final lookup = bestekById ?? await _glasBestekLookup();
+    for (final regel in regels) {
+      if (regel.id == null || regel.id!.isEmpty) continue;
+      final comp = berekenGlasRegel(regel, uurtarief, bestekById: lookup);
+      final prijs = isLosseKlus ? comp.prijsPerBeurt : comp.maandPrijs;
+      await AppSupabase.client.from('offerte_glasbewassing').update({
+        'berekende_minuten': glasMinutenPerBeurt(regel, bestekById: lookup),
+        'berekende_prijs': prijs,
+      }).eq('id', regel.id!);
+    }
+  }
+
   /// Hoofd-rekenmotor: loop over ruimtes/diensten.
   ///
   /// [contractTypeHint]: contracttype uit de UI-stream als DB-rij nog leeg is.
+  /// [glasRegels]: optionele UI-cache; anders uit [offerte_glasbewassing].
   static Future<OfferteBerekenResult> berekenTotalen(
     String offerteId, {
     String? contractTypeHint,
+    List<OfferteGlasRegel>? glasRegels,
   }) async {
     final offerteRaw = await AppSupabase.client
         .from('offertes')
@@ -133,6 +406,7 @@ abstract final class OffertePricingService {
         prijsPerBeurtExBtw: 0,
         periodeFactor: 1,
         contractType: 'vast',
+        glasUrenPerBeurt: 0,
       );
     }
     final offerte = Map<String, dynamic>.from(offerteRaw as Map);
@@ -157,6 +431,7 @@ abstract final class OffertePricingService {
         prijsPerBeurtExBtw: override,
         periodeFactor: 1.0,
         contractType: cType,
+        glasUrenPerBeurt: 0,
       );
     }
 
@@ -209,8 +484,30 @@ abstract final class OffertePricingService {
     var rawRegulierMinuten = 0.0;
     var rawFrequentMinuten = 0.0;
     var rawPeriodiekMinuten = 0.0;
+    var glasPrijsBeurtTotaal = 0.0;
+    var glasMaandPrijsTotaal = 0.0;
+    var glasUrenPerBeurtTotaal = 0.0;
+    var heeftGlasRuimteMetTelling = false;
 
     for (final ruimte in ruimtesLijst) {
+      if (isGlasRuimte(ruimte)) {
+        final minutenTotaal = glasMinutenVanRuimte(ruimte);
+        if (minutenTotaal <= 0) continue;
+        heeftGlasRuimteMetTelling = true;
+
+        final prijsBeurt = (minutenTotaal / 60.0) * uurtarief;
+        final freqMult =
+            _glasMaandPrijsFactor(glasFrequentieVanRuimte(ruimte));
+        glasUrenPerBeurtTotaal += minutenTotaal / 60.0;
+
+        if (isLosseKlus) {
+          glasPrijsBeurtTotaal += prijsBeurt;
+        } else {
+          glasMaandPrijsTotaal += prijsBeurt * freqMult;
+        }
+        continue;
+      }
+
       final aantalIdentiek = _asInt(ruimte['aantal_identiek'], fallback: 1);
       final grootte = (ruimte['grootte_label'] ?? 'A').toString();
 
@@ -293,6 +590,33 @@ abstract final class OffertePricingService {
       }
     }
 
+    if (isLosseKlus) {
+      nieuwTotaalExBtw += glasPrijsBeurtTotaal;
+      ruweBeurtExBtw += glasPrijsBeurtTotaal;
+      nieuweTotaleMinuten += glasUrenPerBeurtTotaal * 60.0;
+    } else {
+      nieuwTotaalExBtw += glasMaandPrijsTotaal;
+      nieuweTotaleMinuten += glasUrenPerBeurtTotaal * 60.0;
+    }
+
+    var glasUrenResult = glasUrenPerBeurtTotaal;
+    if (!heeftGlasRuimteMetTelling) {
+      final glasRegelsLijst = glasRegels ?? await fetchGlasRegels(offerteId);
+      final glasBestekById = await _glasBestekLookup();
+      final glas = _telGlasRegelsOp(
+        glasRegelsLijst,
+        tarief,
+        bestekById: glasBestekById,
+      );
+      if (isLosseKlus) {
+        nieuwTotaalExBtw += glas.prijsPerBeurt;
+        ruweBeurtExBtw += glas.prijsPerBeurt;
+      } else {
+        nieuwTotaalExBtw += glas.maandPrijs;
+      }
+      glasUrenResult = glas.urenPerBeurt;
+    }
+
     debugPrint(
       'Uren afgerond (kwartier): regulier=$regulierUrenAfgerond '
       'frequent=$frequentUrenAfgerond periodiek=$periodiekUrenAfgerond → '
@@ -328,6 +652,7 @@ abstract final class OffertePricingService {
       prijsPerBeurtExBtw: ruweBeurtExBtw,
       periodeFactor: 1.0,
       contractType: cType,
+      glasUrenPerBeurt: glasUrenResult,
     );
   }
 
@@ -440,10 +765,16 @@ abstract final class OffertePricingService {
   }
 
   /// Persisteert correcte totalen (na ruimte-wijziging of contracttype-wissel).
-  static Future<void> herberekenEnPersist(String offerteId) async {
+  static Future<void> herberekenEnPersist(
+    String offerteId, {
+    List<OfferteGlasRegel>? glasRegels,
+  }) async {
     if (offerteId.trim().isEmpty) return;
 
-    final result = await berekenTotalen(offerteId);
+    final result = await berekenTotalen(
+      offerteId,
+      glasRegels: glasRegels,
+    );
     final btw = result.totaalExBtw * 0.21;
     final incl = result.totaalExBtw + btw;
 
@@ -454,6 +785,18 @@ abstract final class OffertePricingService {
     final update = <String, dynamic>{
       'totaal_prijs_ex_btw': totaalContractExBtw,
     };
+
+    final regels = glasRegels ?? await fetchGlasRegels(offerteId);
+    if (regels.isNotEmpty) {
+      final bestekById = await _glasBestekLookup();
+      await _persistGlasRegelBerekeningen(
+        offerteId: offerteId,
+        regels: regels,
+        uurtarief: await _uurtariefVoorOfferte(offerteId),
+        isLosseKlus: isLosseKlus(result.contractType),
+        bestekById: bestekById,
+      );
+    }
     if (isAbonnement(result.contractType)) {
       update['maandprijs_ex_btw'] = result.totaalExBtw;
       update['maand_btw_bedrag'] = btw;
@@ -465,5 +808,31 @@ abstract final class OffertePricingService {
     }
 
     await AppSupabase.client.from('offertes').update(update).eq('id', offerteId);
+  }
+
+  /// Uurtarief (ex. BTW) voor glas-sync vanuit de UI.
+  static Future<double> uurtariefVoorOfferte(String offerteId) =>
+      _uurtariefVoorOfferte(offerteId);
+
+  /// Moederbestek lookup voor glas-minuten per dienst.
+  static Future<Map<String, Map<String, dynamic>>> glasBestekLookup() =>
+      _glasBestekLookup();
+
+  static Future<double> _uurtariefVoorOfferte(String offerteId) async {
+    final raw = await AppSupabase.client
+        .from('offertes')
+        .select('*, bedrijven(*)')
+        .eq('id', offerteId)
+        .maybeSingle();
+    if (raw == null) return 0;
+    final offerte = Map<String, dynamic>.from(raw as Map);
+    final bedrijf = offerte['bedrijven'] is Map
+        ? Map<String, dynamic>.from(offerte['bedrijven'] as Map)
+        : null;
+    var tarief = _uurtariefExBtw(offerte, bedrijf);
+    if (tarief <= 0) {
+      tarief = await _uurtariefUitEigenBedrijf();
+    }
+    return tarief;
   }
 }
