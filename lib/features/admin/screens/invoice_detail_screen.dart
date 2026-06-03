@@ -717,6 +717,67 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     }
   }
 
+  Future<void> _crediteerEnVrijgevenFactuur(
+    Map<String, dynamic> invoice,
+  ) async {
+    if (_creditBusy) return;
+
+    final factuurId = invoice['id'];
+    if (factuurId == null || factuurId.toString().isEmpty) return;
+
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Factuur Crediteren?'),
+            content: const Text(
+              'Weet je zeker dat je deze factuur wilt crediteren? De status wordt op "gecrediteerd" gezet en de gekoppelde opdrachten/abonnementen worden weer vrijgegeven voor een nieuwe facturatieronde.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuleren'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Ja, Crediteren'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirm || !mounted) return;
+
+    setState(() => _creditBusy = true);
+    try {
+      await Supabase.instance.client.rpc(
+        'crediteer_factuur',
+        params: {'p_factuur_id': factuurId},
+      );
+      if (!mounted) return;
+      _refresh();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Factuur succesvol gecrediteerd!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fout bij crediteren: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _creditBusy = false);
+    }
+  }
+
   String _text(dynamic v) => (v ?? '').toString().trim();
 
   double _asDouble(dynamic v) {
@@ -978,6 +1039,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         final isDefinitief = status == 'definitief';
         final isVerzonden = status == 'verzonden';
         final canCredit = isDefinitief || isVerzonden;
+        final canVrijgeven = status != 'gecrediteerd' && status != 'concept';
 
         final bedrijfn = (() {
           final b = inv['bedrijven'];
@@ -1161,6 +1223,33 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                           _emailBusy ? 'Verzenden…' : 'Verstuur naar Klant',
                           style: GoogleFonts.inter(fontWeight: FontWeight.w900),
                         ),
+                      ),
+                    ),
+                  ],
+                  if (canVrijgeven) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                        icon: const Icon(Icons.refresh),
+                        label: Text(
+                          'Factuur Crediteren & Vrijgeven',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                        ),
+                        onPressed: _creditBusy
+                            ? null
+                            : () => _crediteerEnVrijgevenFactuur(inv),
                       ),
                     ),
                   ],

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/offerte_pricing_service.dart';
+
 class RoomAddModal extends StatefulWidget {
   const RoomAddModal({
     super.key,
@@ -50,31 +52,61 @@ class _RoomAddModalState extends State<RoomAddModal> {
     return 'regulier';
   }
 
-  Widget _sectionHeader(
+  Widget _columnHeaderWithNieuweTaak(
     BuildContext context, {
     required String title,
-    required Color color,
+    required Color titleColor,
+    required String freqParam,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
+        color: isDark
             ? Colors.black.withValues(alpha: 0.12)
-            : Colors.white.withValues(alpha: 0.55),
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
-          ),
-        ),
+            : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontWeight: FontWeight.w900,
-          fontSize: 13,
-          color: color,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: titleColor,
+            ),
+          ),
+          InkWell(
+            onTap: _isSaving ? null : () => _toonNieuweTaakModal(freqParam),
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.blue.shade100),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, size: 14, color: Colors.blue.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Nieuwe taak',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -293,6 +325,526 @@ class _RoomAddModalState extends State<RoomAddModal> {
     }
   }
 
+  Future<Map<String, dynamic>?> _kiesDienstModal() async {
+    var isLoading = true;
+    List<dynamic> dienstenLijst = [];
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            if (isLoading && dienstenLijst.isEmpty) {
+              Supabase.instance.client
+                  .from('diensten')
+                  .select('id, dienst_naam')
+                  .order('dienst_naam')
+                  .then((data) {
+                if (!context.mounted) return;
+                setModalState(() {
+                  dienstenLijst = data as List;
+                  isLoading = false;
+                });
+              }).catchError((_) {
+                if (!context.mounted) return;
+                setModalState(() => isLoading = false);
+              });
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text('Kies de hoofddienst'),
+              content: SizedBox(
+                width: 400,
+                height: 400,
+                child: isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView.builder(
+                        itemCount: dienstenLijst.length,
+                        itemBuilder: (c, i) {
+                          final dienst = dienstenLijst[i];
+                          return ListTile(
+                            leading: const Icon(
+                              Icons.cleaning_services,
+                              color: Colors.blue,
+                            ),
+                            title: Text(dienst['dienst_naam'] ?? 'Onbekend'),
+                            onTap: () => Navigator.pop(
+                              ctx,
+                              Map<String, dynamic>.from(dienst as Map),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Annuleren'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _herlaadTakenNaToevoegen({String? nieuwTaakId}) async {
+    final uiCat = _geselecteerdeCategorieUi;
+    if (uiCat == null) return;
+    final dbCat = _categorieMapping[uiCat];
+    if (dbCat == null) return;
+    await _fetchTakenVoorCategorie(dbCat, clearSelections: false);
+    if (nieuwTaakId != null &&
+        nieuwTaakId.isNotEmpty &&
+        !_geselecteerdeTakenIds.contains(nieuwTaakId)) {
+      if (mounted) {
+        setState(() => _geselecteerdeTakenIds.add(nieuwTaakId));
+      }
+    }
+  }
+
+  Future<void> _toonNieuweTaakModal(String standaardFrequentie) async {
+    String? geselecteerdeDienstId;
+    String? geselecteerdeDienstNaam;
+    var frequentieLabel = standaardFrequentie.trim().toLowerCase();
+    if (!['regulier', 'frequent', 'periodiek', 'incidenteel']
+        .contains(frequentieLabel)) {
+      frequentieLabel = 'regulier';
+    }
+    var geselecteerdeEenheid = 'stuks';
+    var isGlasbewassing = false;
+
+    final naamCtrl = TextEditingController();
+    final omschrijvingCtrl = TextEditingController();
+    final normAantalCtrl = TextEditingController();
+    final freq1Ctrl = TextEditingController(text: '0');
+    final freq2Ctrl = TextEditingController(text: '0');
+    final freq3Ctrl = TextEditingController(text: '0');
+
+    final inputDeco = InputDecoration(
+      filled: true,
+      fillColor: const Color(0xFFF2F2F7),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    );
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        Widget buildField(String label, Widget input) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                input,
+              ],
+            ),
+          );
+        }
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: SizedBox(
+                width: 700,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Nieuwe Taak Aanmaken',
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade900,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: buildField(
+                                    'Gekoppelde Dienst (Verplicht)',
+                                    InkWell(
+                                      onTap: () async {
+                                        final gekozen =
+                                            await _kiesDienstModal();
+                                        if (gekozen != null) {
+                                          setModalState(() {
+                                            geselecteerdeDienstId =
+                                                gekozen['id']?.toString();
+                                            geselecteerdeDienstNaam =
+                                                gekozen['dienst_naam']
+                                                    ?.toString();
+                                          });
+                                        }
+                                      },
+                                      child: InputDecorator(
+                                        decoration: inputDeco.copyWith(
+                                          prefixIcon: const Icon(
+                                            Icons.link,
+                                            color: Colors.blue,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          geselecteerdeDienstNaam ??
+                                              'Klik om een dienst te kiezen...',
+                                          style: TextStyle(
+                                            color: geselecteerdeDienstNaam ==
+                                                    null
+                                                ? Colors.red.shade700
+                                                : Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: buildField(
+                                    'Volledige Naam',
+                                    TextFormField(
+                                      controller: naamCtrl,
+                                      decoration: inputDeco,
+                                      textCapitalization:
+                                          TextCapitalization.sentences,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      buildField(
+                                        'Frequentie Label',
+                                        DropdownButtonFormField<String>(
+                                          initialValue: frequentieLabel,
+                                          decoration: inputDeco,
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: 'regulier',
+                                              child: Text('Regulier'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'frequent',
+                                              child: Text('Frequent'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'periodiek',
+                                              child: Text('Periodiek'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: 'incidenteel',
+                                              child: Text('Incidenteel'),
+                                            ),
+                                          ],
+                                          onChanged: (v) {
+                                            if (v != null) {
+                                              setModalState(
+                                                () => frequentieLabel = v,
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      buildField(
+                                        'Is dit Glasbewassing?',
+                                        DropdownButtonFormField<bool>(
+                                          initialValue: isGlasbewassing,
+                                          decoration: inputDeco,
+                                          items: const [
+                                            DropdownMenuItem(
+                                              value: false,
+                                              child: Text('Nee'),
+                                            ),
+                                            DropdownMenuItem(
+                                              value: true,
+                                              child: Text('Ja'),
+                                            ),
+                                          ],
+                                          onChanged: (v) => setModalState(
+                                            () => isGlasbewassing = v ?? false,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  flex: 2,
+                                  child: buildField(
+                                    'Uitgebreide Omschrijving (Optioneel)',
+                                    TextFormField(
+                                      controller: omschrijvingCtrl,
+                                      decoration: inputDeco,
+                                      maxLines: 5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 32),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: buildField(
+                                    'Eenheid',
+                                    DropdownButtonFormField<String>(
+                                      initialValue: geselecteerdeEenheid,
+                                      decoration: inputDeco,
+                                      items: ['stuks', 'minuten', 'm2', 'uur']
+                                          .map(
+                                            (e) => DropdownMenuItem(
+                                              value: e,
+                                              child: Text(e),
+                                            ),
+                                          )
+                                          .toList(),
+                                      onChanged: (v) {
+                                        if (v != null) {
+                                          setModalState(
+                                            () => geselecteerdeEenheid = v,
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: buildField(
+                                    'Norm Aantal (Prestatie)',
+                                    TextFormField(
+                                      controller: normAantalCtrl,
+                                      decoration: inputDeco,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: buildField(
+                                    'Freq. Optie 1',
+                                    TextFormField(
+                                      controller: freq1Ctrl,
+                                      decoration: inputDeco,
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: buildField(
+                                    'Freq. Optie 2',
+                                    TextFormField(
+                                      controller: freq2Ctrl,
+                                      decoration: inputDeco,
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: buildField(
+                                    'Freq. Optie 3',
+                                    TextFormField(
+                                      controller: freq3Ctrl,
+                                      decoration: inputDeco,
+                                      keyboardType: TextInputType.number,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(20),
+                        ),
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade700,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: () async {
+                            if (geselecteerdeDienstId == null ||
+                                naamCtrl.text.trim().isEmpty ||
+                                normAantalCtrl.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Vul alle verplichte velden (Dienst, Naam, Norm) in.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            try {
+                              final normNummer = double.tryParse(
+                                    normAantalCtrl.text
+                                        .trim()
+                                        .replaceAll(',', '.'),
+                                  ) ??
+                                  0.0;
+                              final f1 = int.tryParse(freq1Ctrl.text) ?? 0;
+                              final f2 = int.tryParse(freq2Ctrl.text) ?? 0;
+                              final f3 = int.tryParse(freq3Ctrl.text) ?? 0;
+
+                              final uiCat = _geselecteerdeCategorieUi;
+                              final dbRuimte = uiCat != null
+                                  ? _categorieMapping[uiCat]
+                                  : null;
+
+                              final omschrijving =
+                                  omschrijvingCtrl.text.trim();
+
+                              final payload = <String, dynamic>{
+                                'dienst_id': geselecteerdeDienstId,
+                                'import_dienst_naam': geselecteerdeDienstNaam,
+                                'volledige_naam': naamCtrl.text.trim(),
+                                'frequentie_label': frequentieLabel,
+                                'norm_aantal': normNummer,
+                                'eenheid': geselecteerdeEenheid,
+                                'freq_optie_1': f1,
+                                'freq_optie_2': f2,
+                                'freq_optie_3': f3,
+                                'freq_optie_4': 0,
+                                'freq_optie_5': 0,
+                                'freq_optie_6': 0,
+                                'is_glasbewassing': isGlasbewassing,
+                                'ruimte': ?dbRuimte,
+                                if (omschrijving.isNotEmpty)
+                                  'uitgebreide_omschrijving': omschrijving,
+                              };
+
+                              final inserted = await Supabase.instance.client
+                                  .from('moeder_bestek')
+                                  .insert(payload)
+                                  .select('id')
+                                  .single();
+
+                              final nieuwId =
+                                  inserted['id']?.toString() ?? '';
+
+                              if (!context.mounted) return;
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Taak succesvol toegevoegd!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+
+                              await _herlaadTakenNaToevoegen(
+                                nieuwTaakId: nieuwId,
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Fout bij toevoegen: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          child: Text(
+                            'Taak Aanmaken & Opslaan',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    naamCtrl.dispose();
+    omschrijvingCtrl.dispose();
+    normAantalCtrl.dispose();
+    freq1Ctrl.dispose();
+    freq2Ctrl.dispose();
+    freq3Ctrl.dispose();
+  }
+
   Future<void> _save() async {
     final naam = _naamController.text.trim();
     if (naam.isEmpty) {
@@ -370,6 +922,8 @@ class _RoomAddModalState extends State<RoomAddModal> {
           },
         );
       }
+
+      await OffertePricingService.herberekenEnPersist(widget.offerteId);
 
       if (!mounted) return;
       widget.onSaved();
@@ -629,14 +1183,19 @@ class _RoomAddModalState extends State<RoomAddModal> {
                                                   String title,
                                                   Color color,
                                                   List<Map<String, dynamic>> items,
+                                                  String freqParam,
                                                 ) {
                                                   return Expanded(
                                                     child: Column(
                                                       children: [
-                                                        _sectionHeader(
-                                                          context,
-                                                          title: title,
-                                                          color: color,
+                                                        Padding(
+                                                          padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+                                                          child: _columnHeaderWithNieuweTaak(
+                                                            context,
+                                                            title: title,
+                                                            titleColor: color,
+                                                            freqParam: freqParam,
+                                                          ),
                                                         ),
                                                         Expanded(
                                                           child: items.isEmpty
@@ -663,19 +1222,19 @@ class _RoomAddModalState extends State<RoomAddModal> {
 
                                                 return Row(
                                                   children: [
-                                                    col('Regulier', blue, regulier),
+                                                    col('Regulier', blue, regulier, 'regulier'),
                                                     VerticalDivider(
                                                       width: 1,
                                                       thickness: 1,
                                                       color: cs.onSurface.withValues(alpha: 0.06),
                                                     ),
-                                                    col('Frequent', green, frequent),
+                                                    col('Frequent', green, frequent, 'frequent'),
                                                     VerticalDivider(
                                                       width: 1,
                                                       thickness: 1,
                                                       color: cs.onSurface.withValues(alpha: 0.06),
                                                     ),
-                                                    col('Periodiek', purple, periodiek),
+                                                    col('Periodiek', purple, periodiek, 'periodiek'),
                                                   ],
                                                 );
                                               }
@@ -684,18 +1243,23 @@ class _RoomAddModalState extends State<RoomAddModal> {
                                                 required String title,
                                                 required Color color,
                                                 required List<Map<String, dynamic>> items,
+                                                required String freqParam,
                                               }) {
                                                 return SliverMainAxisGroup(
                                                   slivers: [
                                                     SliverPersistentHeader(
                                                       pinned: true,
                                                       delegate: _StickyHeaderDelegate(
-                                                        minHeight: 40,
-                                                        maxHeight: 40,
-                                                        child: _sectionHeader(
-                                                          context,
-                                                          title: title,
-                                                          color: color,
+                                                        minHeight: 52,
+                                                        maxHeight: 52,
+                                                        child: Padding(
+                                                          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                                                          child: _columnHeaderWithNieuweTaak(
+                                                            context,
+                                                            title: title,
+                                                            titleColor: color,
+                                                            freqParam: freqParam,
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
@@ -729,9 +1293,24 @@ class _RoomAddModalState extends State<RoomAddModal> {
 
                                               return CustomScrollView(
                                                 slivers: [
-                                                  sliverSection(title: 'Regulier', color: blue, items: regulier),
-                                                  sliverSection(title: 'Frequent', color: green, items: frequent),
-                                                  sliverSection(title: 'Periodiek', color: purple, items: periodiek),
+                                                  sliverSection(
+                                                    title: 'Regulier',
+                                                    color: blue,
+                                                    items: regulier,
+                                                    freqParam: 'regulier',
+                                                  ),
+                                                  sliverSection(
+                                                    title: 'Frequent',
+                                                    color: green,
+                                                    items: frequent,
+                                                    freqParam: 'frequent',
+                                                  ),
+                                                  sliverSection(
+                                                    title: 'Periodiek',
+                                                    color: purple,
+                                                    items: periodiek,
+                                                    freqParam: 'periodiek',
+                                                  ),
                                                 ],
                                               );
                                             },

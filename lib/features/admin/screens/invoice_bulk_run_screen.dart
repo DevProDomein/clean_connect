@@ -316,30 +316,107 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
     );
   }
 
-  Future<void> _upsertKlantFacturatieTracker({
+  Future<void> _koppelOpdrachtenAanFactuur({
+    required String? factuurId,
     required Map<String, dynamic> concept,
-    required String maandSleutel,
   }) async {
-    final klantId = _text(concept['klant_id']);
-    if (klantId.isEmpty) return;
+    final factuurIdStr = _text(factuurId);
+    if (factuurIdStr.isEmpty) return;
+
+    final ids = <String>{};
+    final opdrachtIdsRaw = concept['opdracht_ids'];
+    if (opdrachtIdsRaw is List) {
+      for (final id in opdrachtIdsRaw) {
+        final s = id.toString();
+        if (s.isNotEmpty) ids.add(s);
+      }
+    }
+    final regelsRaw = concept['regels'];
+    if (regelsRaw is List) {
+      for (final regel in regelsRaw) {
+        if (regel is! Map) continue;
+        final oid = _text(regel['opdracht_id']);
+        if (oid.isNotEmpty) ids.add(oid);
+      }
+    }
+    if (ids.isEmpty) return;
+
     try {
-      await AppSupabase.client.from('klant_facturaties').upsert(
-        {
-          'bedrijf_id': klantId,
-          'maand_sleutel': maandSleutel,
-          'berekend_abonnement': _asDouble(concept['abonnement']),
-          'berekend_incidenteel': _asDouble(concept['incidenteel']),
-          'berekend_extra': _asDouble(concept['extra']),
-          'totaal_ex_btw': _asDouble(concept['bedrag']),
-          'status': 'gefactureerd',
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        },
-        onConflict: 'bedrijf_id,maand_sleutel',
-      );
+      await AppSupabase.client.from('opdrachten').update({
+        'factuur_id': factuurIdStr,
+      }).inFilter('id', ids.toList());
     } catch (e) {
       debugPrint(
-        'Fout bij klant_facturaties voor ${concept['bedrijfsnaam']}: $e',
+        'Fout bij koppelen opdrachten aan factuur $factuurIdStr '
+        '(${concept['bedrijfsnaam']}): $e',
       );
+      rethrow;
+    }
+  }
+
+  Future<String?> _factuurIdNaRpc({
+    required String klantId,
+    required String maandSleutel,
+  }) async {
+    try {
+      final row = await AppSupabase.client
+          .from('facturen')
+          .select('id')
+          .eq('bedrijf_id', klantId)
+          .eq('maand_sleutel', maandSleutel)
+          .order('factuur_datum', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (row != null) {
+        return _text(row['id']);
+      }
+    } catch (e) {
+      debugPrint('factuur-id na RPC opzoeken: $e');
+    }
+    return null;
+  }
+
+  /// Waakhond: markeer klant+maand als gefactureerd (voorkomt dubbele concept-runs).
+  Future<void> _upsertWaakhondNaDefinitieveFactuur(
+    Map<String, dynamic> concept,
+  ) async {
+    final bedrijfsnaam = _text(concept['bedrijfsnaam']);
+    debugPrint('--- START WAAKHOND UPDATE VOOR $bedrijfsnaam ---');
+
+    final bedrijfId = _text(concept['klant_id']);
+    if (bedrijfId.isEmpty) {
+      throw StateError(
+        'klant_id ontbreekt in concept voor $bedrijfsnaam',
+      );
+    }
+
+    final veiligeMaandSleutel = _maandSleutel(_geselecteerdeMaand);
+    final payload = <String, dynamic>{
+      'bedrijf_id': bedrijfId,
+      'maand_sleutel': veiligeMaandSleutel,
+      'berekend_abonnement': _asDouble(concept['abonnement']),
+      'berekend_incidenteel': _asDouble(concept['incidenteel']),
+      'berekend_extra': _asDouble(concept['extra']),
+      'totaal_ex_btw': _asDouble(concept['bedrag']),
+      'status': 'gefactureerd',
+      'aangepast_op': DateTime.now().toIso8601String(),
+    };
+
+    debugPrint('Upsert Payload: $payload');
+
+    try {
+      await AppSupabase.client.from('klant_facturaties').upsert(
+        payload,
+        onConflict: 'bedrijf_id,maand_sleutel',
+      );
+      debugPrint('✅ WAAKHOND UPDATE SUCCESVOL voor $bedrijfsnaam!');
+    } catch (e, st) {
+      debugPrint(
+        '❌ FATALE FOUT BIJ UPDATEN WAAKHOND (klant_facturaties) '
+        'voor $bedrijfsnaam: $e',
+      );
+      debugPrint('$st');
+      rethrow;
     }
   }
 
@@ -804,13 +881,54 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
         double incidenteelBedrag = 0.0;
         double extraBedrag = 0.0;
         final regels = <Map<String, dynamic>>[];
+        final inbegrepenOpdrachtIds = <String>[];
 
+        // A. Bereken Abonnement (vaste maandprijs met start/einddatum-check)
         final bedrijfsOffertes = actieveOffertes
             .where((o) => _text(o['bedrijf_id']) == bedrijfId)
             .toList();
+
+        final startVanGeselecteerdeMaand = DateTime(
+          _geselecteerdeMaand.year,
+          _geselecteerdeMaand.month,
+          1,
+        );
+        final eindVanGeselecteerdeMaand = DateTime(
+          _geselecteerdeMaand.year,
+          _geselecteerdeMaand.month + 1,
+          0,
+          23,
+          59,
+          59,
+        );
+
         for (final o in bedrijfsOffertes) {
-          abonnementBedrag +=
-              double.tryParse(o['maandprijs_ex_btw']?.toString() ?? '0') ?? 0.0;
+          final startStr = o['contract_startdatum']?.toString() ?? '';
+          final eindStr = o['contract_einddatum']?.toString() ?? '';
+
+          var magFactureren = true;
+
+          if (startStr.isNotEmpty) {
+            final startDatum = DateTime.tryParse(startStr);
+            if (startDatum != null &&
+                startDatum.isAfter(eindVanGeselecteerdeMaand)) {
+              magFactureren = false;
+            }
+          }
+
+          if (eindStr.isNotEmpty) {
+            final eindDatum = DateTime.tryParse(eindStr);
+            if (eindDatum != null &&
+                eindDatum.isBefore(startVanGeselecteerdeMaand)) {
+              magFactureren = false;
+            }
+          }
+
+          if (magFactureren) {
+            abonnementBedrag +=
+                double.tryParse(o['maandprijs_ex_btw']?.toString() ?? '0') ??
+                    0.0;
+          }
         }
         if (abonnementBedrag > 0) {
           regels.add({
@@ -834,8 +952,11 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
           if (opdracht is! Map) continue;
           final opMap = Map<String, dynamic>.from(opdracht);
 
-          if (opMap['factuur_id'] != null && _text(opMap['factuur_id']).isNotEmpty) {
-            continue;
+          if (_opdrachtAlGefactureerd(opMap)) continue;
+
+          final opdrachtId = _text(opMap['id']);
+          if (opdrachtId.isNotEmpty) {
+            inbegrepenOpdrachtIds.add(opdrachtId);
           }
 
           final isExtra = opMap['is_buiten_abonnement'] == true;
@@ -926,6 +1047,7 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
             'selected': true,
             'omschrijving': 'Facturatie $maandLabel',
             'regels': regels,
+            'opdracht_ids': inbegrepenOpdrachtIds.toSet().toList(),
           });
         }
       }
@@ -1177,24 +1299,39 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
         if (klantId.isEmpty) continue;
 
         try {
+          String? nieuwAangemaakteFactuurId;
           final viaRpc = await _probeerRpcVoorConcept(
             concept: concept,
             jaarMaand: jaarMaand,
           );
           if (!viaRpc) {
-            await _persistConceptFactuur(
+            nieuwAangemaakteFactuurId = await _persistConceptFactuur(
               concept: concept,
+              maandSleutel: jaarMaand,
               factuurDatumStr: factuurDatumStr,
               vervalDatumStr: vervalDatumStr,
               userId: userId,
             );
+          } else {
+            nieuwAangemaakteFactuurId = await _factuurIdNaRpc(
+              klantId: klantId,
+              maandSleutel: jaarMaand,
+            );
           }
-          await _upsertKlantFacturatieTracker(
+          await _koppelOpdrachtenAanFactuur(
+            factuurId: nieuwAangemaakteFactuurId,
             concept: concept,
-            maandSleutel: jaarMaand,
           );
+
+          // Waakhond pas na geslaagde factuur + regels (+ opdracht-koppeling).
+          await _upsertWaakhondNaDefinitieveFactuur(concept);
+
           aangemaakt++;
-        } catch (e) {
+        } catch (e, st) {
+          debugPrint(
+            'Fout bij factuur generatie van ${concept['bedrijfsnaam']}: $e',
+          );
+          debugPrint('$st');
           fouten.add('${concept['bedrijfsnaam']}: $e');
         }
       }
@@ -1240,8 +1377,9 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
     }
   }
 
-  Future<void> _persistConceptFactuur({
+  Future<String> _persistConceptFactuur({
     required Map<String, dynamic> concept,
+    required String maandSleutel,
     required String factuurDatumStr,
     required String vervalDatumStr,
     required String? userId,
@@ -1268,6 +1406,10 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
       'omschrijving': omschrijving,
       'layout_toon_aantallen': true,
       'layout_toon_prijzen': true,
+      // FIX: koppel de maand aan de factuur (blokkeert dubbel genereren in de praktijk).
+      'maand_sleutel': maandSleutel,
+      // Zorg dat de factuur ook direct het bedrag draagt (regels blijven leidend als triggers herberekenen).
+      'totaal_ex_btw': _asDouble(concept['bedrag']),
     };
     if (userId != null && userId.isNotEmpty) {
       header['aangemaakt_door_id'] = userId;
@@ -1309,6 +1451,34 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
 
       await AppSupabase.client.from('factuur_regels').insert(linePayload);
     }
+
+    return factuurId;
+  }
+
+  Widget _buildMaandSelector() => _buildMaandKiezer();
+
+  Widget _buildKlantSelector() {
+    final alleKlanten = _geselecteerdeKlantId == null;
+    return InkWell(
+      onTap: _isLoading ? null : _toonKlantZoekModal,
+      borderRadius: BorderRadius.circular(10),
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Geselecteerde Klant',
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.domain),
+          suffixIcon: Icon(Icons.arrow_drop_down),
+        ),
+        child: Text(
+          _geselecteerdeKlantNaam ?? 'Alle factureerbare klanten',
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: alleKlanten ? Colors.blue.shade700 : Colors.black87,
+            fontWeight: alleKlanten ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildMaandKiezer() {
@@ -1503,42 +1673,22 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                               ),
                             ),
                             const SizedBox(height: 16),
+                            _buildLiveAnalyticsKaartjes(),
+                            const SizedBox(height: 16),
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(child: _buildMaandKiezer()),
+                                Expanded(
+                                  flex: 1,
+                                  child: _buildMaandSelector(),
+                                ),
                                 const SizedBox(width: 16),
                                 Expanded(
-                                  child: InkWell(
-                                    onTap: _isLoading ? null : _toonKlantZoekModal,
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: InputDecorator(
-                                      decoration: InputDecoration(
-                                        filled: true,
-                                        fillColor: Colors.white,
-                                        labelText: 'Geselecteerde klant',
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        prefixIcon: const Icon(Icons.domain),
-                                        suffixIcon: const Icon(Icons.arrow_drop_down),
-                                      ),
-                                      child: Text(
-                                        _geselecteerdeKlantNaam ?? 'Alle factureerbare klanten',
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                                  flex: 2,
+                                  child: _buildKlantSelector(),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            _buildLiveAnalyticsKaartjes(),
                             const SizedBox(height: 24),
                             Builder(
                               builder: (context) {

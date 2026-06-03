@@ -1,10 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/widgets/app_drawer.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
+import '../../shared/services/werkbon_pdf_service.dart';
 class OperatorRoosterScreen extends StatefulWidget {
   const OperatorRoosterScreen({super.key});
 
@@ -13,7 +15,35 @@ class OperatorRoosterScreen extends StatefulWidget {
 }
 
 class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
+  static const String _offerteRuimtesPaklijstSelect = '''
+          naam_in_pand, 
+          ruimte_categorie,
+          offerte_ruimte_diensten(
+            frequentie_label,
+            moeder_bestek(
+              bestek_materialen(
+                materialen(*)
+              )
+            )
+          )
+        ''';
+
+  static const String _offerteRuimtesWerkprogrammaSelect = '''
+          naam_in_pand, 
+          ruimte_categorie,
+          offerte_ruimte_diensten(
+            frequentie_label,
+            moeder_bestek(
+              volledige_naam,
+              bestek_materialen(
+                materialen(*)
+              )
+            )
+          )
+        ''';
+
   final _supabase = Supabase.instance.client;
+  final PageController _sliderController = PageController(viewportFraction: 0.85);
   bool _isLoading = true;
   String _errorMessage = '';
 
@@ -36,6 +66,12 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _sliderController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData({bool silent = false}) async {
@@ -67,59 +103,62 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         debugPrint('Fout bij ophalen profiel: $e');
       }
 
-      final response = await _supabase
+      final List<Map<String, dynamic>> rawTaken = [];
+      final seenPlanningIds = <String>{};
+
+      void addRawRow(dynamic row) {
+        if (row is! Map) return;
+        final task = Map<String, dynamic>.from(row);
+        final pid = _planningIdFromItem(task);
+        if (pid.isNotEmpty) {
+          if (!seenPlanningIds.add(pid)) return;
+        }
+        rawTaken.add(task);
+      }
+
+      final vandaagRes = await _supabase
           .from('app_operator_vandaag')
           .select()
           .eq('operator_id', userId)
           .order('geplande_datum', ascending: true)
           .order('rooster_starttijd', ascending: true);
+      for (final row in vandaagRes as List) {
+        addRawRow(row);
+      }
 
-      final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
-      final DateTime todayDate = DateTime.now();
-      final DateTime todayDay = DateTime(
-        todayDate.year,
-        todayDate.month,
-        todayDate.day,
-      );
-      final DateTime weekStart = todayDay.subtract(
-        Duration(days: todayDay.weekday - 1),
-      );
-      final DateTime weekEnd = weekStart.add(const Duration(days: 6));
-      final DateTime upcomingWindowEnd = todayDay.add(const Duration(days: 31));
-
-      final List<Map<String, dynamic>> today = [];
-      final List<Map<String, dynamic>> upcoming = [];
-      int kpiVandaag = 0;
-      int kpiWeek = 0;
-
-      for (final row in response as List) {
-        final task = Map<String, dynamic>.from(row as Map);
-        final raw = task['geplande_datum']?.toString() ?? '';
-        final dateStr = raw.length >= 10 ? raw.substring(0, 10) : raw;
-
-        DateTime taskDay;
-        try {
-          final parsed = DateTime.parse(
-            dateStr.length >= 10 ? dateStr.substring(0, 10) : dateStr,
-          );
-          taskDay = DateTime(parsed.year, parsed.month, parsed.day);
-        } catch (_) {
-          continue;
+      try {
+        final agendaRes = await _supabase
+            .from('app_operator_agenda')
+            .select()
+            .eq('operator_id', userId)
+            .order('geplande_datum', ascending: true)
+            .order('rooster_starttijd', ascending: true);
+        for (final row in agendaRes as List) {
+          addRawRow(row);
         }
+      } catch (e) {
+        debugPrint('app_operator_agenda (rooster): $e');
+      }
 
+      final nu = DateTime.now();
+      final vandaag = DateTime(nu.year, nu.month, nu.day);
+      final weekStart = vandaag.subtract(Duration(days: vandaag.weekday - 1));
+      final weekEnd = weekStart.add(const Duration(days: 6));
+
+      final split = _splitActiefEnToekomst(rawTaken);
+      final today = split.actief;
+      final upcoming = split.toekomst;
+
+      var kpiWeek = 0;
+      for (final task in rawTaken) {
+        final taskDay = _taskDayFromItem(task);
+        if (taskDay == null) continue;
         if (!taskDay.isBefore(weekStart) && !taskDay.isAfter(weekEnd)) {
           kpiWeek++;
         }
-
-        if (dateStr == todayStr) {
-          today.add(task);
-        } else if (taskDay.isAfter(todayDay) &&
-            !taskDay.isAfter(upcomingWindowEnd)) {
-          upcoming.add(task);
-        }
       }
 
-      kpiVandaag = today.length;
+      final kpiVandaag = today.length;
 
       if (mounted) {
         setState(() {
@@ -270,6 +309,42 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     Navigator.of(context).pushNamed('/operator/uren');
   }
 
+  Future<void> _openWerkbonPdf(Map<String, dynamic> planningItem) async {
+    final opdrachtEmbed = planningItem['opdracht'];
+    final oId = planningItem['opdracht_id']?.toString() ??
+        (opdrachtEmbed is Map ? opdrachtEmbed['id']?.toString() : null) ??
+        '';
+
+    if (oId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Geen opdracht gekoppeld aan deze taak.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final bytes = await WerkbonPdfService.generateWerkbonPdf(oId);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (!mounted) return;
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fout bij maken PDF: $e')),
+      );
+    }
+  }
+
   String _planningIdFromItem(Map<String, dynamic> item) {
     final pid = item['planning_id']?.toString().trim();
     if (pid != null && pid.isNotEmpty) return pid;
@@ -289,6 +364,68 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   String _urenStatusRaw(Map<String, dynamic> item) =>
       (item['uren_status'] ?? 'open').toString().trim().toLowerCase();
 
+  String _rawTaskStatus(Map<String, dynamic> task) {
+    final s = task['status'] ?? task['planning_status'];
+    if (s != null && s.toString().trim().isNotEmpty) {
+      return s.toString().trim().toLowerCase();
+    }
+    return _statusRaw(task);
+  }
+
+  DateTime? _taskDayFromItem(Map<String, dynamic> task) {
+    final raw = task['geplande_datum']?.toString() ?? '';
+    if (raw.isEmpty) return null;
+    final head = raw.length >= 10 ? raw.substring(0, 10) : raw;
+    final parsed = DateTime.tryParse(head);
+    if (parsed == null) return null;
+    return DateTime(parsed.year, parsed.month, parsed.day);
+  }
+
+  ({List<Map<String, dynamic>> actief, List<Map<String, dynamic>> toekomst})
+      _splitActiefEnToekomst(List<Map<String, dynamic>> rawTaken) {
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+
+    final actieveTaken = <Map<String, dynamic>>[];
+    final toekomstigeTaken = <Map<String, dynamic>>[];
+
+    for (final task in rawTaken) {
+      final taakDag = _taskDayFromItem(task) ?? vandaag;
+      final status = _rawTaskStatus(task);
+
+      final isVerleden = taakDag.isBefore(vandaag);
+      final isVandaag = taakDag.year == vandaag.year &&
+          taakDag.month == vandaag.month &&
+          taakDag.day == vandaag.day;
+
+      final isOpen = status != 'afgerond' &&
+          status != 'geannuleerd' &&
+          status != 'no_show';
+
+      if (isVandaag || (isVerleden && isOpen)) {
+        actieveTaken.add(task);
+      }
+
+      if (taakDag.isAfter(vandaag) || (isVerleden && isOpen && !isVandaag)) {
+        toekomstigeTaken.add(task);
+      }
+    }
+
+    actieveTaken.sort((a, b) {
+      final dA = _taskDayFromItem(a) ?? vandaag;
+      final dB = _taskDayFromItem(b) ?? vandaag;
+      return dA.compareTo(dB);
+    });
+
+    toekomstigeTaken.sort((a, b) {
+      final dA = _taskDayFromItem(a) ?? vandaag;
+      final dB = _taskDayFromItem(b) ?? vandaag;
+      return dA.compareTo(dB);
+    });
+
+    return (actief: actieveTaken, toekomst: toekomstigeTaken);
+  }
+
   String? _offerteIdUitOpdrachtEmbed(Map<String, dynamic> opdrachtData) {
     final projectData = opdrachtData['projecten'];
     if (projectData == null) return null;
@@ -305,6 +442,15 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     if (id == null) return false;
     final s = id.trim();
     return s.isNotEmpty && s != 'null';
+  }
+
+  String _taakNaamUitMoederBestek(Map<String, dynamic> mb) {
+    final naam = mb['volledige_naam']?.toString() ??
+        mb['naam']?.toString() ??
+        mb['taak_naam']?.toString() ??
+        'Dienst';
+    final trimmed = naam.trim();
+    return trimmed.isEmpty ? 'Dienst' : trimmed;
   }
 
   String _getMatNaam(dynamic item) {
@@ -455,18 +601,10 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       );
     }
 
-    final ruimtes = await supabase.from('offerte_ruimtes').select('''
-          naam_in_pand, 
-          ruimte_categorie,
-          offerte_ruimte_diensten(
-            frequentie_label,
-            moeder_bestek(
-              bestek_materialen(
-                materialen(*)
-              )
-            )
-          )
-        ''').eq('offerte_id', offerteId!);
+    final ruimtes = await supabase
+        .from('offerte_ruimtes')
+        .select(_offerteRuimtesPaklijstSelect)
+        .eq('offerte_id', offerteId!);
 
     final data = _parseRuimtesNaarPaklijst(
       ruimtes as List<dynamic>,
@@ -514,112 +652,22 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     );
   }
 
-  Widget _materiaalRij(
-    _PaklijstMateriaal m, {
-    bool bold = false,
-    bool viewOnly = false,
-  }) {
-    final lijstIcoonKleur = bold ? Colors.orange : Colors.blueGrey;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6, left: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (m.fotoUrl != null)
-            GestureDetector(
-              onTap: () => _toonMateriaalFotoPopup(context, m.fotoUrl!),
-              child: ClipOval(
-                child: Image.network(
-                  m.fotoUrl!,
-                  width: 36,
-                  height: 36,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => CircleAvatar(
-                    radius: 18,
-                    child: Icon(Icons.inventory_2, size: 16, color: Colors.grey.shade600),
-                  ),
-                ),
-              ),
-            )
-          else
-            Icon(
-              viewOnly ? Icons.circle : Icons.check_box_outline_blank,
-              size: viewOnly ? 8 : 16,
-              color: lijstIcoonKleur,
-            ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              m.naam,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ),
-          if (m.vereistTransport)
-            Icon(Icons.local_shipping, size: 16, color: Colors.orange.shade800),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRuimtePaklijstSectie(
-    ({String label, List<_PaklijstMateriaal> materialen}) ruimte, {
-    bool viewOnly = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              ruimte.label,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.blue.shade900,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...ruimte.materialen.map((m) => _materiaalRij(m, viewOnly: viewOnly)),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _toonPaklijstModal(
+  Future<void> _toonWerkprogrammaModal(
     BuildContext context,
-    dynamic actieveOpdracht, {
-    bool viewOnly = false,
-  }) async {
-    final planningItem = actieveOpdracht is Map<String, dynamic>
-        ? actieveOpdracht
-        : Map<String, dynamic>.from(actieveOpdracht as Map);
+    dynamic planningItem,
+  ) async {
+    final planningMap = planningItem is Map<String, dynamic>
+        ? planningItem
+        : Map<String, dynamic>.from(planningItem as Map);
+    final planningId = _planningIdFromItem(planningMap);
+    final opdrachtEmbed = planningMap['opdracht'];
+    final opdrachtId = planningMap['opdracht_id']?.toString() ??
+        (opdrachtEmbed is Map
+            ? opdrachtEmbed['id']?.toString()
+            : null) ??
+        '';
 
-    final String? itemId = planningItem['id']?.toString();
-    final String? oId = planningItem['opdracht_id']?.toString();
-    final String opdrachtId = oId ?? itemId ?? '';
-    final planningId = _planningIdFromItem(planningItem);
-
-    if (opdrachtId.isEmpty) return;
-    if (!viewOnly && planningId.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Fout: Geen planning gekoppeld aan deze taak.'),
-        ),
-      );
-      return;
-    }
+    if (opdrachtId.isEmpty || planningId.isEmpty) return;
 
     if (!context.mounted) return;
     showDialog<void>(
@@ -629,47 +677,22 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     );
 
     try {
-      final supabase = Supabase.instance.client;
-
-      final opdrachtData = await supabase
+      final opd = await _supabase
           .from('opdrachten')
           .select('frequentie_type, project_id, projecten(offerte_id)')
           .eq('id', opdrachtId)
           .maybeSingle();
 
-      if (opdrachtData == null) {
-        if (!context.mounted) return;
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Opdracht data niet gevonden in DB.')),
-        );
-        return;
-      }
+      if (opd == null) throw Exception('Opdracht niet gevonden.');
 
-      final opdrachtMap = Map<String, dynamic>.from(opdrachtData);
-      final String taakFreq =
+      final opdrachtMap = Map<String, dynamic>.from(opd);
+      var freqType =
           opdrachtMap['frequentie_type']?.toString().toLowerCase() ?? '';
-      final String? offerteId = _offerteIdUitOpdrachtEmbed(opdrachtMap);
+      final offerteId = _offerteIdUitOpdrachtEmbed(opdrachtMap);
 
-      var effectiefFreqType = taakFreq;
-      if ((taakFreq == 'incidenteel' || taakFreq == 'eenmalig') &&
+      if ((freqType == 'incidenteel' || freqType == 'eenmalig') &&
           _isGeldigeOfferteId(offerteId)) {
-        effectiefFreqType = 'regulier';
-      }
-
-      if ((effectiefFreqType == 'incidenteel' ||
-              effectiefFreqType == 'eenmalig') &&
-          !_isGeldigeOfferteId(offerteId)) {
-        if (!context.mounted) return;
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Voor deze losse klus is geen paklijst beschikbaar (geen project/blauwdruk).',
-            ),
-          ),
-        );
-        return;
+        freqType = 'regulier';
       }
 
       if (!_isGeldigeOfferteId(offerteId)) {
@@ -677,56 +700,44 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Geen offerte (blauwdruk) gekoppeld aan deze klus.'),
+            content: Text(
+              'Geen werkprogramma/blauwdruk gevonden voor deze (losse) klus.',
+            ),
           ),
         );
         return;
       }
 
-      final ruimtes = await supabase
+      final ruimtes = await _supabase
           .from('offerte_ruimtes')
-          .select('''
-          naam_in_pand, 
-          ruimte_categorie,
-          offerte_ruimte_diensten(
-            frequentie_label,
-            moeder_bestek(
-              bestek_materialen(
-                materialen(*)
-              )
-            )
-          )
-        ''')
+          .select(_offerteRuimtesWerkprogrammaSelect)
           .eq('offerte_id', offerteId!);
 
       if (!context.mounted) return;
       Navigator.of(context).pop();
 
-
-      final globaleMap = <String, _PaklijstMateriaal>{};
-      final ruimteLijst = <({String label, List<_PaklijstMateriaal> materialen})>[];
+      final ruimteWidgets = <Widget>[];
+      final globaleMaterialen = <String>{};
 
       for (final ruimte in ruimtes as List) {
         if (ruimte is! Map) continue;
         final ruimtesDienstenRaw = ruimte['offerte_ruimte_diensten'];
-        final List<dynamic> diensten = ruimtesDienstenRaw is List
+        final diensten = ruimtesDienstenRaw is List
             ? ruimtesDienstenRaw
             : (ruimtesDienstenRaw != null ? [ruimtesDienstenRaw] : []);
-        final ruimteMap = <String, _PaklijstMateriaal>{};
+        final ruimteTaken = <String>[];
 
         for (final d in diensten) {
           if (d is! Map) continue;
           var isActief = false;
-          final String fLabel =
+          final fLabel =
               d['frequentie_label']?.toString().toLowerCase() ?? 'regulier';
 
-          if (effectiefFreqType == 'regulier' && fLabel == 'regulier') {
-            isActief = true;
-          }
-          if (effectiefFreqType == 'frequent' && fLabel == 'frequent') {
-            isActief = true;
-          }
-          if (effectiefFreqType == 'periodiek' && fLabel == 'periodiek') {
+          if (freqType == 'regulier' && fLabel == 'regulier') isActief = true;
+          if (freqType == 'frequent' && fLabel == 'frequent') isActief = true;
+          if (freqType == 'periodiek' && fLabel == 'periodiek') isActief = true;
+          if ((freqType == 'incidenteel' || freqType == 'eenmalig') &&
+              fLabel == 'regulier') {
             isActief = true;
           }
 
@@ -740,17 +751,18 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                     ? mbRaw
                     : (mbRaw is Map ? Map<String, dynamic>.from(mbRaw) : {}));
 
+          final taakNaam = _taakNaamUitMoederBestek(mb);
+          ruimteTaken.add(taakNaam);
+
           final bestekMatRaw = mb['bestek_materialen'];
-          final List<dynamic> gekoppeldeMaterialen = bestekMatRaw is List
+          final gekoppeldeMaterialen = bestekMatRaw is List
               ? bestekMatRaw
               : (bestekMatRaw != null ? [bestekMatRaw] : []);
 
           for (final koppeling in gekoppeldeMaterialen) {
             if (koppeling is! Map) continue;
             final matRaw =
-                koppeling['materialen'] ??
-                koppeling['materiaal'] ??
-                koppeling;
+                koppeling['materialen'] ?? koppeling['materiaal'] ?? koppeling;
             final Map<String, dynamic> mat =
                 (matRaw is List && matRaw.isNotEmpty)
                 ? Map<String, dynamic>.from(matRaw.first as Map)
@@ -759,163 +771,194 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                       : (matRaw is Map
                             ? Map<String, dynamic>.from(matRaw)
                             : {}));
-
-            final matObj = _materiaalUitRelatieMap(mat);
-            if (matObj == null) continue;
-            ruimteMap.putIfAbsent(matObj.naam, () => matObj);
-            globaleMap.putIfAbsent(matObj.naam, () => matObj);
+            final matNaam = _getMatNaam(mat);
+            if (matNaam.isNotEmpty) globaleMaterialen.add(matNaam);
           }
         }
 
-        if (ruimteMap.isNotEmpty) {
-          ruimteLijst.add((
-            label:
-                ruimte['naam_in_pand']?.toString() ??
-                ruimte['ruimte_categorie']?.toString() ??
-                'Ruimte',
-            materialen: ruimteMap.values.toList(),
-          ));
+        if (ruimteTaken.isNotEmpty) {
+          ruimteWidgets.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      ruimte['naam_in_pand']?.toString() ??
+                          ruimte['ruimte_categorie']?.toString() ??
+                          'Ruimte',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...ruimteTaken.map(
+                    (taak) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6, left: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.cleaning_services_outlined,
+                            size: 16,
+                            color: Colors.blueGrey,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              taak,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
       }
 
-      final globaal = globaleMap.values.toList();
-      final alAkkoord = planningItem['paklijst_akkoord'] == true;
-
       if (!context.mounted) return;
+
+      final paklijstAkkoord = planningMap['paklijst_akkoord'] == true;
+
       await showDialog<void>(
         context: context,
-        barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          title: Text('Materialenlijst ($effectiefFreqType)'),
+          title: const Text('Werkprogramma & Paklijst'),
           content: SizedBox(
             width: double.maxFinite,
-            height: 500,
-            child: globaal.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Geen gekoppelde materialen gevonden in het bestek voor deze taak.',
+            height: 600,
+            child: ListView(
+              children: [
+                if (globaleMaterialen.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.shade200),
                     ),
-                  )
-                : ListView(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.only(bottom: 24),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.shade200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.shopping_cart,
-                                  color: Colors.orange.shade800,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Totale Paklijst',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.orange.shade900,
-                                  ),
-                                ),
-                              ],
+                            Icon(
+                              Icons.shopping_cart,
+                              color: Colors.orange.shade800,
+                              size: 20,
                             ),
-                            const Divider(),
-                            ...globaal.map(
-                              (m) => _materiaalRij(
-                                m,
-                                bold: true,
-                                viewOnly: viewOnly,
+                            const SizedBox(width: 8),
+                            Text(
+                              'Totale Paklijst',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade900,
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const Text(
-                        'Uitsplitsing per ruimte:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey,
+                        const Divider(),
+                        ...globaleMaterialen.map(
+                          (m) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_box_outline_blank,
+                                  size: 16,
+                                  color: Colors.orange,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    m,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...ruimteLijst.map(
-                        (r) => _buildRuimtePaklijstSectie(
-                          r,
-                          viewOnly: viewOnly,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                ],
+                const Text(
+                  'Werkprogramma per ruimte:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (ruimteWidgets.isEmpty)
+                  const Text('Geen specifieke taken gevonden.'),
+                ...ruimteWidgets,
+              ],
+            ),
           ),
           actions: [
-            if (viewOnly)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Inzien-modus. Je kunt dit pas afvinken op de dag van de opdracht.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
-                ),
-              )
-            else if (!alAkkoord)
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Ik heb alles gepakt'),
-                  onPressed: globaal.isEmpty
-                      ? null
-                      : () async {
-                          try {
-                            await supabase
-                                .from('opdracht_planning')
-                                .update({'paklijst_akkoord': true})
-                                .eq('id', planningId);
-                            if (!ctx.mounted) return;
-                            Navigator.pop(ctx);
-                            await _loadData();
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Paklijst bevestigd.'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-    } catch (e) {
-                            if (!ctx.mounted) return;
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              SnackBar(
-                                content: Text('Opslaan mislukt: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
-                ),
-              ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                viewOnly || alAkkoord ? 'Sluiten' : 'Annuleren',
-              ),
+              child: const Text('Sluiten'),
             ),
+            if (!paklijstAkkoord)
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  try {
+                    await _supabase
+                        .from('opdracht_planning')
+                        .update({'paklijst_akkoord': true})
+                        .eq('id', planningId);
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    await _loadData(silent: true);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Werkprogramma & paklijst bevestigd.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  } catch (e) {
+                    debugPrint('Akkoord opslaan mislukt: $e');
+                    if (!ctx.mounted) return;
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text('Opslaan mislukt: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.check),
+                label: const Text('Gelezen & Akkoord'),
+              ),
           ],
         ),
       );
@@ -924,11 +967,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
+      debugPrint('Werkprogramma laden mislukt: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Fout bij laden materialen: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Fout: $e')),
       );
     }
   }
@@ -1323,72 +1364,176 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
   Widget _buildTaakActieKnoppen(Map<String, dynamic> planningItem) {
     final paklijstAkkoord = planningItem['paklijst_akkoord'] == true;
-    final status = _statusRaw(planningItem);
+    final planningStatus = _statusRaw(planningItem);
     final urenStatus = _urenStatusRaw(planningItem);
     final planningId = _planningIdFromItem(planningItem);
     final opdrachtId = planningItem['opdracht_id']?.toString() ?? '';
 
-    final buttonStyle = ElevatedButton.styleFrom(
+    final fullWidthStyle = ElevatedButton.styleFrom(
       minimumSize: const Size(double.infinity, 48),
       padding: const EdgeInsets.symmetric(vertical: 14),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
 
-    if (!paklijstAkkoord) {
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          style: buttonStyle.copyWith(
-            backgroundColor: WidgetStatePropertyAll(Colors.blue.shade700),
-            foregroundColor: const WidgetStatePropertyAll(Colors.white),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!paklijstAkkoord) ...[
+          ElevatedButton.icon(
+            icon: const Icon(Icons.fact_check),
+            label: const Text('Bekijk Werkprogramma (Verplicht)'),
+            style: fullWidthStyle.copyWith(
+              backgroundColor: WidgetStatePropertyAll(Colors.orange.shade600),
+              foregroundColor: const WidgetStatePropertyAll(Colors.white),
+            ),
+            onPressed: () => _toonWerkprogrammaModal(context, planningItem),
           ),
-          icon: const Icon(Icons.checklist),
-          label: const Text('Paklijst (Verplicht)'),
-          onPressed: () => _toonPaklijstModal(context, planningItem),
-        ),
-      );
-    }
-
-    if (status != 'afgerond') {
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          style: buttonStyle.copyWith(
-            backgroundColor: WidgetStatePropertyAll(Colors.green.shade700),
-            foregroundColor: const WidgetStatePropertyAll(Colors.white),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+            label: const Text('Preview Werkbon'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+              minimumSize: const Size(double.infinity, 48),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => _openWerkbonPdf(planningItem),
           ),
-          icon: const Icon(Icons.check_circle),
-          label: const Text('Opdracht Afgerond'),
-          onPressed: planningId.isEmpty || opdrachtId.isEmpty
-              ? null
-              : () => _markeerOpdrachtAfgerond(planningId, opdrachtId),
-        ),
-      );
-    }
+        ] else if (planningStatus != 'afgerond') ...[
+          ElevatedButton.icon(
+            icon: const Icon(Icons.check_circle),
+            label: const Text('Opdracht Afronden'),
+            style: fullWidthStyle.copyWith(
+              backgroundColor: WidgetStatePropertyAll(Colors.green.shade600),
+              foregroundColor: const WidgetStatePropertyAll(Colors.white),
+            ),
+            onPressed: planningId.isEmpty
+                ? null
+                : () async {
+                    final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Opdracht Afronden?'),
+                            content: const Text(
+                              'Ben je helemaal klaar met de werkzaamheden in het pand?',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Nee, nog niet'),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                ),
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Ja, afronden'),
+                              ),
+                            ],
+                          ),
+                        ) ??
+                        false;
 
-    if (urenStatus == 'open') {
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          style: buttonStyle,
-          icon: const Icon(Icons.access_time),
-          label: const Text('Uren Indienen'),
-          onPressed: _openMijnUren,
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
+                    if (!confirm) return;
+                    if (opdrachtId.isNotEmpty) {
+                      await _markeerOpdrachtAfgerond(planningId, opdrachtId);
+                    } else {
+                      await _supabase
+                          .from('opdracht_planning')
+                          .update({'status': 'afgerond'})
+                          .eq('id', planningId);
+                      await _loadData(silent: true);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Opdracht gemarkeerd als afgerond.'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+            label: const Text('Preview Werkbon'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+              minimumSize: const Size(double.infinity, 48),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => _openWerkbonPdf(planningItem),
+          ),
+        ] else if (urenStatus == 'open')
+          ElevatedButton.icon(
+            icon: const Icon(Icons.access_time),
+            label: const Text('Uren Indienen'),
+            style: fullWidthStyle.copyWith(
+              backgroundColor: WidgetStatePropertyAll(Colors.blue.shade700),
+              foregroundColor: const WidgetStatePropertyAll(Colors.white),
+            ),
+            onPressed: _openMijnUren,
+          )
+        else ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.thumb_up, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Alles afgerond & uren ingediend!',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              label: const Text('Preview Werkbon'),
+              onPressed: () => _openWerkbonPdf(planningItem),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   Widget _buildTodayCard(Map<String, dynamic> task) {
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+    final taakDag = _taskDayFromItem(task) ?? vandaag;
+    final isTeLaat = taakDag.isBefore(vandaag);
+    final geplandeDatumLabel = _datumLabel(task);
+
     final String status = _normStatus(task['mijn_persoonlijke_status']);
     final isGepland = status == 'gepland';
     final isVoltooid = status == 'voltooid';
     String badgeLabel;
     Color badgeColor;
     Color bgChip;
-    if (status == 'in_uitvoering') {
+    if (isTeLaat) {
+      badgeLabel = 'Te laat';
+      badgeColor = Colors.red.shade800;
+      bgChip = Colors.red.shade50;
+    } else if (status == 'in_uitvoering') {
       badgeLabel = 'Nu Bezig';
       badgeColor = Colors.blueAccent;
       bgChip = Colors.blue.shade50;
@@ -1406,19 +1551,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       bgChip = Colors.grey.shade100;
     }
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
+    final cardBody = Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1498,11 +1631,204 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         ],
       ),
     );
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      decoration: BoxDecoration(
+        color: isTeLaat ? Colors.red.shade50 : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isTeLaat ? Colors.red.shade400 : Colors.grey.shade300,
+          width: isTeLaat ? 2 : 1,
+        ),
+        boxShadow: isTeLaat
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 20,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isTeLaat)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade600,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(10),
+                ),
+              ),
+              child: Text(
+                'VERGETEN AF TE RONDEN: $geplandeDatumLabel',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          cardBody,
+        ],
+      ),
+    );
   }
 
   String _datumLabel(Map<String, dynamic> task) {
     final raw = task['geplande_datum']?.toString() ?? '';
     return raw.length >= 10 ? raw.substring(0, 10) : raw;
+  }
+
+  void _sliderPreviousPage() {
+    if (!_sliderController.hasClients) return;
+    final current = _sliderController.page?.round() ?? 0;
+    if (current > 0) {
+      _sliderController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  void _sliderNextPage(int itemCount) {
+    if (!_sliderController.hasClients) return;
+    final current = _sliderController.page?.round() ?? 0;
+    if (current < itemCount - 1) {
+      _sliderController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  Widget _buildSliderCard(BuildContext context, Map<String, dynamic> taak) {
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+    final taakDatum = _taskDayFromItem(taak) ?? vandaag;
+    final isVerleden = taakDatum.isBefore(vandaag);
+    final datumRaw = _datumLabel(taak);
+    final datumTekst = isVerleden
+        ? 'ACHTERSTALLIG: $datumRaw'
+        : datumRaw;
+
+    final opdrachtEmbed = taak['opdracht'];
+    final bedrijfsnaam = taak['bedrijfsnaam']?.toString() ??
+        (opdrachtEmbed is Map
+            ? opdrachtEmbed['bedrijfsnaam']?.toString()
+            : null) ??
+        'Klant';
+    final adres = taak['uitvoer_adres_volledig']?.toString() ??
+        (opdrachtEmbed is Map
+            ? opdrachtEmbed['uitvoer_adres_volledig']?.toString()
+            : null) ??
+        'Adres onbekend';
+    final start = _safeTime(taak['rooster_starttijd'] ?? taak['starttijd']);
+    final eind = _safeTime(taak['rooster_eindtijd'] ?? taak['eindtijd']);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: isVerleden ? Colors.red.shade50 : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isVerleden ? Colors.red.shade200 : Colors.grey.shade300,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isVerleden ? Colors.red.shade100 : Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    datumTekst,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: isVerleden
+                          ? Colors.red.shade900
+                          : Colors.blue.shade900,
+                    ),
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.calendar_month,
+                color: isVerleden ? Colors.red : Colors.grey,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            bedrijfsnaam,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tijd: $start - $eind',
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            adres,
+            style: const TextStyle(color: Colors.blueGrey, fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const Spacer(),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.blue.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () => _toonWerkprogrammaModal(context, taak),
+                  child: const Text('Werkprogramma', style: TextStyle(fontSize: 12)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () => _openWerkbonPdf(taak),
+                  child: const Text('Preview Werkbon', style: TextStyle(fontSize: 12)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildKomendeOpdrachtenSlider() {
@@ -1511,113 +1837,76 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 32, 20, 0),
+        const Padding(
+          padding: EdgeInsets.all(16),
           child: Text(
-            'Komende Opdrachten',
-            style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold),
+            'Overige & Komende Opdrachten',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
         ),
-        const SizedBox(height: 8),
         SizedBox(
-          height: 180,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            itemCount: toekomstigeTakenLijst.length,
-            itemBuilder: (context, index) {
-              final taak = toekomstigeTakenLijst[index];
-              final datum = _datumLabel(taak);
-              final bedrijfsnaam =
-                  taak['bedrijfsnaam']?.toString() ?? 'Klant';
-              final start = _safeTime(taak['rooster_starttijd']);
-              final eind = _safeTime(taak['rooster_eindtijd']);
+          height: 300,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              PageView.builder(
+                controller: _sliderController,
+                itemCount: toekomstigeTakenLijst.length,
+                itemBuilder: (context, index) {
+                  return AnimatedBuilder(
+                    animation: _sliderController,
+                    builder: (context, child) {
+                      double value = 1.0;
+                      if (_sliderController.position.haveDimensions) {
+                        value = _sliderController.page! - index;
+                        value = (1 - (value.abs() * 0.15)).clamp(0.85, 1.0);
+                      }
+                      final double opacity = value.clamp(0.6, 1.0);
 
-    return Container(
-                width: 280,
-                margin: const EdgeInsets.only(right: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            datum,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade700,
-                            ),
+                      return Center(
+                        child: Transform.scale(
+                          scale: value,
+                          child: Opacity(
+                            opacity: opacity,
+                            child: child,
                           ),
                         ),
-                        const Icon(Icons.event, color: Colors.grey, size: 20),
-                      ],
+                      );
+                    },
+                    child: _buildSliderCard(
+                      context,
+                      toekomstigeTakenLijst[index],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      bedrijfsnaam,
-                      style: GoogleFonts.lato(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      '$start - $eind',
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const Spacer(),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          foregroundColor: Colors.blue.shade700,
-                        ),
-                        onPressed: () => _toonPaklijstModal(
-                          context,
-                          taak,
-                          viewOnly: true,
-                        ),
-                        child: const Text('Paklijst Inzien'),
-                      ),
-                  ),
-                ],
+                  );
+                },
               ),
-            );
-            },
+              Positioned(
+                left: 0,
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Colors.blueGrey,
+                    size: 30,
+                  ),
+                  onPressed: _sliderPreviousPage,
+                ),
+              ),
+              Positioned(
+                right: 0,
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_forward_ios,
+                    color: Colors.blueGrey,
+                    size: 30,
+                  ),
+                  onPressed: () =>
+                      _sliderNextPage(toekomstigeTakenLijst.length),
+                ),
+              ),
+            ],
           ),
         ),
+        const SizedBox(height: 24),
       ],
     );
   }

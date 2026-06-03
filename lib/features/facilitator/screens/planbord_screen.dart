@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:infinite_calendar_view/infinite_calendar_view.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../shared/services/werkbon_pdf_service.dart';
 import 'manual_plan_modal.dart';
 
 class PlanbordScreen extends StatefulWidget {
@@ -1148,7 +1150,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     var q = AppSupabase.client
         .from('opdrachten')
         .select(_reedsGeplandeSelect)
-        .eq('status', 'ingepland')
+        .inFilter('status', ['ingepland', 'afgerond'])
         .eq('geplande_datum', dateStr);
     if (_selectedManualProjectId != null &&
         _selectedManualProjectId!.isNotEmpty) {
@@ -1263,7 +1265,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         var ingeplandQuery = AppSupabase.client
             .from('opdrachten')
             .select(_reedsGeplandeSelect)
-            .eq('status', 'ingepland');
+            .inFilter('status', ['ingepland', 'afgerond']);
 
         if (_selectedManualProjectId != null &&
             _selectedManualProjectId!.isNotEmpty) {
@@ -3113,6 +3115,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final weergaveNaam = _extractIngeplandWeergaveNaam(item);
     final datumStr = DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(datum);
     final tijdStr = '$start – $end';
+    final isAfgerond = _text(item['status']).toLowerCase() == 'afgerond';
 
     await showModalBottomSheet<void>(
       context: context,
@@ -3291,27 +3294,79 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           ),
                         ],
                         const SizedBox(height: 8),
-                        FilledButton.icon(
-                          onPressed: opdrachtId.isEmpty
-                              ? null
-                              : () => _opdrachtOpnieuwOpenen(item),
-                          icon: const Icon(Icons.undo_rounded, size: 20),
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(52),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                        if (isAfgerond)
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade700,
+                                foregroundColor: Colors.white,
+                              ),
+                              icon: const Icon(Icons.picture_as_pdf),
+                              label: const Text('Download Definitieve Werkbon'),
+                              onPressed: opdrachtId.isEmpty
+                                  ? null
+                                  : () async {
+                                      Navigator.of(ctx).pop();
+                                      if (!mounted) return;
+                                      showDialog<void>(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (c) => const Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      );
+                                      try {
+                                        final bytes =
+                                            await WerkbonPdfService
+                                                .generateWerkbonPdf(
+                                          opdrachtId,
+                                        );
+                                        if (!mounted) return;
+                                        Navigator.of(context).pop();
+                                        await Printing.layoutPdf(
+                                          onLayout: (_) async => bytes,
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        if (Navigator.of(context).canPop()) {
+                                          Navigator.of(context).pop();
+                                        }
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Fout bij ophalen PDF: $e',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
                             ),
-                            backgroundColor: modalCs.error,
-                            foregroundColor: modalCs.onError,
-                          ),
-                          label: Text(
-                            'Opdracht opnieuw openen',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 15,
+                          )
+                        else
+                          FilledButton.icon(
+                            onPressed: opdrachtId.isEmpty
+                                ? null
+                                : () => _opdrachtOpnieuwOpenen(item),
+                            icon: const Icon(Icons.undo_rounded, size: 20),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(52),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              backgroundColor: modalCs.error,
+                              foregroundColor: modalCs.onError,
+                            ),
+                            label: Text(
+                              'Opdracht opnieuw openen',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
                             ),
                           ),
-                ),
               ],
             ),
                   ),
