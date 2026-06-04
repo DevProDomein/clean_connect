@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../shared/services/werkbon_pdf_service.dart';
 import '../../../services/live_activity_service.dart';
 
 /// Persistente checklist voor een actieve werkbon. Vinkjes zijn alleen lokaal (geen DB per tick).
@@ -623,6 +624,18 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
           .select();
 
       debugPrint('X-RAY: Clock Out Success! Response: $updateResponse');
+
+      unawaited(
+        WerkbonPdfService.generateAndUploadWerkbon(widget.opdrachtId).then(
+          (url) {
+            if (url == null) {
+              debugPrint(
+                'Werkbon upload na uitklokken mislukt voor ${widget.opdrachtId}',
+              );
+            }
+          },
+        ),
+      );
 
       if (mounted) {
         _checkedByOpdracht.remove(widget.opdrachtId);

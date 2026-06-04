@@ -1,9 +1,10 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/contracts/supabase_v1_contract.dart';
 
 class WerkbonPdfService {
   static pw.Font? _fontReg;
@@ -431,66 +432,129 @@ class WerkbonPdfService {
           }
 
           elements.add(pw.SizedBox(height: 30));
-          elements.add(
-            pw.Container(
-              padding: const pw.EdgeInsets.all(16),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.grey400),
-                borderRadius: pw.BorderRadius.circular(4),
+          if (isAfgerond) {
+            var afrondTijd = eindTijd;
+            for (final p in planningen as List) {
+              final plan = _mapFrom(p);
+              final rawTijd = plan['werkelijke_eindtijd']?.toString().trim();
+              if (rawTijd != null && rawTijd.isNotEmpty) {
+                afrondTijd =
+                    rawTijd.length >= 5 ? rawTijd.substring(0, 5) : rawTijd;
+                break;
+              }
+            }
+            if (afrondTijd == '--:--' || afrondTijd.isEmpty) {
+              for (final p in planningen as List) {
+                final plan = _mapFrom(p);
+                final planEind = plan['eindtijd']?.toString().trim();
+                if (planEind != null && planEind.isNotEmpty) {
+                  afrondTijd =
+                      planEind.length >= 5 ? planEind.substring(0, 5) : planEind;
+                  break;
+                }
+              }
+            }
+            final datumDisplay = opdrachtDatum.length >= 10
+                ? opdrachtDatum.substring(0, 10)
+                : opdrachtDatum;
+
+            elements.add(
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey100,
+                  border: pw.Border.all(color: PdfColors.grey400),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      'Digitaal afgerond en ingediend',
+                      style: pw.TextStyle(
+                        font: _fontBold,
+                        fontSize: 11,
+                        color: PdfColors.green800,
+                      ),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text(
+                      'Door: $operatorString',
+                      style: pw.TextStyle(font: _fontReg, fontSize: 10),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      'Op: $datumDisplay om $afrondTijd',
+                      style: pw.TextStyle(font: _fontReg, fontSize: 10),
+                    ),
+                  ],
+                ),
               ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'Uitvoerder(s)',
-                        style: pw.TextStyle(font: _fontBold, fontSize: 10),
-                      ),
-                      pw.SizedBox(height: 30),
-                      pw.Text(
-                        '......................................................',
-                        style: const pw.TextStyle(color: PdfColors.grey400),
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                        'Naam / Handtekening',
-                        style: pw.TextStyle(
-                          font: _fontReg,
-                          fontSize: 8,
-                          color: PdfColors.grey700,
+            );
+          } else {
+            elements.add(
+              pw.Container(
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey400),
+                  borderRadius: pw.BorderRadius.circular(4),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Uitvoerder(s)',
+                          style: pw.TextStyle(font: _fontBold, fontSize: 10),
                         ),
-                      ),
-                    ],
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'Opdrachtgever (Klant)',
-                        style: pw.TextStyle(font: _fontBold, fontSize: 10),
-                      ),
-                      pw.SizedBox(height: 30),
-                      pw.Text(
-                        '......................................................',
-                        style: const pw.TextStyle(color: PdfColors.grey400),
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                        'Naam / Handtekening',
-                        style: pw.TextStyle(
-                          font: _fontReg,
-                          fontSize: 8,
-                          color: PdfColors.grey700,
+                        pw.SizedBox(height: 30),
+                        pw.Text(
+                          '......................................................',
+                          style: const pw.TextStyle(color: PdfColors.grey400),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'Naam / Handtekening',
+                          style: pw.TextStyle(
+                            font: _fontReg,
+                            fontSize: 8,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Opdrachtgever (Klant)',
+                          style: pw.TextStyle(font: _fontBold, fontSize: 10),
+                        ),
+                        pw.SizedBox(height: 30),
+                        pw.Text(
+                          '......................................................',
+                          style: const pw.TextStyle(color: PdfColors.grey400),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          'Naam / Handtekening',
+                          style: pw.TextStyle(
+                            font: _fontReg,
+                            fontSize: 8,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
+            );
+          }
 
           return elements;
         },
@@ -498,5 +562,36 @@ class WerkbonPdfService {
     );
 
     return pdf.save();
+  }
+
+  /// Genereert de werkbon-PDF, uploadt naar bucket [werkbonnen] en slaat URL op.
+  static Future<String?> generateAndUploadWerkbon(String opdrachtId) async {
+    try {
+      final bytes = await generateWerkbonPdf(opdrachtId);
+      final supabase = Supabase.instance.client;
+      final fileName =
+          'werkbon_${opdrachtId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+      await supabase.storage.from('werkbonnen').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(
+              contentType: 'application/pdf',
+              upsert: true,
+            ),
+          );
+
+      final publicUrl =
+          supabase.storage.from('werkbonnen').getPublicUrl(fileName);
+
+      await supabase.from(OpdrachtenTable.name).update({
+        OpdrachtenTable.werkbonPdfUrl: publicUrl,
+      }).eq(OpdrachtenTable.id, opdrachtId);
+
+      return publicUrl;
+    } catch (e, st) {
+      debugPrint('generateAndUploadWerkbon($opdrachtId): $e\n$st');
+      return null;
+    }
   }
 }

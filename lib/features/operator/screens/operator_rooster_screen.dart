@@ -1,12 +1,17 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/layouts/mobile_bottom_nav_layout.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 import '../../shared/services/werkbon_pdf_service.dart';
+import '../services/operator_planning_repository.dart';
+import '../widgets/task_completion_modal.dart';
 class OperatorRoosterScreen extends StatefulWidget {
   const OperatorRoosterScreen({super.key});
 
@@ -43,6 +48,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         ''';
 
   final _supabase = Supabase.instance.client;
+  final _planningRepository = OperatorPlanningRepository();
   final PageController _sliderController = PageController(viewportFraction: 0.85);
   bool _isLoading = true;
   String _errorMessage = '';
@@ -127,17 +133,26 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       }
 
       try {
-        final agendaRes = await _supabase
-            .from('app_operator_agenda')
-            .select()
-            .eq('operator_id', userId)
-            .order('geplande_datum', ascending: true)
-            .order('rooster_starttijd', ascending: true);
-        for (final row in agendaRes as List) {
+        final planningRows =
+            await _planningRepository.fetchRoosterPlanningForOperator(userId);
+        for (final row in planningRows) {
           addRawRow(row);
         }
       } catch (e) {
-        debugPrint('app_operator_agenda (rooster): $e');
+        debugPrint('fetchRoosterPlanningForOperator: $e');
+        try {
+          final agendaRes = await _supabase
+              .from('app_operator_agenda')
+              .select()
+              .eq('operator_id', userId)
+              .order('geplande_datum', ascending: true)
+              .order('rooster_starttijd', ascending: true);
+          for (final row in agendaRes as List) {
+            addRawRow(row);
+          }
+        } catch (e2) {
+          debugPrint('app_operator_agenda (rooster fallback): $e2');
+        }
       }
 
       final nu = DateTime.now();
@@ -145,9 +160,8 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       final weekStart = vandaag.subtract(Duration(days: vandaag.weekday - 1));
       final weekEnd = weekStart.add(const Duration(days: 6));
 
-      final split = _splitActiefEnToekomst(rawTaken);
-      final today = split.actief;
-      final upcoming = split.toekomst;
+      final today = _filterRoosterLijstVandaag(rawTaken);
+      final upcoming = _filterTakenVoorSlider(rawTaken);
 
       var kpiWeek = 0;
       for (final task in rawTaken) {
@@ -299,14 +313,48 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
   String _normStatus(dynamic v) {
     var s = (v ?? '').toString().trim().toLowerCase().replaceAll(' ', '_');
-    if (s.contains('voltooi') || s == 'afgerond') return 'voltooid';
+    if (s.contains('voltooi') || s == OpdrachtPlanningStatus.afgerond) {
+      return 'voltooid';
+    }
     if (s.contains('uitvoering')) return 'in_uitvoering';
     if (s == 'ingepland') return 'gepland';
     return s;
   }
 
-  void _openMijnUren() {
-    Navigator.of(context).pushNamed('/operator/uren');
+  void _navigateToMijnUren() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => const MobileBottomNavLayout(initialKey: 'uren'),
+      ),
+    );
+  }
+
+  bool _isTaakAfgerond(Map<String, dynamic> item) {
+    final status = _statusRaw(item);
+    return status == OpdrachtPlanningStatus.afgerond ||
+        status == OpdrachtPlanningStatus.voltooid;
+  }
+
+  /// Alleen vandaag of verleden (datum zonder tijd).
+  bool _magOpdrachtAfrondenOpDatum(Map<String, dynamic> item) {
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+    final taakDag = _taskDayFromItem(item) ?? vandaag;
+    return !taakDag.isAfter(vandaag);
+  }
+
+  Future<void> _openTaskCompletionModal(Map<String, dynamic> planningItem) async {
+    if (!_magOpdrachtAfrondenOpDatum(planningItem)) return;
+    await TaskCompletionModal.show(
+      context,
+      planningItem: planningItem,
+      onCompleted: () {
+        _navigateToMijnUren();
+      },
+    );
+    if (mounted) {
+      await _loadData(silent: true);
+    }
   }
 
   Future<void> _openWerkbonPdf(Map<String, dynamic> planningItem) async {
@@ -357,12 +405,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       return s.toString().trim().toLowerCase();
     }
     final pers = item['mijn_persoonlijke_status']?.toString().trim().toLowerCase();
-    if (pers == 'voltooid') return 'afgerond';
+    if (pers == 'voltooid') return OpdrachtPlanningStatus.afgerond;
     return pers ?? 'ingepland';
   }
-
-  String _urenStatusRaw(Map<String, dynamic> item) =>
-      (item['uren_status'] ?? 'open').toString().trim().toLowerCase();
 
   String _rawTaskStatus(Map<String, dynamic> task) {
     final s = task['status'] ?? task['planning_status'];
@@ -381,49 +426,75 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     return DateTime(parsed.year, parsed.month, parsed.day);
   }
 
-  ({List<Map<String, dynamic>> actief, List<Map<String, dynamic>> toekomst})
-      _splitActiefEnToekomst(List<Map<String, dynamic>> rawTaken) {
+  bool _isZelfdeKalenderdag(DateTime dag, DateTime referentie) {
+    return dag.year == referentie.year &&
+        dag.month == referentie.month &&
+        dag.day == referentie.day;
+  }
+
+  /// ListView: strikt opdrachten van vandaag (geen overdue, geen toekomst).
+  List<Map<String, dynamic>> _filterRoosterLijstVandaag(
+    List<Map<String, dynamic>> rawTaken,
+  ) {
     final nu = DateTime.now();
     final vandaag = DateTime(nu.year, nu.month, nu.day);
-
-    final actieveTaken = <Map<String, dynamic>>[];
-    final toekomstigeTaken = <Map<String, dynamic>>[];
+    final roosterLijst = <Map<String, dynamic>>[];
 
     for (final task in rawTaken) {
-      final taakDag = _taskDayFromItem(task) ?? vandaag;
-      final status = _rawTaskStatus(task);
-
-      final isVerleden = taakDag.isBefore(vandaag);
-      final isVandaag = taakDag.year == vandaag.year &&
-          taakDag.month == vandaag.month &&
-          taakDag.day == vandaag.day;
-
-      final isOpen = status != 'afgerond' &&
-          status != 'geannuleerd' &&
-          status != 'no_show';
-
-      if (isVandaag || (isVerleden && isOpen)) {
-        actieveTaken.add(task);
-      }
-
-      if (taakDag.isAfter(vandaag) || (isVerleden && isOpen && !isVandaag)) {
-        toekomstigeTaken.add(task);
+      final taakDag = _taskDayFromItem(task);
+      if (taakDag == null) continue;
+      if (_isZelfdeKalenderdag(taakDag, vandaag)) {
+        roosterLijst.add(task);
       }
     }
 
-    actieveTaken.sort((a, b) {
+    roosterLijst.sort((a, b) {
       final dA = _taskDayFromItem(a) ?? vandaag;
       final dB = _taskDayFromItem(b) ?? vandaag;
       return dA.compareTo(dB);
     });
 
-    toekomstigeTaken.sort((a, b) {
+    return roosterLijst;
+  }
+
+  /// Slider: vergeten (verleden, niet vandaag) + toekomstige open opdrachten.
+  List<Map<String, dynamic>> _filterTakenVoorSlider(
+    List<Map<String, dynamic>> rawTaken,
+  ) {
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+    final slider = <Map<String, dynamic>>[];
+
+    for (final task in rawTaken) {
+      final taakDag = _taskDayFromItem(task);
+      if (taakDag == null) continue;
+      final isVerleden = taakDag.isBefore(vandaag);
+      final isVandaag = _isZelfdeKalenderdag(taakDag, vandaag);
+      final isToekomst = taakDag.isAfter(vandaag);
+      final status = _rawTaskStatus(task);
+      final isOpen = status != OpdrachtPlanningStatus.afgerond &&
+          status != OpdrachtPlanningStatus.geannuleerd &&
+          status != OpdrachtPlanningStatus.noShow &&
+          status != OpdrachtPlanningStatus.voltooid;
+
+      if (!isOpen) continue;
+      if (isToekomst || (isVerleden && !isVandaag)) {
+        slider.add(task);
+      }
+    }
+
+    slider.sort((a, b) {
       final dA = _taskDayFromItem(a) ?? vandaag;
       final dB = _taskDayFromItem(b) ?? vandaag;
+      final aVerleden = dA.isBefore(vandaag);
+      final bVerleden = dB.isBefore(vandaag);
+      if (aVerleden != bVerleden) {
+        return aVerleden ? -1 : 1;
+      }
       return dA.compareTo(dB);
     });
 
-    return (actief: actieveTaken, toekomst: toekomstigeTaken);
+    return slider;
   }
 
   String? _offerteIdUitOpdrachtEmbed(Map<String, dynamic> opdrachtData) {
@@ -835,12 +906,10 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
       if (!context.mounted) return;
 
-      final paklijstAkkoord = planningMap['paklijst_akkoord'] == true;
-
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Werkprogramma & Paklijst'),
+          title: const Text('Werkprogramma'),
           content: SizedBox(
             width: double.maxFinite,
             height: 600,
@@ -923,42 +992,6 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Sluiten'),
             ),
-            if (!paklijstAkkoord)
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () async {
-                  try {
-                    await _supabase
-                        .from('opdracht_planning')
-                        .update({'paklijst_akkoord': true})
-                        .eq('id', planningId);
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    await _loadData(silent: true);
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Werkprogramma & paklijst bevestigd.'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  } catch (e) {
-                    debugPrint('Akkoord opslaan mislukt: $e');
-                    if (!ctx.mounted) return;
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(
-                        content: Text('Opslaan mislukt: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.check),
-                label: const Text('Gelezen & Akkoord'),
-              ),
           ],
         ),
       );
@@ -1138,28 +1171,6 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     }
   }
 
-  Future<void> _markeerOpdrachtAfgerond(
-    String planningId,
-    String opdrachtId,
-  ) async {
-    final supabase = Supabase.instance.client;
-    await supabase
-        .from('opdracht_planning')
-        .update({'status': 'afgerond'})
-        .eq('id', planningId);
-    await supabase
-        .from('opdrachten')
-        .update({'status': 'afgerond'})
-        .eq('id', opdrachtId);
-    await _loadData();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Opdracht gemarkeerd als afgerond.'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1362,321 +1373,299 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     );
   }
 
-  Widget _buildTaakActieKnoppen(Map<String, dynamic> planningItem) {
-    final paklijstAkkoord = planningItem['paklijst_akkoord'] == true;
-    final planningStatus = _statusRaw(planningItem);
-    final urenStatus = _urenStatusRaw(planningItem);
-    final planningId = _planningIdFromItem(planningItem);
-    final opdrachtId = planningItem['opdracht_id']?.toString() ?? '';
+  static const Color _premiumDeepNavy = Color(0xFF1A237E);
+  static const Color _premiumBrightBlue = Color(0xFF0052CC);
 
-    final fullWidthStyle = ElevatedButton.styleFrom(
-      minimumSize: const Size(double.infinity, 48),
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (!paklijstAkkoord) ...[
-          ElevatedButton.icon(
-            icon: const Icon(Icons.fact_check),
-            label: const Text('Bekijk Werkprogramma (Verplicht)'),
-            style: fullWidthStyle.copyWith(
-              backgroundColor: WidgetStatePropertyAll(Colors.orange.shade600),
-              foregroundColor: const WidgetStatePropertyAll(Colors.white),
-            ),
-            onPressed: () => _toonWerkprogrammaModal(context, planningItem),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-            label: const Text('Preview Werkbon'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red.shade700,
-              minimumSize: const Size(double.infinity, 48),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: () => _openWerkbonPdf(planningItem),
-          ),
-        ] else if (planningStatus != 'afgerond') ...[
-          ElevatedButton.icon(
-            icon: const Icon(Icons.check_circle),
-            label: const Text('Opdracht Afronden'),
-            style: fullWidthStyle.copyWith(
-              backgroundColor: WidgetStatePropertyAll(Colors.green.shade600),
-              foregroundColor: const WidgetStatePropertyAll(Colors.white),
-            ),
-            onPressed: planningId.isEmpty
-                ? null
-                : () async {
-                    final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Opdracht Afronden?'),
-                            content: const Text(
-                              'Ben je helemaal klaar met de werkzaamheden in het pand?',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('Nee, nog niet'),
-                              ),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                ),
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('Ja, afronden'),
-                              ),
-                            ],
-                          ),
-                        ) ??
-                        false;
-
-                    if (!confirm) return;
-                    if (opdrachtId.isNotEmpty) {
-                      await _markeerOpdrachtAfgerond(planningId, opdrachtId);
-                    } else {
-                      await _supabase
-                          .from('opdracht_planning')
-                          .update({'status': 'afgerond'})
-                          .eq('id', planningId);
-                      await _loadData(silent: true);
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Opdracht gemarkeerd als afgerond.'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    }
-                  },
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-            label: const Text('Preview Werkbon'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red.shade700,
-              minimumSize: const Size(double.infinity, 48),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: () => _openWerkbonPdf(planningItem),
-          ),
-        ] else if (urenStatus == 'open')
-          ElevatedButton.icon(
-            icon: const Icon(Icons.access_time),
-            label: const Text('Uren Indienen'),
-            style: fullWidthStyle.copyWith(
-              backgroundColor: WidgetStatePropertyAll(Colors.blue.shade700),
-              foregroundColor: const WidgetStatePropertyAll(Colors.white),
-            ),
-            onPressed: _openMijnUren,
-          )
-        else ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.thumb_up, color: Colors.green, size: 20),
-                SizedBox(width: 8),
-                Text(
-                  'Alles afgerond & uren ingediend!',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+  BoxDecoration _roosterPremiumCardDecoration({required bool isRedVariant}) {
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: isRedVariant
+            ? [Colors.red.shade600, Colors.redAccent.shade400]
+            : [
+                const Color(0xFF0F172A),
+                _premiumDeepNavy,
+                _premiumBrightBlue.withValues(alpha: 0.92),
               ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-              label: const Text('Preview Werkbon'),
-              onPressed: () => _openWerkbonPdf(planningItem),
-            ),
-          ),
-        ],
+      ),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 20,
+          offset: const Offset(0, 10),
+        ),
       ],
     );
   }
 
-  Widget _buildTodayCard(Map<String, dynamic> task) {
-    final nu = DateTime.now();
-    final vandaag = DateTime(nu.year, nu.month, nu.day);
-    final taakDag = _taskDayFromItem(task) ?? vandaag;
-    final isTeLaat = taakDag.isBefore(vandaag);
-    final geplandeDatumLabel = _datumLabel(task);
+  Widget _roosterPremiumInfoRow({
+    required IconData icon,
+    required String text,
+    int maxLines = 1,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 18, color: Colors.white.withValues(alpha: 0.95)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.lato(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.92),
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-    final String status = _normStatus(task['mijn_persoonlijke_status']);
-    final isGepland = status == 'gepland';
-    final isVoltooid = status == 'voltooid';
-    String badgeLabel;
-    Color badgeColor;
-    Color bgChip;
-    if (isTeLaat) {
-      badgeLabel = 'Te laat';
-      badgeColor = Colors.red.shade800;
-      bgChip = Colors.red.shade50;
-    } else if (status == 'in_uitvoering') {
-      badgeLabel = 'Nu Bezig';
-      badgeColor = Colors.blueAccent;
-      bgChip = Colors.blue.shade50;
-    } else if (isGepland) {
-      badgeLabel = 'Gepland';
-      badgeColor = Colors.grey.shade600;
-      bgChip = Colors.grey.shade100;
-    } else if (isVoltooid) {
-      badgeLabel = 'Voltooid';
-      badgeColor = Colors.green.shade700;
-      bgChip = Colors.green.shade50;
-    } else {
-      badgeLabel = task['mijn_persoonlijke_status']?.toString() ?? '—';
-      badgeColor = Colors.grey.shade700;
-      bgChip = Colors.grey.shade100;
+  Widget _buildTaakCompactActions(
+    Map<String, dynamic> task, {
+    bool forPremiumCard = false,
+  }) {
+    final werkprogrammaColor =
+        forPremiumCard ? Colors.white : Colors.blue.shade700;
+    final werkbonColor = forPremiumCard ? Colors.white70 : Colors.red.shade700;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Bekijk werkprogramma',
+          icon: Icon(Icons.fact_check_outlined, color: werkprogrammaColor),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _toonWerkprogrammaModal(context, task),
+        ),
+        IconButton(
+          tooltip: 'Preview werkbon',
+          icon: Icon(Icons.picture_as_pdf_outlined, color: werkbonColor),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _openWerkbonPdf(task),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTaakAfrondenKnop(Map<String, dynamic> task) {
+    if (_isTaakAfgerond(task)) {
+      return Text(
+        'Afgerond — uren via Mijn Uren',
+        style: GoogleFonts.lato(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Colors.green.shade300,
+        ),
+      );
     }
+    if (!_magOpdrachtAfrondenOpDatum(task)) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      width: double.infinity,
+      height: 44,
+      child: ElevatedButton.icon(
+        icon: const Icon(Icons.check_circle_outline, size: 18),
+        label: Text(
+          'Opdracht afronden',
+          style: GoogleFonts.lato(
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green.shade700,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+        ),
+        onPressed: () => _openTaskCompletionModal(task),
+      ),
+    );
+  }
 
-    final cardBody = Padding(
-      padding: const EdgeInsets.all(20),
+  Widget? _roosterPandThumbnail(Map<String, dynamic> taak) {
+    final opdrachtEmbed = taak['opdracht'];
+    final projectData =
+        taak['projecten'] ??
+        (opdrachtEmbed is Map ? opdrachtEmbed['projecten'] : null);
+    final raw = projectData is Map
+        ? projectData['pand_foto_url']?.toString().trim()
+        : null;
+    if (raw == null || raw.isEmpty || raw == 'null') return null;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 56,
+        height: 56,
+        child: CachedNetworkImage(
+          imageUrl: raw,
+          fit: BoxFit.cover,
+          placeholder: (context, _) => Container(
+            color: Colors.white.withValues(alpha: 0.12),
+            alignment: Alignment.center,
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white.withValues(alpha: 0.8),
+              ),
+            ),
+          ),
+          errorWidget: (context, _, _) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPremiumRoosterTaskCard({
+    required Map<String, dynamic> task,
+    required bool isRedVariant,
+    required EdgeInsetsGeometry margin,
+    bool expandVertically = false,
+    String? topChipLabel,
+  }) {
+    final opdrachtEmbed = task['opdracht'];
+    final bedrijfsnaam = task['bedrijfsnaam']?.toString() ??
+        (opdrachtEmbed is Map
+            ? opdrachtEmbed['bedrijfsnaam']?.toString()
+            : null) ??
+        'Onbekende klant';
+    final adres = task['uitvoer_adres_volledig']?.toString() ??
+        (opdrachtEmbed is Map
+            ? opdrachtEmbed['uitvoer_adres_volledig']?.toString()
+            : null) ??
+        'Adres onbekend';
+    final start = _safeTime(task['rooster_starttijd'] ?? task['starttijd']);
+    final eind = _safeTime(task['rooster_eindtijd'] ?? task['eindtijd']);
+    final projectNaam = task['project_naam']?.toString().trim() ?? '';
+    final thumbnail = _roosterPandThumbnail(task);
+
+    return Container(
+      margin: margin,
+      decoration: _roosterPremiumCardDecoration(isRedVariant: isRedVariant),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize:
+            expandVertically ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '${_safeTime(task['rooster_starttijd'])} - ${_safeTime(task['rooster_eindtijd'])}',
-                style: GoogleFonts.lato(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.black87,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: bgChip,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  badgeLabel,
-                  style: TextStyle(
-                    color: badgeColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            task['bedrijfsnaam'] ?? 'Onbekende Klant',
-            style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Icon(
-                Icons.business_center,
-                size: 14,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  task['project_naam'] ?? '',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.location_on, size: 14, color: Colors.grey.shade400),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  task['uitvoer_adres_volledig'] ?? 'Adres onbekend',
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+              if (topChipLabel != null)
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      topChipLabel,
+                      style: GoogleFonts.lato(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.95),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              _buildTaakCompactActions(task, forPremiumCard: true),
             ],
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Divider(height: 1),
+          if (topChipLabel != null) const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  bedrijfsnaam,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                    letterSpacing: -0.3,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              if (thumbnail != null) ...[
+                const SizedBox(width: 10),
+                thumbnail,
+              ],
+            ],
           ),
-          _buildTaakActieKnoppen(task),
+          if (projectNaam.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _roosterPremiumInfoRow(
+              icon: Icons.business_center_rounded,
+              text: projectNaam,
+            ),
+          ],
+          const SizedBox(height: 14),
+          _roosterPremiumInfoRow(
+            icon: Icons.access_time_rounded,
+            text: '$start – $eind',
+          ),
+          const SizedBox(height: 10),
+          _roosterPremiumInfoRow(
+            icon: Icons.location_on_rounded,
+            text: adres,
+            maxLines: 2,
+          ),
+          if (expandVertically) const Spacer() else const SizedBox(height: 14),
+          const SizedBox(height: 12),
+          _buildTaakAfrondenKnop(task),
         ],
       ),
     );
+  }
 
-    return Container(
+  Widget _buildTodayCard(Map<String, dynamic> task) {
+    final String status = _normStatus(task['mijn_persoonlijke_status']);
+    final isGepland = status == 'gepland';
+    final isVoltooid = status == 'voltooid';
+    final String badgeLabel;
+    if (status == 'in_uitvoering') {
+      badgeLabel = 'Nu bezig';
+    } else if (isGepland) {
+      badgeLabel = 'Gepland';
+    } else if (isVoltooid) {
+      badgeLabel = 'Voltooid';
+    } else {
+      badgeLabel = task['mijn_persoonlijke_status']?.toString() ?? '—';
+    }
+
+    return _buildPremiumRoosterTaskCard(
+      task: task,
+      isRedVariant: false,
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      decoration: BoxDecoration(
-        color: isTeLaat ? Colors.red.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isTeLaat ? Colors.red.shade400 : Colors.grey.shade300,
-          width: isTeLaat ? 2 : 1,
-        ),
-        boxShadow: isTeLaat
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 20,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (isTeLaat)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade600,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(10),
-                ),
-              ),
-              child: Text(
-                'VERGETEN AF TE RONDEN: $geplandeDatumLabel',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          cardBody,
-        ],
-      ),
+      topChipLabel: badgeLabel,
     );
   }
 
@@ -1716,118 +1705,14 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     final datumTekst = isVerleden
         ? 'ACHTERSTALLIG: $datumRaw'
         : datumRaw;
+    final isOverdue = isVerleden && !_isTaakAfgerond(taak);
 
-    final opdrachtEmbed = taak['opdracht'];
-    final bedrijfsnaam = taak['bedrijfsnaam']?.toString() ??
-        (opdrachtEmbed is Map
-            ? opdrachtEmbed['bedrijfsnaam']?.toString()
-            : null) ??
-        'Klant';
-    final adres = taak['uitvoer_adres_volledig']?.toString() ??
-        (opdrachtEmbed is Map
-            ? opdrachtEmbed['uitvoer_adres_volledig']?.toString()
-            : null) ??
-        'Adres onbekend';
-    final start = _safeTime(taak['rooster_starttijd'] ?? taak['starttijd']);
-    final eind = _safeTime(taak['rooster_eindtijd'] ?? taak['eindtijd']);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      decoration: BoxDecoration(
-        color: isVerleden ? Colors.red.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isVerleden ? Colors.red.shade200 : Colors.grey.shade300,
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isVerleden ? Colors.red.shade100 : Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    datumTekst,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: isVerleden
-                          ? Colors.red.shade900
-                          : Colors.blue.shade900,
-                    ),
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.calendar_month,
-                color: isVerleden ? Colors.red : Colors.grey,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            bedrijfsnaam,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Tijd: $start - $eind',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            adres,
-            style: const TextStyle(color: Colors.blueGrey, fontSize: 13),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.blue.shade700,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () => _toonWerkprogrammaModal(context, taak),
-                  child: const Text('Werkprogramma', style: TextStyle(fontSize: 12)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red.shade700,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () => _openWerkbonPdf(taak),
-                  child: const Text('Preview Werkbon', style: TextStyle(fontSize: 12)),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return _buildPremiumRoosterTaskCard(
+      task: taak,
+      isRedVariant: isOverdue,
+      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      expandVertically: true,
+      topChipLabel: datumTekst,
     );
   }
 
@@ -1840,12 +1725,12 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         const Padding(
           padding: EdgeInsets.all(16),
           child: Text(
-            'Overige & Komende Opdrachten',
+            'Vergeten & Komende Opdrachten',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
         ),
         SizedBox(
-          height: 300,
+          height: 240,
           child: Stack(
             alignment: Alignment.center,
             children: [

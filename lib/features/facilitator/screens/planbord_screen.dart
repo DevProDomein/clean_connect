@@ -7,6 +7,7 @@ import 'package:infinite_calendar_view/infinite_calendar_view.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
@@ -210,7 +211,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           .from('opdracht_planning')
           .select(
             'starttijd, eindtijd, geplande_datum, '
-            'opdracht:opdrachten(project:projecten(offerte_id))',
+            'opdracht:opdrachten!opdracht_planning_opdracht_id_fkey('
+            'project:projecten(offerte_id))',
           )
           .eq('operator_id', operatorId)
           .inFilter('geplande_datum', datumsDb);
@@ -298,7 +300,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           _handmatigeSmartTijd = null;
         }
       });
-    } catch (e) {
+    } catch (e, stacktrace) {
+      // ignore: avoid_print
+      print('--- 🚨 CRASH IN PLANBORD DATA FETCH (veilige tijden) 🚨 ---');
+      // ignore: avoid_print
+      print(e.toString());
+      // ignore: avoid_print
+      print(stacktrace);
       debugPrint('Fout bij berekenen veilige tijden: $e');
       if (!mounted) return;
       setState(() {
@@ -1141,27 +1149,80 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
   /// `*` incl. [benodigde_operators]; embeds voor planning/uitvoerder.
   static const String _reedsGeplandeSelect =
-      '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),planning:opdracht_planning!huidige_planning_id(starttijd,eindtijd)';
+      '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),'
+      'planning:opdracht_planning!huidige_planning_id(starttijd,eindtijd)';
 
-  Future<List<Map<String, dynamic>>> _fetchReedsGeplandeQueryVoorDag(
-    DateTime day,
-  ) async {
-    final dateStr = DateFormat('yyyy-MM-dd').format(_normalizeDate(day));
-    var q = AppSupabase.client
-        .from('opdrachten')
-        .select(_reedsGeplandeSelect)
-        .inFilter('status', ['ingepland', 'afgerond'])
-        .eq('geplande_datum', dateStr);
-    if (_selectedManualProjectId != null &&
-        _selectedManualProjectId!.isNotEmpty) {
-      q = q.eq('project_id', _selectedManualProjectId!);
-    }
-    final response = await q.order('tijdslot_start', ascending: true);
+  /// Zelfde select zonder [opdracht_planning]-embed (fallback bij PGRST201).
+  static const String _reedsGeplandeSelectBasis =
+      '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam)';
+
+  void _logPlanbordFetchCrash(String label, Object e, StackTrace stacktrace) {
+    // ignore: avoid_print
+    print('--- 🚨 CRASH IN PLANBORD DATA FETCH ($label) 🚨 ---');
+    // ignore: avoid_print
+    print(e.toString());
+    // ignore: avoid_print
+    print(stacktrace);
+  }
+
+  List<Map<String, dynamic>> _mapIngeplandeOpdrachtRows(dynamic response) {
     return (response as List)
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .where((row) => _text(row['huidige_planning_id']).isNotEmpty)
         .toList(growable: false);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchIngeplandeOpdrachten({
+    required String select,
+    String? geplandeDatumEq,
+    String orderColumn = 'geplande_datum',
+  }) async {
+    var q = AppSupabase.client
+        .from('opdrachten')
+        .select(select)
+        .inFilter('status', ['ingepland', 'afgerond']);
+    if (geplandeDatumEq != null && geplandeDatumEq.isNotEmpty) {
+      q = q.eq('geplande_datum', geplandeDatumEq);
+    }
+    if (_selectedManualProjectId != null &&
+        _selectedManualProjectId!.isNotEmpty) {
+      q = q.eq('project_id', _selectedManualProjectId!);
+    }
+    final response = await q.order(orderColumn, ascending: true);
+    return _mapIngeplandeOpdrachtRows(response);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchIngeplandeOpdrachtenMetFallback({
+    required String crashLabel,
+    String? geplandeDatumEq,
+    String orderColumn = 'geplande_datum',
+  }) async {
+    try {
+      return await _fetchIngeplandeOpdrachten(
+        select: _reedsGeplandeSelect,
+        geplandeDatumEq: geplandeDatumEq,
+        orderColumn: orderColumn,
+      );
+    } catch (e, stacktrace) {
+      _logPlanbordFetchCrash('$crashLabel (planning-embed)', e, stacktrace);
+      return _fetchIngeplandeOpdrachten(
+        select: _reedsGeplandeSelectBasis,
+        geplandeDatumEq: geplandeDatumEq,
+        orderColumn: orderColumn,
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchReedsGeplandeQueryVoorDag(
+    DateTime day,
+  ) async {
+    final dateStr = DateFormat('yyyy-MM-dd').format(_normalizeDate(day));
+    return _fetchIngeplandeOpdrachtenMetFallback(
+      crashLabel: 'reedsGeplandeQueryVoorDag',
+      geplandeDatumEq: dateStr,
+      orderColumn: 'tijdslot_start',
+    );
   }
 
   Future<void> _fetchReedsGeplandeTakenVoorDag(DateTime day) async {
@@ -1174,7 +1235,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         _reedsGeplandeTaken = _sortReedsGeplande(list);
         _isLoadingReedsGeplande = false;
       });
-    } catch (e) {
+    } catch (e, stacktrace) {
+      _logPlanbordFetchCrash('reeds ingeplande opdrachten (dag)', e, stacktrace);
       debugPrint('Planbord reeds ingeplande opdrachten (dag) mislukt: $e');
       if (!mounted) return;
       setState(() {
@@ -1262,29 +1324,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
       List<Map<String, dynamic>> ingeplandList = const [];
       try {
-        var ingeplandQuery = AppSupabase.client
-            .from('opdrachten')
-            .select(_reedsGeplandeSelect)
-            .inFilter('status', ['ingepland', 'afgerond']);
-
-        if (_selectedManualProjectId != null &&
-            _selectedManualProjectId!.isNotEmpty) {
-          ingeplandQuery = ingeplandQuery.eq(
-            'project_id',
-            _selectedManualProjectId!,
-          );
-        }
-
-        final ingeplandResponse = await ingeplandQuery.order(
-          'geplande_datum',
-          ascending: true,
+        ingeplandList = await _fetchIngeplandeOpdrachtenMetFallback(
+          crashLabel: 'ingeplande opdrachten (kalender)',
         );
-        ingeplandList = (ingeplandResponse as List)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .where((row) => _text(row['huidige_planning_id']).isNotEmpty)
-            .toList(growable: false);
-      } catch (e) {
+      } catch (e, stacktrace) {
+        _logPlanbordFetchCrash('ingeplande opdrachten (kalender)', e, stacktrace);
         debugPrint('Planbord ingeplande opdrachten laden mislukt: $e');
         ingeplandList = const [];
       }
@@ -1312,7 +1356,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         reedsVoorDag = await _fetchReedsGeplandeQueryVoorDag(
           _selectedDay ?? _focusedDay,
         );
-      } catch (e) {
+      } catch (e, stacktrace) {
+        _logPlanbordFetchCrash('reedsGeplande (geselecteerde dag)', e, stacktrace);
         debugPrint('Planbord reedsGeplande (geselecteerde dag) mislukt: $e');
         reedsVoorDag = const [];
       }
@@ -1325,7 +1370,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         _isLoadingReedsGeplande = false;
         _isLoading = false;
       });
-    } catch (error) {
+    } catch (error, stacktrace) {
+      _logPlanbordFetchCrash('_loadTasks', error, stacktrace);
       debugPrint('Planbord _loadTasks failed: $error');
       if (!mounted) return;
       setState(() {
@@ -3116,6 +3162,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final datumStr = DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(datum);
     final tijdStr = '$start – $end';
     final isAfgerond = _text(item['status']).toLowerCase() == 'afgerond';
+    final werkbonPdfUrl = _text(meta['werkbon_pdf_url']);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -3310,6 +3357,33 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   : () async {
                                       Navigator.of(ctx).pop();
                                       if (!mounted) return;
+
+                                      if (werkbonPdfUrl.isNotEmpty) {
+                                        try {
+                                          final uri = Uri.parse(werkbonPdfUrl);
+                                          if (!await launchUrl(
+                                            uri,
+                                            mode:
+                                                LaunchMode.externalApplication,
+                                          )) {
+                                            throw Exception(
+                                              'Kan browser niet openen.',
+                                            );
+                                          }
+                                        } catch (e) {
+                                          if (!mounted) return;
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Kan PDF niet openen: $e',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return;
+                                      }
+
                                       showDialog<void>(
                                         context: context,
                                         barrierDismissible: false,
@@ -4353,11 +4427,6 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     final hasAny = openCount > 0 || planCount > 0;
     final red = Colors.red.shade700;
     final blue = Colors.blue.shade700;
-    final subStyle = GoogleFonts.inter(
-      fontWeight: FontWeight.w800,
-      fontSize: 7.5,
-      height: 1,
-    );
 
     if (!hasAny) {
       return Padding(
@@ -4411,24 +4480,19 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                         ),
                       ),
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
                           '$openCount',
                           style: GoogleFonts.inter(
                             color: red,
-                            fontSize: 10.5,
+                            fontSize: 11,
                             fontWeight: FontWeight.w900,
+                            height: 1,
                           ),
                         ),
-                        Text(
-                          'open',
-                          style: subStyle.copyWith(
-                            color: red.withValues(alpha: 0.88),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -4449,24 +4513,19 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                         ),
                       ),
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
                           '$planCount',
                           style: GoogleFonts.inter(
                             color: blue,
-                            fontSize: 10.5,
+                            fontSize: 11,
                             fontWeight: FontWeight.w900,
+                            height: 1,
                           ),
                         ),
-                        Text(
-                          'gepl.',
-                          style: subStyle.copyWith(
-                            color: blue.withValues(alpha: 0.88),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

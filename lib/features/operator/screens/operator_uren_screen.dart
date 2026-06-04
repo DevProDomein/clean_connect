@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/utils/payroll_calculation.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
@@ -38,6 +39,8 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   DateTime _regCalendarFocusedDay = DateTime.now();
   DateTime? _regCalendarSelectedDay = DateTime.now();
   CalendarFormat _regCalendarFormat = CalendarFormat.month;
+  final PageController _registratieSliderController =
+      PageController(viewportFraction: 0.8);
 
   final NumberFormat _eur = NumberFormat.currency(
     locale: 'nl_NL',
@@ -53,7 +56,25 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
 
   @override
   void dispose() {
+    _registratieSliderController.dispose();
     super.dispose();
+  }
+
+  Widget _regCalendarChevron({required IconData icon}) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFF0F4FA),
+            _brightBlue.withValues(alpha: 0.08),
+          ],
+        ),
+        shape: BoxShape.circle,
+        border: Border.all(color: _brightBlue.withValues(alpha: 0.12)),
+      ),
+      child: Icon(icon, size: 20, color: _deepNavy),
+    );
   }
 
   Future<void> _loadData() async {
@@ -719,21 +740,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     return t.isEmpty ? '—' : t;
   }
 
-  BoxDecoration _cardDecoration({Border? border}) {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: border,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 20,
-          offset: const Offset(0, 8),
-        ),
-      ],
-    );
-  }
-
   BoxDecoration _kpiDecoration() {
     return BoxDecoration(
       color: Colors.white,
@@ -1066,128 +1072,110 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     );
   }
 
+  BoxDecoration get _premiumShiftCardDecoration => BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF0F172A),
+            _deepNavy,
+            _brightBlue.withValues(alpha: 0.92),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      );
+
+  /// Overzicht / historie: ingevulde diensten in dezelfde premium stijl als registratie.
   Widget _premiumShiftCard(Map<String, dynamic> row) {
     final day = _parseShiftDay(row['geplande_datum']);
-    final dayNum = day != null ? '${day.day}' : '—';
     final naam = _shiftBedrijfsnaam(row);
     final t0 = _safeTime(row['werkelijke_starttijd']);
     final t1 = _safeTime(row['werkelijke_eindtijd']);
     final tijden = '$t0 – $t1';
-    final urenLabel = '${_formatUrenNl(row['gewerkte_uren_decimaal'])} u';
+    final urenLabel = '${_formatUrenNl(row['gewerkte_uren_decimaal'])} uur';
     final brutoText = _formatBruto(row['bruto_loonkosten']);
     final isPendingApproval = _urenStatusNorm(row) == 'ingediend';
+    final adres = _uitvoerAdresVolledigVoorRegistratie(row);
+    final datumLabel = day != null
+        ? DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(day)
+        : null;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        decoration: _cardDecoration(
-          border: isPendingApproval
-              ? Border.all(color: Colors.orange.shade700, width: 2)
-              : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (isPendingApproval)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Text(
-                  'In afwachting van goedkeuring',
-                  style: GoogleFonts.lato(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.orange.shade800,
-                  ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: _premiumShiftCardDecoration,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isPendingApproval)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade400.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Text(
+                'In afwachting van goedkeuring',
+                style: GoogleFonts.lato(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.orange.shade100,
                 ),
               ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFEEF2FF),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    dayNum,
-                    style: GoogleFonts.lato(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.4,
-                      color: _deepNavy,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        naam,
-                        style: GoogleFonts.lato(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.5,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        tijden,
-                        style: GoogleFonts.lato(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'Geregistreerde uren',
-                      style: GoogleFonts.lato(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.2,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      urenLabel,
-                      style: GoogleFonts.lato(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
-                        color: const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      brutoText,
-                      style: GoogleFonts.lato(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                        color: Colors.grey.shade800,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+            ),
+          Text(
+            naam,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              fontSize: 17,
+              letterSpacing: -0.3,
+              color: Colors.white,
+            ),
+          ),
+          if (datumLabel != null) ...[
+            const SizedBox(height: 14),
+            _registratieSliderInfoRow(
+              icon: Icons.calendar_today_rounded,
+              text: datumLabel,
             ),
           ],
-        ),
+          const SizedBox(height: 14),
+          _registratieSliderInfoRow(
+            icon: Icons.access_time_rounded,
+            text: tijden,
+          ),
+          if (adres.isNotEmpty && adres != 'Locatie') ...[
+            const SizedBox(height: 10),
+            _registratieSliderInfoRow(
+              icon: Icons.location_on_rounded,
+              text: adres,
+              maxLines: 2,
+            ),
+          ],
+          const SizedBox(height: 10),
+          _registratieSliderInfoRow(
+            icon: Icons.timelapse_rounded,
+            text: 'Geregistreerd: $urenLabel',
+          ),
+          const SizedBox(height: 10),
+          _registratieSliderInfoRow(
+            icon: Icons.payments_outlined,
+            text: brutoText,
+          ),
+        ],
       ),
     );
   }
@@ -1239,9 +1227,39 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     return out;
   }
 
+  bool _isPlanningAfgerond(Map<String, dynamic> row) {
+    final planningStatus =
+        (row[OpdrachtPlanningTable.status] ?? '').toString().trim().toLowerCase();
+    if (planningStatus == OpdrachtPlanningStatus.afgerond) {
+      return true;
+    }
+    final opdracht = row['opdracht'];
+    if (opdracht is Map) {
+      final opdrachtStatus = (opdracht[OpdrachtenTable.status] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      if (opdrachtStatus == OpdrachtStatus.afgerond) return true;
+    }
+    return false;
+  }
+
   Future<void> _openUrenInvullenSheet(Map<String, dynamic> row) async {
     final id = row['id']?.toString();
     if (id == null || id.isEmpty) return;
+
+    if (!_isPlanningAfgerond(row)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Rond deze opdracht eerst af op de rooster pagina om uren te kunnen invullen.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     final nu = DateTime.now();
     final vandaag = DateTime(nu.year, nu.month, nu.day);
@@ -1281,6 +1299,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     ];
 
     if (!mounted) return;
+    final magUrenInvullen = _isPlanningAfgerond(row);
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1314,6 +1333,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
             final urenDec = totalMin / 60.0;
 
             Future<void> submit() async {
+              if (!magUrenInvullen) return;
               final ok = await showDialog<bool>(
                 context: ctx,
                 builder: (dCtx) => AlertDialog(
@@ -1397,7 +1417,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                         ),
                         const SizedBox(height: 18),
                         OutlinedButton(
-                          onPressed: pickStart,
+                          onPressed: magUrenInvullen ? pickStart : null,
                           child: Text(
                             'Starttijd: ${times[0].format(ctx)}',
                             style: GoogleFonts.lato(
@@ -1407,7 +1427,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                         ),
                         const SizedBox(height: 8),
                         OutlinedButton(
-                          onPressed: pickEnd,
+                          onPressed: magUrenInvullen ? pickEnd : null,
                           child: Text(
                             'Eindtijd: ${times[1].format(ctx)}',
                             style: GoogleFonts.lato(
@@ -1426,7 +1446,11 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                         ),
                         const SizedBox(height: 20),
                         FilledButton(
-                          onPressed: submit,
+                          onPressed: magUrenInvullen ? submit : null,
+                          style: FilledButton.styleFrom(
+                            disabledBackgroundColor: Colors.grey.shade300,
+                            disabledForegroundColor: Colors.grey.shade600,
+                          ),
                           child: Text(
                             'Uren indienen',
                             style: GoogleFonts.lato(
@@ -1492,8 +1516,8 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                     letterSpacing: -0.5,
                   ),
                   tabs: const [
-                    Tab(text: 'Overzicht'),
                     Tab(text: 'Uren Registreren'),
+                    Tab(text: 'Overzicht'),
                   ],
                 ),
         ),
@@ -1518,8 +1542,8 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                 )
               : TabBarView(
                   children: [
-                    _buildOverzichtTab(),
                     _buildRegistratieTab(),
+                    _buildOverzichtTab(),
                   ],
                 ),
         ),
@@ -1624,10 +1648,9 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                                 ),
                               ),
                               onPressed: () {
-                                // DIT IS DE MAGIE: Schuif automatisch naar Tab 2 (Index 1)!
                                 DefaultTabController.of(
                                   tabContext,
-                                ).animateTo(1);
+                                ).animateTo(0);
                               },
                             ),
                           ),
@@ -1708,122 +1731,195 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     BuildContext context,
     Map<String, dynamic> row, {
     required bool toonDatumInSubtitel,
-    bool compact = false,
+    bool forSlider = false,
   }) {
-    final tt = Theme.of(context).textTheme;
     final day = _parseShiftDay(row['geplande_datum']);
     final timeLine =
         '${_safeTime(row['starttijd'])} – ${_safeTime(row['eindtijd'])}';
     final adres = _uitvoerAdresVolledigVoorRegistratie(row);
+    final magInvullen = _isPlanningAfgerond(row);
+    final bedrijfsnaam = _shiftBedrijfsnaam(row);
 
-    final subtitleChildren = <Widget>[
-      if (toonDatumInSubtitel && day != null) ...[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.calendar_today_outlined,
-              size: compact ? 15 : 16,
-              color: Colors.grey.shade700,
+    return _premiumRegistratieShiftCard(
+      row: row,
+      bedrijfsnaam: bedrijfsnaam,
+      timeLine: timeLine,
+      adres: adres,
+      magInvullen: magInvullen,
+      datumLabel: toonDatumInSubtitel && day != null
+          ? DateFormat('EEEE d MMMM', 'nl_NL').format(day)
+          : null,
+      margin: forSlider
+          ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+          : const EdgeInsets.only(bottom: 12),
+      expandVertically: forSlider,
+    );
+  }
+
+  /// Gedeelde premium card voor slider én verticale maandlijst (Uren Registreren).
+  Widget _premiumRegistratieShiftCard({
+    required Map<String, dynamic> row,
+    required String bedrijfsnaam,
+    required String timeLine,
+    required String adres,
+    required bool magInvullen,
+    required EdgeInsetsGeometry margin,
+    String? datumLabel,
+    bool expandVertically = false,
+  }) {
+    final invullenKnop = SizedBox(
+      width: double.infinity,
+      height: 44,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor:
+              magInvullen ? Colors.orange.shade600 : Colors.grey.shade400,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: Colors.grey.shade300,
+          disabledForegroundColor: Colors.grey.shade600,
+          elevation: magInvullen ? 2 : 0,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+        ),
+        onPressed: magInvullen ? () => _openUrenInvullenSheet(row) : null,
+        child: Text(
+          magInvullen ? 'Invullen' : 'Eerst afronden',
+          style: GoogleFonts.lato(
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
+      ),
+    );
+
+    return Container(
+      margin: margin,
+      decoration: _premiumShiftCardDecoration,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            bedrijfsnaam,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              fontSize: 17,
+              letterSpacing: -0.3,
+              color: Colors.white,
             ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                DateFormat('EEEE d MMMM', 'nl_NL').format(day),
-                style: (compact ? tt.bodySmall : tt.bodyMedium)?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800,
-                  height: 1.25,
-                ),
+          ),
+          if (datumLabel != null) ...[
+            const SizedBox(height: 14),
+            _registratieSliderInfoRow(
+              icon: Icons.calendar_today_rounded,
+              text: datumLabel,
+            ),
+          ],
+          const SizedBox(height: 14),
+          _registratieSliderInfoRow(
+            icon: Icons.access_time_rounded,
+            text: timeLine,
+          ),
+          const SizedBox(height: 10),
+          _registratieSliderInfoRow(
+            icon: Icons.location_on_rounded,
+            text: adres,
+            maxLines: 2,
+          ),
+          if (!magInvullen) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Rond deze opdracht eerst af op de rooster pagina om uren te kunnen invullen.',
+              style: GoogleFonts.lato(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.orange.shade100,
+                height: 1.35,
               ),
             ),
           ],
-        ),
-        SizedBox(height: compact ? 4 : 6),
-      ],
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.access_time_rounded,
-            size: compact ? 15 : 16,
-            color: Colors.grey.shade700,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              timeLine,
-              style: (compact ? tt.bodySmall : tt.bodyMedium)?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
-                height: 1.25,
-              ),
-            ),
-          ),
+          if (expandVertically) const Spacer() else const SizedBox(height: 14),
+          const SizedBox(height: 12),
+          invullenKnop,
         ],
       ),
-      const SizedBox(height: 6),
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.location_on, size: 16, color: Colors.blueGrey),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              adres,
-              style: const TextStyle(color: Colors.black87, fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    ];
+    );
+  }
 
-    // Vervang de decoratie van de actieve open-taken container/card door deze Apple-stijl:
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.orange.shade50, // Lichte opvallende achtergrond
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.shade300, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+  Widget _registratieSliderInfoRow({
+    required IconData icon,
+    required String text,
+    int maxLines = 1,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
           ),
-        ],
-      ),
-      child: ListTile(
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: compact ? 12 : 16,
-          vertical: compact ? 6 : 8,
+          child: Icon(icon, size: 18, color: Colors.white.withValues(alpha: 0.95)),
         ),
-        title: Text(
-          _shiftBedrijfsnaam(row),
-          style: GoogleFonts.lato(
-            fontWeight: FontWeight.w900,
-            fontSize: compact ? 14 : 15,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: subtitleChildren,
-        ),
-        trailing: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange.shade600,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.lato(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.92),
+              height: 1.3,
             ),
           ),
-          onPressed: () {
-            // Behoud jullie originele onTap() actie die de invul-modal opent!
-            _openUrenInvullenSheet(row);
-          },
-          child: const Text('Invullen'),
         ),
+      ],
+    );
+  }
+
+  Widget _buildRegistratieOpenShiftsCarousel(
+    List<Map<String, dynamic>> openList,
+  ) {
+    return SizedBox(
+      height: 252,
+      child: PageView.builder(
+        controller: _registratieSliderController,
+        itemCount: openList.length,
+        itemBuilder: (context, index) {
+          return AnimatedBuilder(
+            animation: _registratieSliderController,
+            builder: (context, child) {
+              double scale = 1.0;
+              double opacity = 1.0;
+              if (_registratieSliderController.position.haveDimensions) {
+                final pageDelta =
+                    _registratieSliderController.page! - index;
+                scale = (1 - (pageDelta.abs() * 0.15)).clamp(0.85, 1.0);
+                opacity = (1 - (pageDelta.abs() * 0.35)).clamp(0.55, 1.0);
+              }
+              return Center(
+                child: Transform.scale(
+                  scale: scale,
+                  child: Opacity(opacity: opacity, child: child),
+                ),
+              );
+            },
+            child: _registratieOpenShiftTile(
+              context,
+              openList[index],
+              toonDatumInSubtitel: false,
+              forSlider: true,
+            ),
+          );
+        },
       ),
     );
   }
@@ -1838,71 +1934,148 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-          child: TableCalendar<void>(
-            locale: 'nl_NL',
-            firstDay: DateTime.utc(2020, 1, 1),
-            lastDay: DateTime.utc(2035, 12, 31),
-            focusedDay: _regCalendarFocusedDay,
-            selectedDayPredicate: (d) => isSameDay(_regCalendarSelectedDay, d),
-            calendarFormat: _regCalendarFormat,
-            availableCalendarFormats: const {
-              CalendarFormat.month: 'Maand',
-              CalendarFormat.twoWeeks: '2 weken',
-              CalendarFormat.week: 'Week',
-            },
-            eventLoader: _calendarEventsForDay,
-            startingDayOfWeek: StartingDayOfWeek.monday,
-            calendarStyle: CalendarStyle(
-              markersMaxCount: 3,
-              markerDecoration: const BoxDecoration(color: Colors.transparent),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            calendarBuilders: CalendarBuilders(
-              markerBuilder: (context, date, events) {
-                if (events.isEmpty) return const SizedBox.shrink();
-                final hasOpen = events.contains('o');
-                final hasGreen = events.contains('g');
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (hasOpen)
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      if (hasOpen && hasGreen) const SizedBox(width: 3),
-                      if (hasGreen)
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+            child: TableCalendar<void>(
+              locale: 'nl_NL',
+              firstDay: DateTime.utc(2020, 1, 1),
+              lastDay: DateTime.utc(2035, 12, 31),
+              focusedDay: _regCalendarFocusedDay,
+              selectedDayPredicate: (d) => isSameDay(_regCalendarSelectedDay, d),
+              calendarFormat: _regCalendarFormat,
+              availableCalendarFormats: const {
+                CalendarFormat.month: 'Maand',
+                CalendarFormat.twoWeeks: '2 weken',
+                CalendarFormat.week: 'Week',
+              },
+              eventLoader: _calendarEventsForDay,
+              startingDayOfWeek: StartingDayOfWeek.monday,
+              headerStyle: HeaderStyle(
+                titleCentered: true,
+                formatButtonVisible: false,
+                decoration: const BoxDecoration(color: Colors.transparent),
+                titleTextStyle: GoogleFonts.lato(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.6,
+                  color: _deepNavy,
+                ),
+                leftChevronIcon: _regCalendarChevron(
+                  icon: Icons.chevron_left_rounded,
+                ),
+                rightChevronIcon: _regCalendarChevron(
+                  icon: Icons.chevron_right_rounded,
+                ),
+              ),
+              calendarStyle: CalendarStyle(
+                outsideDaysVisible: false,
+                markersMaxCount: 2,
+                markerDecoration: const BoxDecoration(color: Colors.transparent),
+                weekendTextStyle: GoogleFonts.lato(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
+                ),
+                defaultTextStyle: GoogleFonts.lato(
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF334155),
+                ),
+                todayTextStyle: GoogleFonts.lato(
+                  fontWeight: FontWeight.w900,
+                  color: _brightBlue,
+                ),
+                selectedTextStyle: GoogleFonts.lato(
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+                todayDecoration: BoxDecoration(
+                  color: _brightBlue.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _brightBlue.withValues(alpha: 0.35),
+                    width: 1.5,
                   ),
-                );
+                ),
+                selectedDecoration: BoxDecoration(
+                  color: _brightBlue,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _brightBlue.withValues(alpha: 0.4),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+              ),
+              calendarBuilders: CalendarBuilders(
+                markerBuilder: (context, date, events) {
+                  if (events.isEmpty) return const SizedBox.shrink();
+                  final hasOpen = events.contains('o');
+                  final hasGreen = events.contains('g');
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (hasOpen)
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade300,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.orange.shade200
+                                      .withValues(alpha: 0.8),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (hasOpen && hasGreen) const SizedBox(width: 4),
+                        if (hasGreen)
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              onDaySelected: (selectedDay, focusedDay) {
+                setState(() {
+                  _regCalendarSelectedDay = selectedDay;
+                  _regCalendarFocusedDay = focusedDay;
+                });
+                if (_registratieSliderController.hasClients) {
+                  _registratieSliderController.jumpToPage(0);
+                }
+              },
+              onPageChanged: (focusedDay) {
+                setState(() => _regCalendarFocusedDay = focusedDay);
+              },
+              onFormatChanged: (format) {
+                setState(() => _regCalendarFormat = format);
               },
             ),
-            onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _regCalendarSelectedDay = selectedDay;
-                _regCalendarFocusedDay = focusedDay;
-              });
-            },
-            onPageChanged: (focusedDay) {
-              setState(() => _regCalendarFocusedDay = focusedDay);
-            },
-            onFormatChanged: (format) {
-              setState(() => _regCalendarFormat = format);
-            },
           ),
         ),
         Expanded(
@@ -1934,18 +2107,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                     ),
                   )
                 else
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: openList.length,
-                    itemBuilder: (context, index) {
-                      return _registratieOpenShiftTile(
-                        context,
-                        openList[index],
-                        toonDatumInSubtitel: false,
-                      );
-                    },
-                  ),
+                  _buildRegistratieOpenShiftsCarousel(openList),
                 const SizedBox(height: 20),
                 Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
                 const SizedBox(height: 16),
@@ -1978,7 +2140,6 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
                         context,
                         maandVangnet[index],
                         toonDatumInSubtitel: true,
-                        compact: true,
                       );
                     },
                   ),

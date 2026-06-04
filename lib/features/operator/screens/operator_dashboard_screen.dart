@@ -744,70 +744,173 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
     );
   }
 
-  Widget _quickMenuRow() {
-    Widget circleBtn({
-      required String emoji,
-      required String label,
-      required VoidCallback onTap,
-    }) {
-      return Expanded(
-        child: Column(
-          children: [
-            Material(
-              color: Colors.white,
-              shape: const CircleBorder(),
-              elevation: 0,
-              shadowColor: Colors.transparent,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: onTap,
-                child: Ink(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.06),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
+  Widget _buildPremiumNavCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> gradientColors,
+    required VoidCallback onTap,
+    bool includeHorizontalMargin = true,
+  }) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: includeHorizontalMargin ? 16 : 0,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        elevation: 0,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: gradientColors,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: SizedBox(
+                width: double.infinity,
+                height: 112,
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Positioned(
+                      right: -6,
+                      bottom: -20,
+                      child: Icon(
+                        icon,
+                        size: 100,
+                        color: Colors.white.withValues(alpha: 0.15),
                       ),
-                    ],
-                  ),
-                  child: SizedBox(
-                    width: 62,
-                    height: 62,
-                    child: Center(
-                      child: Text(emoji, style: const TextStyle(fontSize: 26)),
                     ),
-                  ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(icon, color: Colors.white, size: 28),
+                          const Spacer(),
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.lato(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.5,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.lato(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.lato(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: _deepNavy,
-              ),
-            ),
-          ],
+          ),
         ),
-      );
-    }
+      ),
+    );
+  }
+
+  Widget _quickMenuRow() {
+    Widget roosterCard({bool includeHorizontalMargin = true}) =>
+        _buildPremiumNavCard(
+          title: 'Mijn Rooster',
+          subtitle: 'Bekijk je planning',
+          icon: Icons.calendar_month_rounded,
+          gradientColors: [
+            Colors.blue.shade700,
+            Colors.blueAccent.shade400,
+          ],
+          onTap: _openRooster,
+          includeHorizontalMargin: includeHorizontalMargin,
+        );
+
+    Widget urenCard({bool includeHorizontalMargin = true}) =>
+        _buildPremiumNavCard(
+          title: 'Mijn Uren',
+          subtitle: 'Registreer je gewerkte tijd',
+          icon: Icons.schedule_rounded,
+          gradientColors: [
+            Colors.teal.shade600,
+            const Color(0xFF34D399),
+          ],
+          onTap: _openUren,
+          includeHorizontalMargin: includeHorizontalMargin,
+        );
+
+    Widget meldingenCard({bool includeHorizontalMargin = true}) =>
+        _buildPremiumNavCard(
+          title: 'Meldingen',
+          subtitle: 'Belangrijke updates',
+          icon: Icons.notifications_active_rounded,
+          gradientColors: [
+            Colors.orange.shade600,
+            Colors.deepOrange.shade400,
+          ],
+          onTap: _openMeldingen,
+          includeHorizontalMargin: includeHorizontalMargin,
+        );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-      child: Row(
-        children: [
-          circleBtn(emoji: '📅', label: 'Rooster', onTap: _openRooster),
-          circleBtn(emoji: '💰', label: 'Mijn uren', onTap: _openUren),
-          circleBtn(emoji: '⚠️', label: 'Melding', onTap: _openMeldingen),
-        ],
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth > 800;
+          if (isWide) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: roosterCard(includeHorizontalMargin: false)),
+                  const SizedBox(width: 16),
+                  Expanded(child: urenCard(includeHorizontalMargin: false)),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: meldingenCard(includeHorizontalMargin: false),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Column(
+            children: [
+              roosterCard(),
+              const SizedBox(height: 16),
+              urenCard(),
+              const SizedBox(height: 16),
+              meldingenCard(),
+            ],
+          );
+        },
       ),
     );
   }
