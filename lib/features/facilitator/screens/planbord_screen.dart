@@ -42,12 +42,23 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   double _shiftHours = 0.25;
 
   // Smart Planner UX extras (ONLY Smart Planner tab)
+  bool _smartShowFilters = false;
+  String _smartSearchTerm = '';
+  List<String> _smartFilterKlanten = [];
+  List<String> _smartFilterRegios = [];
+  List<String> _smartFilterFrequenties = [];
   String? _smartActiveOpdrachtId;
   int _smartNeededOperators = 1;
+  double? _smartOriginalTotaleUren;
+  bool _smartMarkFullyCovered = false;
   bool _smartLoadingReedsIngepland = false;
   String? _smartReedsIngeplandStart; // "HH:mm"
   String? _smartSuggestedTijd; // "HH:mm"
   String? _handmatigeSmartTijd; // "HH:mm"
+  String? _smartPlanningDatum; // yyyy-MM-dd (laatste RPC-context)
+  String? _smartPlanningStarttijd; // HH:mm
+  String? _smartPlanningEindtijd; // HH:mm
+  List<dynamic> _smartActiveVoorgesteldePlanning = const [];
 
   // HARD availability check (DB-backed) for Smart Planner dropdown
   List<Map<String, dynamic>> _tijdOpties = const <Map<String, dynamic>>[];
@@ -117,10 +128,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         0.0;
   }
 
-  /// Operators: eerst [benodigde_operators] uit DB; alleen bij 0 oude /3-fallback.
+  /// Operators: [benodigde_operators] → [voorkeur_aantal_operators] → /3-fallback.
   int _safeOperatorsVoorOpdracht(Map<String, dynamic> item) {
-    final dbOperators =
-        int.tryParse(item['benodigde_operators']?.toString() ?? '0') ?? 0;
+    var dbOperators = _asInt(item['benodigde_operators'], fallback: 0);
+    if (dbOperators <= 0) {
+      dbOperators = _asInt(item['voorkeur_aantal_operators'], fallback: 0);
+    }
     final totaalUren = _totaalUrenVoorOpdrachtKaart(item);
     var safeOperators = dbOperators > 0
         ? dbOperators
@@ -364,35 +377,161 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     }
   }
 
+  int? _voorkeurOperatorsFromTask(Map<String, dynamic>? task) {
+    if (task == null) return null;
+    final raw = task['voorkeur_aantal_operators'];
+    if (raw == null) return null;
+    final n = raw is int ? raw : int.tryParse(_text(raw));
+    if (n == null || n < 1) return null;
+    return n;
+  }
+
+  /// DB-voorkeur: eerst [voorkeur_aantal_operators], dan [benodigde_operators].
+  int? _smartOperatorsFromDb(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final voorkeur = _voorkeurOperatorsFromTask(data);
+    if (voorkeur != null) return voorkeur;
+    final benodigd = _asInt(data['benodigde_operators'], fallback: 0);
+    return benodigd > 0 ? benodigd : null;
+  }
+
+  int? _voorkeurFromSmartProject(Map<String, dynamic> project) {
+    final direct = _smartOperatorsFromDb(project);
+    if (direct != null) return direct;
+
+    final joined = project['projecten'];
+    if (joined is Map) {
+      return _smartOperatorsFromDb(Map<String, dynamic>.from(joined));
+    }
+    if (joined is List && joined.isNotEmpty && joined.first is Map) {
+      return _smartOperatorsFromDb(
+        Map<String, dynamic>.from(joined.first as Map),
+      );
+    }
+    return null;
+  }
+
+  void _syncShiftHoursFromOperators() {
+    final totaalBenodigdeUren = _smartOorspronkelijkeTotaleUren();
+    if (totaalBenodigdeUren > 0 && _smartNeededOperators > 0) {
+      _shiftHours = (totaalBenodigdeUren / _smartNeededOperators)
+          .clamp(0.25, 24.0);
+      _hoursController.text = _shiftHours.toStringAsFixed(2);
+    }
+  }
+
+  void _invalidateSmartPlannerResults() {
+    _operatorResults = [];
+    _selectedResultIndex = null;
+    _hasCalculated = false;
+    _smartActiveOpdrachtId = null;
+    _smartActiveVoorgesteldePlanning = const [];
+    _smartReedsIngeplandStart = null;
+    _smartSuggestedTijd = null;
+    _handmatigeSmartTijd = null;
+    _tijdOpties = const <Map<String, dynamic>>[];
+  }
+
+  String _smartProjectScopeId(Map<String, dynamic> project) {
+    final projectId = _text(project['project_id']);
+    if (projectId.isNotEmpty) return projectId;
+    return _text(project['id']);
+  }
+
+  String _smartDetailPanelKey(Map<String, dynamic> project) {
+    final opdrachtId = _text(project['hoofdopdracht_id']);
+    if (opdrachtId.isNotEmpty) return opdrachtId;
+    final projectId = _text(project['project_id']).isNotEmpty
+        ? _text(project['project_id'])
+        : _text(project['id']);
+    return projectId.isNotEmpty ? projectId : 'smart-detail';
+  }
+
+  void _applySmartDetailStateFromProject(Map<String, dynamic> project) {
+    final calculatedOperators = _smartOperatorsCalculatedFallback(
+      project: project,
+    );
+    final voorkeur = _voorkeurFromSmartProject(project);
+    final neededOperators = voorkeur ?? calculatedOperators;
+
+    final totalHours = _asDouble(project['benodigde_uren_totaal'], fallback: 0);
+    final standardPerShift = _asDouble(
+      project['standaard_uren_per_shift'],
+      fallback: 0,
+    );
+    final double rawHours;
+    if (totalHours > 0 && neededOperators > 0) {
+      rawHours = totalHours / neededOperators;
+    } else if (standardPerShift > 0) {
+      rawHours = standardPerShift;
+    } else {
+      rawHours = _asDouble(project['basis_uren_per_opdracht'], fallback: 1);
+    }
+    final perShiftHours = rawHours.clamp(0.25, 24.0);
+
+    _smartNeededOperators = neededOperators;
+    _shiftHours = perShiftHours;
+    _hoursController.text = perShiftHours.toStringAsFixed(2);
+    _smartOriginalTotaleUren = totalHours;
+    _smartMarkFullyCovered = false;
+    _operatorResults = [];
+    _selectedResultIndex = null;
+    _hasCalculated = false;
+    _smartActiveOpdrachtId = null;
+    _smartActiveVoorgesteldePlanning = const [];
+    _smartPlanningDatum = null;
+    _smartPlanningStarttijd = null;
+    _smartPlanningEindtijd = null;
+    _smartReedsIngeplandStart = null;
+    _smartSuggestedTijd = null;
+    _handmatigeSmartTijd = null;
+    _tijdOpties = const <Map<String, dynamic>>[];
+  }
+
+  void _initSmartDetailPanelFromProject(Map<String, dynamic> project) {
+    if (!mounted) return;
+    setState(() => _applySmartDetailStateFromProject(project));
+  }
+
+  int _smartOperatorsCalculatedFallback({
+    Map<String, dynamic>? project,
+    Map<String, dynamic>? task,
+  }) {
+    final fromTask = _asInt(task?['benodigde_operators'], fallback: 0);
+    if (fromTask > 0) return fromTask;
+    final fromProject = _asInt(
+      project?['standaard_aantal_operators'] ?? project?['benodigde_operators'],
+      fallback: 1,
+    );
+    return fromProject <= 0 ? 1 : fromProject;
+  }
+
   Future<void> _onSmartOperatorSelected(Map<String, dynamic> result) async {
     setState(() {
       _smartActiveOpdrachtId = null;
-      _smartNeededOperators = 1;
       _smartReedsIngeplandStart = null;
       _smartSuggestedTijd = null;
       _handmatigeSmartTijd = null;
       _tijdOpties = const <Map<String, dynamic>>[];
+      _smartActiveVoorgesteldePlanning = const [];
     });
 
-    final planning = _asPlanningList(result['voorgestelde_planning']);
+    var planning = _asPlanningList(result['voorgestelde_planning']);
+    if (planning.isEmpty) {
+      planning = await _fetchVoorgesteldePlanningVoorSmartContext();
+    }
     if (planning.isEmpty) return;
+    _smartActiveVoorgesteldePlanning = planning;
     final first = planning.first;
     if (first is! Map) return;
     final firstMap = Map<String, dynamic>.from(first);
     final opdrachtId = _text(firstMap['opdracht_id'] ?? firstMap['id']);
     if (opdrachtId.isEmpty) return;
 
-    final needed = _asInt(firstMap['benodigde_operators'], fallback: 0);
-    final neededFallback = needed > 0
-        ? needed
-        : _asInt(
-            _selectedProject?['standaard_aantal_operators'] ??
-                _selectedProject?['benodigde_operators'],
-            fallback: 1,
-          );
-
     final suggested =
+        _timeFromRaw(result['eerste_starttijd']) ??
         _timeFromRaw(firstMap['starttijd'] ?? firstMap['tijdslot_start']) ??
+        _timeFromRaw(_smartPlanningStarttijd) ??
         _timeFromRaw(_selectedProject?['tijdslot_start']) ??
         const TimeOfDay(hour: 8, minute: 0);
 
@@ -410,7 +549,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     if (!mounted) return;
     setState(() {
       _smartActiveOpdrachtId = opdrachtId;
-      _smartNeededOperators = neededFallback;
       _smartSuggestedTijd = _timeToHuman(suggested);
       _handmatigeSmartTijd = _smartSuggestedTijd;
     });
@@ -437,7 +575,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             ? _timeToHuman(windowStart)
             : _text(_selectedProject?['tijdslot_start']).substring(0, 5),
         vensterEind: _text(_selectedProject?['tijdslot_eind']).isEmpty
-            ? _timeToHuman(windowEnd)
+            ? (_smartPlanningEindtijd ?? _timeToHuman(windowEnd))
             : _text(_selectedProject?['tijdslot_eind']).substring(0, 5),
         huidigOfferteId: _offerteIdUitSmartContext(project: _selectedProject),
       );
@@ -474,6 +612,150 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return '$m min';
   }
 
+  double _smartParsedShiftHours() =>
+      double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
+      _shiftHours;
+
+  double _smartOorspronkelijkeTotaleUren() =>
+      _smartOriginalTotaleUren ??
+      _asDouble(_selectedProject?['benodigde_uren_totaal'], fallback: 0);
+
+  double _smartHuidigeInzet() =>
+      _smartParsedShiftHours() * _smartNeededOperators;
+
+  double _smartResterendeUren() {
+    final rest = _smartOorspronkelijkeTotaleUren() - _smartHuidigeInzet();
+    return rest > 0 ? rest : 0;
+  }
+
+  Widget _buildSmartCapacitySummary({
+    required bool isDark,
+    required ColorScheme cs,
+  }) {
+    final oorspronkelijk = _smartOorspronkelijkeTotaleUren();
+    final urenPerShift = _smartParsedShiftHours();
+    final inzet = _smartHuidigeInzet();
+    final resterend = _smartResterendeUren();
+    final restColor = resterend <= 0
+        ? Colors.green.shade700
+        : Colors.orange.shade800;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? cs.onSurface.withValues(alpha: 0.08)
+            : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Doel van de opdracht: ${formatHoursToText(oorspronkelijk)}',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: cs.onSurface.withValues(alpha: 0.82),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Huidige inzet: $_smartNeededOperators man x '
+            '${formatHoursToText(urenPerShift)} = ${formatHoursToText(inzet)}',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: cs.onSurface.withValues(alpha: 0.82),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Resterend na planning: ${formatHoursToText(resterend)}',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: restColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmartOperatorsStepperSection({
+    required bool isDark,
+    required ColorScheme cs,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+          ),
+          child: Row(
+            children: [
+              _StepperCircleButton(
+                icon: Icons.remove_rounded,
+                onPressed: () {
+                  setState(() {
+                    _smartNeededOperators =
+                        (_smartNeededOperators - 1).clamp(1, 99);
+                    _syncShiftHoursFromOperators();
+                    _invalidateSmartPlannerResults();
+                  });
+                },
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      'Operators',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface.withValues(alpha: 0.68),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$_smartNeededOperators',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _StepperCircleButton(
+                icon: Icons.add_rounded,
+                onPressed: () {
+                  setState(() {
+                    _smartNeededOperators =
+                        (_smartNeededOperators + 1).clamp(1, 99);
+                    _syncShiftHoursFromOperators();
+                    _invalidateSmartPlannerResults();
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+        _buildSmartCapacitySummary(isDark: isDark, cs: cs),
+      ],
+    );
+  }
+
   Map<String, dynamic>? _projectJoin(Map<String, dynamic> task) {
     final joined = task['projecten'];
     if (joined is Map<String, dynamic>) return joined;
@@ -507,25 +789,42 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   Map<String, dynamic>? _huidigePlanningMap(Map<String, dynamic> item) =>
       _planningDetailsVanItem(item);
 
-  /// Uitvoerder via embed `uitvoerder_info:gebruikers!huidige_operator_id`.
+  /// Alle ingeplande operators via `opdracht_planning` → `gebruikers`; anders hoofdoperator.
   String _extractIngeplandWeergaveNaam(Map<String, dynamic> item) {
-    final uitvoerderData = item['uitvoerder_info'];
-    if (uitvoerderData == null) {
-      // ignore: avoid_print
-      print(
-        'WAARSCHUWING: uitvoerder_info is NULL voor opdracht: ${item['id']}',
-      );
-      // ignore: avoid_print
-      print('Volledige data van dit item: $item');
+    final planningen = item['opdracht_planning'];
+    final namen = <String>[];
+
+    if (planningen is List) {
+      for (final raw in planningen) {
+        if (raw is! Map) continue;
+        final p = Map<String, dynamic>.from(raw);
+        final user = p['gebruikers'];
+        Map<String, dynamic>? userMap;
+        if (user is Map) {
+          userMap = Map<String, dynamic>.from(user);
+        } else if (user is List && user.isNotEmpty && user.first is Map) {
+          userMap = Map<String, dynamic>.from(user.first as Map);
+        }
+        if (userMap == null) continue;
+        final naam =
+            '${_text(userMap['voornaam'])} ${_text(userMap['achternaam'])}'
+                .trim();
+        if (naam.isNotEmpty && !namen.contains(naam)) {
+          namen.add(naam);
+        }
+      }
     }
 
-    final String vNaam = uitvoerderData?['voornaam']?.toString() ?? '';
-    final String aNaam = uitvoerderData?['achternaam']?.toString() ?? '';
-    final String volledigeNaam = '$vNaam $aNaam'.trim();
-    final String weergaveNaam = volledigeNaam.isNotEmpty
-        ? volledigeNaam
-        : 'Onbekende uitvoerder';
-    return weergaveNaam;
+    if (namen.isNotEmpty) {
+      return namen.join(', ');
+    }
+
+    final uitvoerderData = item['uitvoerder_info'];
+    final volledigeNaam =
+        '${_text(uitvoerderData is Map ? uitvoerderData['voornaam'] : null)} '
+                '${_text(uitvoerderData is Map ? uitvoerderData['achternaam'] : null)}'
+            .trim();
+    return volledigeNaam.isNotEmpty ? volledigeNaam : 'Onbekende uitvoerder';
   }
 
   String _displayOpdrachtNummer(Map<String, dynamic> item) {
@@ -643,6 +942,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
       if (!mounted) return;
       setState(() => _projects = List<dynamic>.from(results as List));
+      if (_manualPlanningFiltersActive()) {
+        await _loadTasks();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _projects = <dynamic>[]);
@@ -660,13 +962,69 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     });
 
     try {
+      final vandaag = DateTime.now().toIso8601String().split('T')[0];
+
+      final eligibleOpdrachten = await Supabase.instance.client
+          .from('opdrachten')
+          .select(
+            'project_id, id, voorkeur_aantal_operators, benodigde_operators',
+          )
+          .inFilter('status', ['open', 'deels_voltooid'])
+          .gte('geplande_datum', vandaag)
+          .order('geplande_datum', ascending: true);
+
+      final prefsByProject = <String, Map<String, dynamic>>{};
+      final eligibleProjectIds = <String>[];
+      for (final raw in eligibleOpdrachten as List) {
+        if (raw is! Map) continue;
+        final row = Map<String, dynamic>.from(raw);
+        final projectId = _text(row['project_id']);
+        if (projectId.isEmpty) continue;
+        eligibleProjectIds.add(projectId);
+        prefsByProject.putIfAbsent(projectId, () => row);
+      }
+
+      if (eligibleProjectIds.isEmpty) {
+        if (!mounted) return;
+        setState(() => _smartProjects = <dynamic>[]);
+        return;
+      }
+
+      final eligibleSet = eligibleProjectIds.toSet();
       final response = await Supabase.instance.client
           .from('app_smart_planner_projecten')
           .select()
           .gt('open_taken', 0);
 
+      final filtered = (response as List)
+          .where((raw) {
+            if (raw is! Map) return false;
+            final project = Map<String, dynamic>.from(raw);
+            final id = _text(project['project_id']).isNotEmpty
+                ? _text(project['project_id'])
+                : _text(project['id']);
+            return eligibleSet.contains(id);
+          })
+          .map((raw) {
+            final project = Map<String, dynamic>.from(raw as Map);
+            final id = _text(project['project_id']).isNotEmpty
+                ? _text(project['project_id'])
+                : _text(project['id']);
+            final prefs = prefsByProject[id];
+            if (prefs != null) {
+              project['hoofdopdracht_id'] = prefs['id'];
+              project['voorkeur_aantal_operators'] =
+                  prefs['voorkeur_aantal_operators'];
+              if (project['benodigde_operators'] == null) {
+                project['benodigde_operators'] = prefs['benodigde_operators'];
+              }
+            }
+            return project;
+          })
+          .toList(growable: false);
+
       if (!mounted) return;
-      setState(() => _smartProjects = List<dynamic>.from(response as List));
+      setState(() => _smartProjects = filtered);
     } catch (error) {
       debugPrint('Smart planner projecten query failed: $error');
       if (!mounted) return;
@@ -730,6 +1088,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         _plannedOperators = <Map<String, dynamic>>[];
         _plannedOperatorsError = null;
         _hoursController.clear();
+        _smartPlanningDatum = null;
+        _smartPlanningStarttijd = null;
+        _smartPlanningEindtijd = null;
+        _smartActiveVoorgesteldePlanning = const [];
+        _smartOriginalTotaleUren = null;
+        _smartMarkFullyCovered = false;
+        _smartNeededOperators = 1;
       });
       return;
     }
@@ -744,22 +1109,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         );
     if (project.isEmpty) return;
 
-    final neededOperators = _asInt(
-      project['standaard_aantal_operators'] ?? project['benodigde_operators'],
-      fallback: 1,
-    );
-    final safeOperators = neededOperators <= 0 ? 1 : neededOperators;
-    final totalHours = _asDouble(project['benodigde_uren_totaal'], fallback: 0);
-    final standardPerShift = _asDouble(
-      project['standaard_uren_per_shift'],
-      fallback: 0,
-    );
-    final rawHours = standardPerShift > 0
-        ? standardPerShift
-        : totalHours > 0
-            ? (totalHours / safeOperators)
-            : _asDouble(project['basis_uren_per_opdracht'], fallback: 1);
-    final perShiftHours = rawHours.clamp(0.25, 24.0);
     final normalizedProject = Map<String, dynamic>.from(project);
     normalizedProject['project_id'] = _text(project['project_id']).isNotEmpty
         ? _text(project['project_id'])
@@ -767,13 +1116,122 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     setState(() {
       _selectedProject = normalizedProject;
-      _operatorResults = [];
-      _selectedResultIndex = null;
-      _hasCalculated = false;
-      _shiftHours = perShiftHours;
-      _hoursController.text = perShiftHours.toStringAsFixed(2);
+      _plannedOperators = <Map<String, dynamic>>[];
+      _plannedOperatorsError = null;
+      _applySmartDetailStateFromProject(normalizedProject);
     });
     _loadPlannedOperatorsForProject();
+  }
+
+  String _formatDbDate(dynamic value) {
+    final raw = _text(value);
+    if (raw.isEmpty) return '';
+    if (raw.contains('T')) return raw.split('T').first;
+    return raw.length >= 10 ? raw.substring(0, 10) : raw;
+  }
+
+  Future<String?> _resolveSmartGeplandeDatum(
+    Map<String, dynamic> project,
+  ) async {
+    for (final key in [
+      'volgende_geplande_datum',
+      'eerste_open_datum',
+      'geplande_datum',
+      'eerste_opdracht_datum',
+    ]) {
+      final datum = _formatDbDate(project[key]);
+      if (datum.isNotEmpty) return datum;
+    }
+
+    final projectId = _text(project['project_id']).isNotEmpty
+        ? _text(project['project_id'])
+        : _text(project['id']);
+    if (projectId.isEmpty) return null;
+
+    try {
+      final row = await AppSupabase.client
+          .from('opdrachten')
+          .select('geplande_datum')
+          .eq('project_id', projectId)
+          .eq('status', 'open')
+          .order('geplande_datum', ascending: true)
+          .limit(1)
+          .maybeSingle();
+      final datum = _formatDbDate(row?['geplande_datum']);
+      return datum.isEmpty ? null : datum;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> _normalizeSmartPlanningResult(
+    Map<String, dynamic> row,
+  ) {
+    final voornaam = _text(row['voornaam']);
+    final achternaam = _text(row['achternaam']);
+    final composedNaam = '$voornaam $achternaam'.trim();
+    final openTaken = _asInt(_selectedProject?['open_taken'], fallback: 1);
+
+    return {
+      ...row,
+      'naam': composedNaam.isNotEmpty ? composedNaam : _text(row['naam']),
+      'match_type': _text(row['match_type']).isNotEmpty
+          ? row['match_type']
+          : 'perfect_green',
+      'match_score': row['match_score'] ?? 100,
+      'reistijd_minuten': row['reistijd_minuten'] ?? 15,
+      'beschikbare_beurten': _asInt(row['beschikbare_beurten'], fallback: 1),
+      'totale_beurten': _asInt(
+        row['totale_beurten'],
+        fallback: openTaken > 0 ? openTaken : 1,
+      ),
+    };
+  }
+
+  Future<List<dynamic>> _fetchVoorgesteldePlanningVoorSmartContext() async {
+    final project = _selectedProject;
+    if (project == null) return const [];
+
+    final projectId = _text(project['project_id']).isNotEmpty
+        ? _text(project['project_id'])
+        : _text(project['id']);
+    if (projectId.isEmpty) return const [];
+
+    final datum =
+        _smartPlanningDatum ?? await _resolveSmartGeplandeDatum(project);
+
+    try {
+      var q = AppSupabase.client
+          .from('opdrachten')
+          .select(
+            'id, geplande_datum, tijdslot_start, tijdslot_eind, benodigde_operators, voorkeur_aantal_operators',
+          )
+          .eq('project_id', projectId)
+          .eq('status', 'open');
+      if (datum != null && datum.isNotEmpty) {
+        q = q.eq('geplande_datum', datum);
+      }
+      final response = await q.order('geplande_datum', ascending: true);
+
+      return (response as List)
+          .whereType<Map>()
+          .map((raw) {
+            final m = Map<String, dynamic>.from(raw);
+            final id = _text(m['id']);
+            return {
+              'opdracht_id': id,
+              'id': id,
+              'geplande_datum': _formatDbDate(m['geplande_datum']),
+              'starttijd': _text(m['tijdslot_start']),
+              'tijdslot_start': _text(m['tijdslot_start']),
+              'benodigde_operators': m['benodigde_operators'],
+              'voorkeur_aantal_operators': m['voorkeur_aantal_operators'],
+            };
+          })
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<void> _runSmartPlanning() async {
@@ -784,6 +1242,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         : selectedProject['id'];
     final parsedHours =
         double.tryParse(_hoursController.text.replaceAll(',', '.')) ?? 0.0;
+    final actueelOfferteId = _offerteIdUitSmartContext(
+      project: _selectedProject,
+    );
+
     if (_text(projectId).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -812,11 +1274,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     setState(() {
       _isCalculating = true;
       _selectedResultIndex = null;
+      _smartActiveVoorgesteldePlanning = const [];
     });
 
     try {
-      final actueelOfferteId = _offerteIdUitSmartContext(project: selectedProject);
-
       final response = await AppSupabase.client.rpc(
         'bereken_slimme_planning',
         params: {
@@ -825,16 +1286,19 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           'p_offerte_id': actueelOfferteId,
         },
       );
-      debugPrint('RPC SUCCESS: $response');
 
       if (!mounted) return;
-      final rows = List<dynamic>.from((response as List?) ?? const []);
+      final rows = List<dynamic>.from((response as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => _normalizeSmartPlanningResult(
+                Map<String, dynamic>.from(e),
+              ))
+          .toList(growable: false);
       setState(() {
         _operatorResults = rows;
         _hasCalculated = true;
       });
     } catch (e) {
-      debugPrint('RPC ERROR: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -854,7 +1318,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final name = _text(result['naam']).isEmpty
         ? 'deze operator'
         : _text(result['naam']);
-    final available = _asInt(result['beschikbare_beurten']);
+    final planningBron =
+        result['voorgestelde_planning'] ?? _smartActiveVoorgesteldePlanning;
+    final opdrachtenLijst = _asPlanningList(planningBron);
+    final available = _asInt(
+      result['beschikbare_beurten'],
+      fallback: opdrachtenLijst.isNotEmpty ? opdrachtenLijst.length : 1,
+    );
 
     final shouldConfirm = await showDialog<bool>(
       context: context,
@@ -900,18 +1370,65 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     if (shouldConfirm != true) return;
 
     try {
+      final hoofdOpdrachtId = () {
+        final active = _text(_smartActiveOpdrachtId);
+        if (active.isNotEmpty) return active;
+        if (opdrachtenLijst.isNotEmpty && opdrachtenLijst.first is Map) {
+          final eerste = Map<String, dynamic>.from(
+            opdrachtenLijst.first as Map,
+          );
+          return _text(eerste['opdracht_id'] ?? eerste['id']);
+        }
+        return '';
+      }();
+
+      final projectId = _selectedProject != null
+          ? _smartProjectScopeId(_selectedProject!)
+          : '';
+
+      if (projectId.isNotEmpty) {
+        try {
+          final inzetUren = _smartParsedShiftHours() * _smartNeededOperators;
+          await AppSupabase.client.from('opdrachten').update({
+            'benodigde_operators': _smartNeededOperators,
+            'voorkeur_aantal_operators': _smartNeededOperators,
+            'benodigde_uren_totaal': inzetUren,
+            'verwachte_uren_totaal': inzetUren,
+          }).eq('project_id', projectId).inFilter('status', [
+            'open',
+            'deels_voltooid',
+          ]);
+        } catch (e) {
+          // ignore: avoid_print
+          print('Kon operatorvoorkeur niet opslaan: $e');
+        }
+      }
+
+      if (_smartMarkFullyCovered) {
+        if (hoofdOpdrachtId.isNotEmpty) {
+          final inzetUren = _smartHuidigeInzet();
+          try {
+            await AppSupabase.client.from('opdrachten').update({
+              'benodigde_uren_totaal': inzetUren,
+              'verwachte_uren_totaal': inzetUren,
+              'afwijkende_uren': true,
+            }).eq('id', hoofdOpdrachtId);
+          } catch (e) {
+            // ignore: avoid_print
+            print('Kon opdracht-uren niet overschrijven: $e');
+          }
+        }
+      }
+
       await AppSupabase.client.rpc(
         'bevestig_slimme_planning',
         params: {
           'p_operator_id': result['operator_id'],
-          'p_planning_json': result['voorgestelde_planning'],
+          'p_planning_json': planningBron,
         },
       );
 
       try {
-        final opdrachtenLijst = _asPlanningList(
-          result['voorgestelde_planning'],
-        );
         var datumString = 'binnenkort';
         if (opdrachtenLijst.isNotEmpty && opdrachtenLijst.first is Map) {
           final eerste = Map<String, dynamic>.from(
@@ -994,7 +1511,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         ? manual
         : voorgesteldeTijdVanEngine;
 
-    final rawPlanning = selectedResult['voorgestelde_planning'];
+    final rawPlanning =
+        selectedResult['voorgestelde_planning'] ??
+        _smartActiveVoorgesteldePlanning;
     final planning = _asPlanningList(rawPlanning);
 
     if (definitieveStartTijd.isEmpty ||
@@ -1004,10 +1523,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       return;
     }
 
-    final hours =
-        double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
-        _shiftHours;
-    final defaultDurMin = (hours * 60).round();
+    final urenPerOperator = _smartParsedShiftHours();
+    final durMin = (urenPerOperator * 60).round();
 
     final startHuman = definitieveStartTijd.length >= 5
         ? definitieveStartTijd.substring(0, 5)
@@ -1017,16 +1534,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         .map((raw) {
           if (raw is! Map) return raw;
           final m = Map<String, dynamic>.from(raw);
-          final itemHours = _asDouble(
-            m['toegewezen_uren'] ??
-                m['uren_per_shift'] ??
-                m['duur_uren'] ??
-                m['uren'],
-            fallback: hours,
-          );
-          final durMin = itemHours > 0
-              ? (itemHours * 60).round()
-              : defaultDurMin;
 
           final rawDate = _text(m['geplande_datum']);
           final datumDb = rawDate.contains('T')
@@ -1036,6 +1543,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
           m['starttijd'] = '$startHuman:00';
           m['eindtijd'] = _berekenEindTijd(startHuman, durMin);
+          m['toegewezen_uren'] = urenPerOperator;
+          m['uren_per_shift'] = urenPerOperator;
           return m;
         })
         .whereType<Map>()
@@ -1053,6 +1562,59 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     if (raw.isEmpty) return fallback;
     if (raw.length >= 5) return raw.substring(0, 5);
     return raw;
+  }
+
+  String _formatManualKaartTijd(dynamic rawTijd) {
+    if (rawTijd == null) return '--:--';
+    final t = rawTijd.toString().trim();
+    if (t.isEmpty) return '--:--';
+    return t.length >= 5 ? t.substring(0, 5) : t;
+  }
+
+  String _manualKaartTijdString(
+    Map<String, dynamic> task, {
+    Map<String, dynamic>? planning,
+  }) {
+    final startTijd = _formatManualKaartTijd(
+      planning?['starttijd'] ?? task['tijdslot_start'] ?? task['starttijd'],
+    );
+    final eindTijd = _formatManualKaartTijd(
+      planning?['eindtijd'] ?? task['tijdslot_eind'] ?? task['eindtijd'],
+    );
+    return '$startTijd - $eindTijd';
+  }
+
+  List<dynamic> _manualPlannedRijenUitTask(Map<String, dynamic> task) {
+    final planningen = task['opdracht_planning'];
+    if (planningen is List && planningen.isNotEmpty) return planningen;
+
+    final planning = task['planning'];
+    if (planning is List && planning.isNotEmpty) return planning;
+    if (planning is Map) return [planning];
+    return const [];
+  }
+
+  String _manualPlannedOperatorString(Map<String, dynamic> task) {
+    final namen = <String>[];
+    for (final raw in _manualPlannedRijenUitTask(task)) {
+      if (raw is! Map) continue;
+      final p = Map<String, dynamic>.from(raw);
+      final user = p['gebruikers'];
+      Map<String, dynamic>? userMap;
+      if (user is Map) {
+        userMap = Map<String, dynamic>.from(user);
+      } else if (user is List && user.isNotEmpty && user.first is Map) {
+        userMap = Map<String, dynamic>.from(user.first as Map);
+      }
+      if (userMap == null) continue;
+      final fullname =
+          '${_text(userMap['voornaam'])} ${_text(userMap['achternaam'])}'.trim();
+      if (fullname.isNotEmpty && !namen.contains(fullname)) {
+        namen.add(fullname);
+      }
+    }
+    if (namen.isNotEmpty) return namen.join(', ');
+    return _extractIngeplandWeergaveNaam(task);
   }
 
   String _manualRegion(Map<String, dynamic> task) {
@@ -1154,7 +1716,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   /// `*` incl. [benodigde_operators]; embeds voor planning/uitvoerder.
   static const String _reedsGeplandeSelect =
       '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),'
-      'planning:opdracht_planning!huidige_planning_id(starttijd,eindtijd)';
+      'planning:opdracht_planning!huidige_planning_id(starttijd,eindtijd),'
+      'opdracht_planning(starttijd,eindtijd,operator_id,gebruikers:gebruikers!operator_id(voornaam,achternaam))';
 
   /// Zelfde select zonder [opdracht_planning]-embed (fallback bij PGRST201).
   static const String _reedsGeplandeSelectBasis =
@@ -1177,11 +1740,68 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         .toList(growable: false);
   }
 
+  bool _manualPlanningFiltersActive() =>
+      _manualFilterKlanten.isNotEmpty ||
+      _manualFilterProjecten.isNotEmpty ||
+      _manualFilterRegios.isNotEmpty;
+
+  List<String> _manualAllowedProjectIds() {
+    final ids = <String>[];
+    for (final raw in _projects) {
+      if (raw is! Map) continue;
+      final project = Map<String, dynamic>.from(raw);
+      final id = _text(project['id']);
+      if (id.isEmpty) continue;
+
+      final projectNaam = _text(project['project_naam']);
+      final regio = _text(project['werk_regio']);
+
+      if (_manualFilterProjecten.isNotEmpty &&
+          !_manualFilterProjecten.contains(projectNaam)) {
+        continue;
+      }
+      if (_manualFilterRegios.isNotEmpty &&
+          !_manualFilterRegios.contains(regio)) {
+        continue;
+      }
+      ids.add(id);
+    }
+    return ids;
+  }
+
+  bool _manualProjectFiltersBlockAll() {
+    if (!_manualPlanningFiltersActive()) return false;
+    if (_manualFilterProjecten.isEmpty && _manualFilterRegios.isEmpty) {
+      return false;
+    }
+    if (_isLoadingProjects) return false;
+    return _manualAllowedProjectIds().isEmpty;
+  }
+
+  dynamic _applyManualOpdrachtFilters(dynamic query) {
+    if (_manualFilterKlanten.isNotEmpty) {
+      query = query.inFilter('bedrijfsnaam', _manualFilterKlanten);
+    }
+
+    if (_manualFilterProjecten.isNotEmpty || _manualFilterRegios.isNotEmpty) {
+      final allowedProjectIds = _manualAllowedProjectIds();
+      if (allowedProjectIds.isNotEmpty) {
+        query = query.inFilter('project_id', allowedProjectIds);
+      }
+    }
+
+    return query;
+  }
+
   Future<List<Map<String, dynamic>>> _fetchIngeplandeOpdrachten({
     required String select,
     String? geplandeDatumEq,
     String orderColumn = 'geplande_datum',
   }) async {
+    if (_manualProjectFiltersBlockAll()) {
+      return const [];
+    }
+
     var q = AppSupabase.client
         .from('opdrachten')
         .select(select)
@@ -1193,6 +1813,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         _selectedManualProjectId!.isNotEmpty) {
       q = q.eq('project_id', _selectedManualProjectId!);
     }
+    q = _applyManualOpdrachtFilters(q);
     final response = await q.order(orderColumn, ascending: true);
     return _mapIngeplandeOpdrachtRows(response);
   }
@@ -1286,6 +1907,18 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     }
 
     try {
+      if (_manualProjectFiltersBlockAll()) {
+        if (!mounted) return;
+        setState(() {
+          _groupedOpenTaken = {};
+          _groupedGeplandeTaken = {};
+          _reedsGeplandeTaken = [];
+          _isLoadingReedsGeplande = false;
+          _isLoading = false;
+        });
+        return;
+      }
+
       var openQuery = AppSupabase.client
           .from('opdrachten')
           .select(
@@ -1300,6 +1933,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           _selectedManualProjectId!.isNotEmpty) {
         openQuery = openQuery.eq('project_id', _selectedManualProjectId!);
       }
+      openQuery = _applyManualOpdrachtFilters(openQuery);
 
       final openResponse = await openQuery.order(
         'geplande_datum',
@@ -1456,43 +2090,311 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     await _loadTasks();
   }
 
-  Color _resultBackground(String matchType) {
+  Color _resultStatusColor(String matchType) {
     switch (matchType) {
       case 'perfect_green':
-        return const Color(0xFF1E8E3E);
+      case 'alternative_green':
+      case 'varied_green':
+        return Colors.green.shade600;
+      case 'partial_yellow':
+        return const Color(0xFFE3B72C);
+      case 'partial_grey':
+        return Colors.grey.shade500;
       case 'bad_red':
-        return const Color(0xFFCC2F2F);
+        return Colors.red.shade600;
       default:
-        return Colors.white;
+        return const Color(0xFF0052CC);
     }
   }
 
-  Border _resultBorder(
-    String matchType, {
-    bool selected = false,
-    bool hasAnyFreeSlot = false,
+  String _smartDisplayedEndTime() {
+    final start = (_handmatigeSmartTijd ?? _smartSuggestedTijd ?? '').trim();
+    if (start.isEmpty) return '--:--';
+    final hours =
+        double.tryParse(_hoursController.text.trim().replaceAll(',', '.')) ??
+        _shiftHours;
+    final endStr = _berekenEindTijd(start, (hours * 60).round());
+    return endStr.length >= 5 ? endStr.substring(0, 5) : endStr;
+  }
+
+  Future<void> _showSmartStartTijdPicker() async {
+    final opties = _tijdOpties;
+    if (opties.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.55;
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+                  child: Text(
+                    'Kies definitieve starttijd',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxH),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    itemCount: opties.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 4),
+                    itemBuilder: (_, i) {
+                      final opt = opties[i];
+                      final tijd = _text(opt['tijd']);
+                      final status = _text(opt['status']);
+                      final vrije = _asInt(opt['vrijeDagen']);
+                      final totaal = _asInt(opt['totaalDagen']);
+                      final isBeperkt = status == 'beperkt';
+                      final isActive = _handmatigeSmartTijd == tijd;
+                      final accentColor = isBeperkt
+                          ? Colors.orange.shade700
+                          : cs.primary;
+
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: tijd.isEmpty
+                              ? null
+                              : () {
+                                  setState(() => _handmatigeSmartTijd = tijd);
+                                  Navigator.pop(ctx);
+                                },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? accentColor.withValues(alpha: 0.08)
+                                  : (isBeperkt
+                                        ? Colors.orange.shade50
+                                        : Colors.grey.shade50),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isActive
+                                    ? accentColor.withValues(alpha: 0.45)
+                                    : (isBeperkt
+                                          ? Colors.orange.shade200
+                                          : Colors.grey.shade200),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time_filled,
+                                  color: accentColor,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        tijd,
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 16,
+                                          color: const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        isBeperkt
+                                            ? 'Beperkt beschikbaar ($vrije/$totaal dagen)'
+                                            : 'Volledig beschikbaar',
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12.5,
+                                          color: isBeperkt
+                                              ? Colors.orange.shade800
+                                              : Colors.green.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (isActive)
+                                  Icon(
+                                    Icons.check_circle_rounded,
+                                    color: isBeperkt
+                                        ? Colors.orange.shade700
+                                        : Colors.green.shade600,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSmartStartTimeButton({
+    required String time,
+    required VoidCallback? onTap,
   }) {
-    if (selected) return Border.all(color: const Color(0xFF0C66FF), width: 2.8);
-    if (hasAnyFreeSlot) return Border.all(color: Colors.green, width: 3);
-    switch (matchType) {
-      case 'varied_green':
-        return Border.all(color: Colors.green, width: 3);
-      case 'partial_yellow':
-        return Border.all(color: const Color(0xFFE3B72C), width: 3);
-      case 'partial_grey':
-        return Border.all(color: Colors.grey.shade500, width: 3);
-      case 'perfect_green':
-      case 'bad_red':
-        return Border.all(color: Colors.transparent);
-      default:
-        return Border.all(color: Colors.grey.shade300, width: 1);
-    }
+    final cs = Theme.of(context).colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade300),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.access_time_filled,
+                size: 22,
+                color: cs.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Definitieve starttijd',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      time,
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onTap != null)
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Colors.grey.shade600,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSmartTimePill({
+    required String label,
+    required String time,
+    required VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.access_time_filled,
+                size: 18,
+                color: Colors.grey.shade600,
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  Text(
+                    time,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _matchLabel(String matchType) {
     switch (matchType) {
       case 'perfect_green':
         return '100% Match - Vaste tijden';
+      case 'alternative_green':
+        return '100% Match (Afwijkende tijden)';
       case 'varied_green':
         return '100% Match - Wisselende tijden';
       case 'partial_yellow':
@@ -1506,30 +2408,111 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     }
   }
 
+  bool _isAlternatiefShift(Map<String, dynamic> shift) {
+    final raw = shift['is_alternatief'];
+    if (raw is bool) return raw;
+    final s = _text(raw).toLowerCase();
+    return s == 'true' || s == '1';
+  }
+
+  Widget _buildVoorgesteldePlanningRows(List<dynamic> planning) {
+    final items = planning
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          'Voorgestelde tijden',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w800,
+            fontSize: 12,
+            color: Colors.grey.shade700,
+          ),
+        ),
+        ...items.map((shift) {
+          final isAlt = _isAlternatiefShift(shift);
+          final datum = _formatDbDate(shift['geplande_datum']);
+          final tijd = _timeLabel(
+            shift['starttijd'] ?? shift['tijdslot_start'],
+          );
+          return Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                if (isAlt) ...[
+                  Icon(
+                    Icons.access_time_filled,
+                    size: 14,
+                    color: Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Expanded(
+                  child: Text(
+                    datum.isEmpty ? tijd : '$datum · $tijd',
+                    style: GoogleFonts.inter(
+                      color: isAlt
+                          ? Colors.orange.shade800
+                          : Colors.grey.shade600,
+                      fontWeight: isAlt ? FontWeight.w800 : FontWeight.w600,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildResultCard(Map<String, dynamic> result, {required int index}) {
+    final cs = Theme.of(context).colorScheme;
     final matchType = _text(result['match_type']);
-    final isSolid = matchType == 'perfect_green' || matchType == 'bad_red';
-    final textColor = isSolid ? Colors.white : const Color(0xFF15141F);
+    final statusColor = _resultStatusColor(matchType);
     final conflicts = result['conflicten'] is List
         ? List<dynamic>.from(result['conflicten'] as List)
         : const [];
-    final available = _asInt(result['beschikbare_beurten']);
-    final total = _asInt(result['totale_beurten']);
+    final available = _asInt(result['beschikbare_beurten'], fallback: 1);
+    final total = _asInt(result['totale_beurten'], fallback: 1);
     final name = _text(result['naam']).isEmpty
         ? 'Onbekende operator'
         : _text(result['naam']);
     final selected = _selectedResultIndex == index;
-
-    final hasAnyFreeSlot = _tijdOpties.isNotEmpty;
+    final reistijdMin = _asInt(result['reistijd_minuten']);
+    final afstandKm = _asDouble(result['afstand_km']);
+    final matchScore = result['match_score'];
+    final takenVandaag = _asInt(result['taken_vandaag']);
+    final eersteStart = _timeLabel(result['eerste_starttijd']);
+    final laatsteEind = _timeLabel(result['laatste_eindtijd']);
+    final operatorId = _text(result['operator_id']);
+    final startTijd = (_handmatigeSmartTijd ?? _smartSuggestedTijd ?? '').trim();
+    final endTijd = _smartDisplayedEndTime();
+    final tijdenBeschikbaar = _tijdOpties.isNotEmpty;
+    final isAlternativeGreen = matchType == 'alternative_green';
+    final badgeLabel = matchScore != null
+        ? '${_matchLabel(matchType)} · $matchScore%'
+        : (_text(result['match_type']).isEmpty
+              ? 'Beschikbaar'
+              : _matchLabel(matchType));
+    final voorgesteldePlanning = _asPlanningList(
+      result['voorgestelde_planning'] ??
+          (selected ? _smartActiveVoorgesteldePlanning : const []),
+    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: Colors.transparent,
-        clipBehavior: Clip.none,
         child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: total <= 0
+          borderRadius: BorderRadius.circular(20),
+          onTap: operatorId.isEmpty
               ? null
               : () {
                   setState(() => _selectedResultIndex = index);
@@ -1537,220 +2520,249 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 },
           child: Container(
             decoration: BoxDecoration(
-              color: _resultBackground(matchType),
-              borderRadius: BorderRadius.circular(24),
-              border: _resultBorder(
-                matchType,
-                selected: selected,
-                hasAnyFreeSlot: hasAnyFreeSlot,
-              ),
+              borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
+                  color: Colors.black.withValues(
+                    alpha: selected ? 0.12 : 0.08,
+                  ),
+                  blurRadius: selected ? 20 : 16,
+                  offset: Offset(0, selected ? 8 : 6),
                 ),
               ],
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: GoogleFonts.inter(
-                            color: textColor,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _matchLabel(matchType),
-                        textAlign: TextAlign.right,
-                        style: GoogleFonts.inter(
-                          color: textColor.withValues(
-                            alpha: isSolid ? 0.96 : 0.82,
-                          ),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '$available van de $total beurten beschikbaar',
-                    style: GoogleFonts.inter(
-                      color: textColor.withValues(alpha: isSolid ? 0.92 : 0.70),
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (conflicts.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Theme(
-                      data: Theme.of(
-                        context,
-                      ).copyWith(dividerColor: Colors.transparent),
-                      child: ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        childrenPadding: const EdgeInsets.only(bottom: 6),
-                        iconColor: textColor,
-                        collapsedIconColor: textColor,
-                        textColor: textColor,
-                        collapsedTextColor: textColor,
-                        shape: const Border(),
-                        collapsedShape: const Border(),
-                        title: Text(
-                          'Bekijk Conflicten',
-                          style: GoogleFonts.inter(
-                            color: textColor,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13,
-                          ),
-                        ),
-                        children: conflicts
-                            .map(
-                              (conflict) => Align(
-                                alignment: Alignment.centerLeft,
-                                child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: selected
+                      ? Border.all(
+                          color: cs.primary.withValues(alpha: 0.45),
+                          width: 1.5,
+                        )
+                      : null,
+                ),
+                child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(width: 6, color: statusColor),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
                                   child: Text(
-                                    '• ${_text((conflict is Map) ? conflict['datum'] ?? conflict['date'] ?? conflict['omschrijving'] ?? conflict : conflict)}',
+                                    name,
                                     style: GoogleFonts.inter(
-                                      color: textColor.withValues(
-                                        alpha: isSolid ? 0.92 : 0.72,
+                                      color: const Color(0xFF0F172A),
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: statusColor.withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (isAlternativeGreen) ...[
+                                        Icon(
+                                          Icons.access_time_filled,
+                                          size: 12,
+                                          color: Colors.orange.shade700,
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ],
+                                      Flexible(
+                                        child: Text(
+                                          badgeLabel,
+                                          textAlign: TextAlign.right,
+                                          style: GoogleFonts.inter(
+                                            color: statusColor,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
                                       ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _text(result['match_type']).isNotEmpty &&
+                                      total > 0
+                                  ? '$available van de $total beurten beschikbaar'
+                                  : takenVandaag > 0 ||
+                                        eersteStart != '--:--'
+                                  ? 'Vandaag: $takenVandaag taken · $eersteStart – $laatsteEind'
+                                  : 'Beschikbaar voor deze shift',
+                              style: GoogleFonts.inter(
+                                color: Colors.grey.shade600,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (reistijdMin > 0 || afstandKm > 0) ...[
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.directions_car_outlined,
+                                    size: 16,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    [
+                                      if (reistijdMin > 0) '$reistijdMin min',
+                                      if (afstandKm > 0)
+                                        '${afstandKm.toStringAsFixed(1)} km',
+                                    ].join(' · '),
+                                    style: GoogleFonts.inter(
+                                      color: Colors.grey.shade600,
                                       fontSize: 12.5,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
+                                ],
+                              ),
+                            ],
+                            if (selected && voorgesteldePlanning.isNotEmpty)
+                              _buildVoorgesteldePlanningRows(voorgesteldePlanning),
+                            if (conflicts.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Theme(
+                                data: Theme.of(context).copyWith(
+                                  dividerColor: Colors.transparent,
+                                ),
+                                child: ExpansionTile(
+                                  tilePadding: EdgeInsets.zero,
+                                  childrenPadding:
+                                      const EdgeInsets.only(bottom: 6),
+                                  iconColor: Colors.grey.shade700,
+                                  collapsedIconColor: Colors.grey.shade700,
+                                  title: Text(
+                                    'Bekijk conflicten',
+                                    style: GoogleFonts.inter(
+                                      color: Colors.grey.shade700,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  children: conflicts
+                                      .map(
+                                        (conflict) => Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 4,
+                                            ),
+                                            child: Text(
+                                              '• ${_text((conflict is Map) ? conflict['datum'] ?? conflict['date'] ?? conflict['omschrijving'] ?? conflict : conflict)}',
+                                              style: GoogleFonts.inter(
+                                                color: Colors.grey.shade600,
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(growable: false),
                                 ),
                               ),
-                            )
-                            .toList(growable: false),
+                            ],
+                            if (selected) ...[
+                              const SizedBox(height: 14),
+                              if (_isTijdenLaden)
+                                const Padding(
+                                  padding: EdgeInsets.only(bottom: 10),
+                                  child: LinearProgressIndicator(minHeight: 3),
+                                )
+                              else ...[
+                                _buildSmartStartTimeButton(
+                                  time: startTijd.isEmpty
+                                      ? 'Kies tijd'
+                                      : startTijd,
+                                  onTap: tijdenBeschikbaar
+                                      ? _showSmartStartTijdPicker
+                                      : null,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildSmartTimePill(
+                                  label: 'Eindtijd',
+                                  time: endTijd,
+                                  onTap: null,
+                                ),
+                                if (_smartResterendeUren() > 0) ...[
+                                  const SizedBox(height: 10),
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: Text(
+                                      'Klus hierna markeren als volledig gedekt '
+                                      '(resterende uren laten vervallen)',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    value: _smartMarkFullyCovered,
+                                    onChanged: (v) => setState(
+                                      () => _smartMarkFullyCovered = v,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton(
+                                    onPressed: tijdenBeschikbaar &&
+                                            startTijd.isNotEmpty
+                                        ? () => _submitSmartPlannerBooking(
+                                              result,
+                                            )
+                                        : null,
+                                    style: _smartPlannerFilledButtonStyle(),
+                                    child: Text(
+                                      'Definitief Inplannen',
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ],
-                  if (selected) ...[
-                    const SizedBox(height: 12),
-                    if (_isTijdenLaden)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 10),
-                        child: LinearProgressIndicator(minHeight: 3),
-                      )
-                    else
-                      Builder(
-                        builder: (context) {
-                          final opties = _tijdOpties;
-                          final tijden = opties
-                              .map((e) => _text(e['tijd']))
-                              .where((t) => t.isNotEmpty)
-                              .toList(growable: false);
-
-                          return Padding(
-                            padding: const EdgeInsets.only(
-                              top: 16.0,
-                              bottom: 24.0,
-                            ),
-                            child: DropdownButtonFormField<String>(
-                              initialValue:
-                                  (_handmatigeSmartTijd ?? '').trim().isEmpty
-                                  ? null
-                                  : _handmatigeSmartTijd,
-                              dropdownColor: const Color(0xFFF2F2F7),
-                              items: opties
-                                  .map((opt) {
-                          final tijd = _text(opt['tijd']);
-                          final status = _text(opt['status']);
-                          final vrije = _asInt(opt['vrijeDagen']);
-                          final totaal = _asInt(opt['totaalDagen']);
-                          final isBeperkt = status == 'beperkt';
-                          final label = isBeperkt
-                              ? '$tijd (Beperkt beschikbaar: $vrije/$totaal dagen)'
-                              : '$tijd (Volledig beschikbaar)';
-                          return DropdownMenuItem<String>(
-                            value: tijd,
-                            child: isBeperkt
-                                ? Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 6,
-                                                  ),
-                                    decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                      border: Border.all(
-                                                  color: Colors.orange
-                                                      .withValues(alpha: 0.55),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      label,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.normal,
-                                        fontSize: 14.0,
-                                      ),
-                                    ),
-                                  )
-                                : Text(
-                                    label,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.normal,
-                                      fontSize: 14.0,
-                                    ),
-                                  ),
-                          );
-                                  })
-                                  .toList(growable: false),
-                              onChanged: tijden.isEmpty
-                                  ? null
-                                  : (v) {
-                                      final next = (v ?? '').trim();
-                                      if (next.isEmpty) return;
-                                      setState(
-                                        () => _handmatigeSmartTijd = next,
-                                      );
-                                    },
-                              decoration: InputDecoration(
-                                labelText: 'Kies definitieve starttijd',
-                                hintText: tijden.isEmpty
-                                    ? 'Geen tijden beschikbaar voor deze operator'
-                                    : null,
-                                filled: true,
-                                fillColor: const Color(0xFFF2F2F7),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8.0),
-                                  borderSide: BorderSide.none,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8.0),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8.0),
-                                  borderSide: BorderSide.none,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 12,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                  ],
-                ],
+                ),
               ),
+            ),
             ),
           ),
         ),
@@ -1795,25 +2807,108 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
   }
 
-  BoxDecoration _smartPlannerPremiumCardDecoration({required bool selected}) {
+  String _smartProjectKlant(Map<String, dynamic> project) {
+    final bedrijven = project['bedrijven'];
+    if (bedrijven is Map) {
+      final naam = _text(bedrijven['bedrijfsnaam']);
+      if (naam.isNotEmpty) return naam;
+    }
+    final direct = _text(project['bedrijfsnaam']);
+    if (direct.isNotEmpty) return direct;
+    return _text(project['bedrijfsnaam_klant']);
+  }
+
+  List<String> _collectSmartKlantOptions(List<Map<String, dynamic>> projects) {
+    final set = <String>{};
+    for (final p in projects) {
+      final klant = _smartProjectKlant(p).trim();
+      if (klant.isNotEmpty) set.add(klant);
+    }
+    return set.toList()..sort();
+  }
+
+  List<String> _collectSmartRegioOptions(List<Map<String, dynamic>> projects) {
+    final set = <String>{};
+    for (final p in projects) {
+      final regio = _text(p['werk_regio']).trim();
+      if (regio.isNotEmpty) set.add(regio);
+    }
+    return set.toList()..sort();
+  }
+
+  List<String> _collectSmartFrequentieOptions(
+    List<Map<String, dynamic>> projects,
+  ) {
+    final set = <String>{};
+    for (final p in projects) {
+      final freq = _text(p['frequentie_type']).trim();
+      if (freq.isNotEmpty) set.add(freq);
+    }
+    return set.toList()..sort();
+  }
+
+  bool _matchesSmartProjectFilters(Map<String, dynamic> project) {
+    final klant = _smartProjectKlant(project).trim();
+    final regio = _text(project['werk_regio']).trim();
+    final freq = _text(project['frequentie_type']).trim();
+    final projectNaam = _text(project['project_naam']).trim();
+
+    if (_smartFilterKlanten.isNotEmpty &&
+        !_smartFilterKlanten.contains(klant)) {
+      return false;
+    }
+    if (_smartFilterRegios.isNotEmpty && !_smartFilterRegios.contains(regio)) {
+      return false;
+    }
+    if (_smartFilterFrequenties.isNotEmpty &&
+        !_smartFilterFrequenties.contains(freq)) {
+      return false;
+    }
+
+    final q = _smartSearchTerm.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      if (!klant.toLowerCase().contains(q) &&
+          !projectNaam.toLowerCase().contains(q)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  BoxDecoration _smartPlannerPremiumCardDecoration({
+    required bool selected,
+    required bool needsAttention,
+  }) {
     return BoxDecoration(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(24),
       gradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [
-          const Color(0xFF0F172A).withValues(alpha: 0.95),
-          const Color(0xFF0052CC).withValues(alpha: 0.85),
-        ],
+        stops: needsAttention
+            ? const [0.0, 0.748, 0.752, 0.768, 0.772, 1.0]
+            : const [0.0, 1.0],
+        colors: needsAttention
+            ? [
+                const Color(0xFF0F172A).withValues(alpha: 0.95),
+                const Color(0xFF0052CC).withValues(alpha: 0.85),
+                Colors.orange.shade500,
+                Colors.orange.shade600,
+                const Color(0xFF0052CC).withValues(alpha: 0.85),
+                const Color(0xFF0052CC).withValues(alpha: 0.85),
+              ]
+            : [
+                const Color(0xFF0F172A).withValues(alpha: 0.95),
+                const Color(0xFF0052CC).withValues(alpha: 0.85),
+              ],
       ),
       border: selected
           ? Border.all(color: Colors.white.withValues(alpha: 0.55), width: 2)
           : null,
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.1),
-          blurRadius: 15,
-          offset: const Offset(0, 5),
+          color: Colors.black.withValues(alpha: selected ? 0.16 : 0.1),
+          blurRadius: selected ? 22 : 15,
+          offset: Offset(0, selected ? 8 : 5),
         ),
       ],
     );
@@ -1845,27 +2940,20 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           onTap: onTap,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(24),
             child: Container(
-              decoration: _smartPlannerPremiumCardDecoration(selected: selected),
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+              decoration: _smartPlannerPremiumCardDecoration(
+                selected: selected,
+                needsAttention: hasAssignedHours,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (hasAssignedHours)
-                      Container(
-                        width: 6,
-                        color: Colors.orange.shade400,
-                      ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
                             Text(
                               projectName,
                               maxLines: 2,
@@ -1916,10 +3004,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
           ),
@@ -1935,21 +3019,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .where((row) {
+          if (_text(row['operator_id']).isEmpty) return false;
           final matchType = _text(row['match_type']);
-          final total = _asInt(row['totale_beurten']);
-          final available = _asInt(row['beschikbare_beurten']);
+          if (matchType == 'bad_red') return false;
+          final available = _asInt(row['beschikbare_beurten'], fallback: 1);
           if (available <= 0) return false;
-          if (matchType == 'bad_red' && total <= 0) return false;
           return true;
         })
         .toList(growable: false);
-
-    final selectedResult =
-        (_selectedResultIndex != null &&
-            _selectedResultIndex! >= 0 &&
-            _selectedResultIndex! < filteredResults.length)
-        ? filteredResults[_selectedResultIndex!]
-        : null;
 
     final showMultiOperatorWarning =
         _smartNeededOperators > 1 &&
@@ -1959,10 +3036,16 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final selectedProjectId = _text(_selectedProject?['project_id']).isNotEmpty
         ? _text(_selectedProject?['project_id'])
         : _text(_selectedProject?['id']);
-    final visibleProjects = _smartProjects
+    final allOpenProjects = _smartProjects
         .map((raw) => Map<String, dynamic>.from(raw as Map))
         .where((project) => _asInt(project['open_taken']) > 0)
         .toList(growable: false);
+    final visibleProjects = allOpenProjects
+        .where(_matchesSmartProjectFilters)
+        .toList(growable: false);
+    final klantOptions = _collectSmartKlantOptions(allOpenProjects);
+    final regioOptions = _collectSmartRegioOptions(allOpenProjects);
+    final frequentieOptions = _collectSmartFrequentieOptions(allOpenProjects);
 
     Widget buildLeftColumn() {
       return Container(
@@ -1984,16 +3067,145 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Projecten klaar voor Smart Planning',
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.2,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Te plannen opdrachten',
+                              style: GoogleFonts.inter(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: _smartShowFilters
+                                ? 'Filters verbergen'
+                                : 'Filters tonen',
+                            onPressed: () => setState(
+                              () => _smartShowFilters = !_smartShowFilters,
+                            ),
+                            icon: Icon(
+                              Icons.filter_list_rounded,
+                              color: _smartShowFilters
+                                  ? cs.primary
+                                  : cs.onSurface.withValues(alpha: 0.75),
+                            ),
+                          ),
+                        ],
+                      ),
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 200),
+                        crossFadeState: _smartShowFilters
+                            ? CrossFadeState.showFirst
+                            : CrossFadeState.showSecond,
+                        secondChild: const SizedBox.shrink(),
+                        firstChild: Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1A2132)
+                                : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: cs.onSurface.withValues(alpha: 0.08),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TextField(
+                                onChanged: (val) =>
+                                    setState(() => _smartSearchTerm = val),
+                                decoration: InputDecoration(
+                                  hintText: 'Zoek op klant of project',
+                                  hintStyle: GoogleFonts.inter(
+                                    color: cs.onSurface.withValues(alpha: 0.45),
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.search_rounded,
+                                    color: cs.primary.withValues(alpha: 0.9),
+                                  ),
+                                  filled: true,
+                                  fillColor: isDark
+                                      ? const Color(0xFF12121A)
+                                      : Colors.white,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 14,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _buildManualFilterButton(
+                                label: 'Klant',
+                                selectedCount: _smartFilterKlanten.length,
+                                cs: cs,
+                                fullWidth: true,
+                                onTap: () => _showManualMultiSelectSheet(
+                                  title: "Selecteer klant(en)",
+                                  options: klantOptions,
+                                  currentSelection: _smartFilterKlanten,
+                                  onApply: (sel) => setState(
+                                    () => _smartFilterKlanten = sel,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildManualFilterButton(
+                                label: 'Regio',
+                                selectedCount: _smartFilterRegios.length,
+                                cs: cs,
+                                fullWidth: true,
+                                onTap: () => _showManualMultiSelectSheet(
+                                  title: "Selecteer regio('s)",
+                                  options: regioOptions,
+                                  currentSelection: _smartFilterRegios,
+                                  onApply: (sel) => setState(
+                                    () => _smartFilterRegios = sel,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildManualFilterButton(
+                                label: 'Frequentie type',
+                                selectedCount: _smartFilterFrequenties.length,
+                                cs: cs,
+                                fullWidth: true,
+                                onTap: () => _showManualMultiSelectSheet(
+                                  title: "Selecteer frequentie type(s)",
+                                  options: frequentieOptions,
+                                  currentSelection: _smartFilterFrequenties,
+                                  onApply: (sel) => setState(
+                                    () => _smartFilterFrequenties = sel,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      ListView.builder(
+                      if (visibleProjects.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Text(
+                            'Geen projecten gevonden met deze filters.',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface.withValues(alpha: 0.62),
+                            ),
+                          ),
+                        )
+                      else
+                        ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: visibleProjects.length,
@@ -2295,6 +3507,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                   ),
                                 ),
                               ),
+                            _buildSmartOperatorsStepperSection(
+                              isDark: isDark,
+                              cs: cs,
+                            ),
                             const SizedBox(height: 12),
                             Container(
                               width: double.infinity,
@@ -2477,20 +3693,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         );
                       },
                     ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: selectedResult == null
-                          ? null
-                          : () => _submitSmartPlannerBooking(selectedResult),
-                      style: _smartPlannerFilledButtonStyle(),
-                      child: Text(
-                        'Definitief Inplannen',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                  ),
           ],
         ),
       );
@@ -2722,6 +3924,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           ),
                         ),
                       ),
+                    _buildSmartOperatorsStepperSection(isDark: isDark, cs: cs),
                     const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
@@ -2890,20 +4093,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           );
                         },
                       ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: selectedResult == null
-                            ? null
-                            : () => _submitSmartPlannerBooking(selectedResult),
-                        style: _smartPlannerFilledButtonStyle(),
-                        child: Text(
-                          'Definitief Inplannen',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
           ],
@@ -2920,7 +4109,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
             child: isMobile
                 ? (_selectedProject == null
                       ? buildLeftColumn()
-                      : buildRightColumnMobile())
+                      : _SmartPlannerDetailPanel(
+                          key: ValueKey(
+                            _smartDetailPanelKey(_selectedProject!),
+                          ),
+                          project: _selectedProject!,
+                          onInit: _initSmartDetailPanelFromProject,
+                          child: buildRightColumnMobile(),
+                        ))
                 : AnimatedSize(
                     duration: const Duration(milliseconds: 280),
                     curve: Curves.easeInOut,
@@ -2936,7 +4132,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           const SizedBox(width: 14),
                           Expanded(
                             flex: 3,
-                            child: buildRightColumnDesktop(),
+                            child: _SmartPlannerDetailPanel(
+                              key: ValueKey(
+                                _smartDetailPanelKey(_selectedProject!),
+                              ),
+                              project: _selectedProject!,
+                              onInit: _initSmartDetailPanelFromProject,
+                              child: buildRightColumnDesktop(),
+                            ),
                           ),
                         ],
                       ],
@@ -2980,8 +4183,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final company = _text(task['bedrijfsnaam']).isEmpty
         ? 'Onbekende klant'
         : _text(task['bedrijfsnaam']);
-    final start = _timeLabel(task['tijdslot_start']);
-    final end = _timeLabel(task['tijdslot_eind']);
+    final tijdString = _manualKaartTijdString(task);
     final date = _toDate(task['geplande_datum']);
     final totaalUrenKaart = _totaalUrenVoorOpdrachtKaart(task);
     final safeOperators = _safeOperatorsVoorOpdracht(task);
@@ -3056,7 +4258,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              '$start - $end',
+                              tijdString,
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white70,
@@ -3507,10 +4709,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         : _text(item['bedrijfsnaam']);
     final projectLabel = _projectName(item);
     final planningDetails = _planningDetailsVanItem(item);
-    final start = _timeLabel(planningDetails?['starttijd']);
-    final end = _timeLabel(planningDetails?['eindtijd']);
+    final tijdString = _manualKaartTijdString(
+      item,
+      planning: planningDetails,
+    );
     final date = _toDate(item['geplande_datum']);
-    final weergaveNaam = _extractIngeplandWeergaveNaam(item);
+    final operatorString = _manualPlannedOperatorString(item);
     final totaalUrenKaart = _totaalUrenVoorOpdrachtKaart(item);
     final safeOperators = _safeOperatorsVoorOpdracht(item);
     final urenPerPersoon = totaalUrenKaart / safeOperators;
@@ -3565,7 +4769,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              '$start - $end',
+                              tijdString,
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w800,
                                 color: Colors.white,
@@ -3619,7 +4823,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              'Uitvoerder: $weergaveNaam',
+                              'Uitvoerder: $operatorString',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w600,
                                 color: Colors.white70,
@@ -3826,102 +5032,396 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return set.toList()..sort();
   }
 
-  Future<void> _showManualMultiSelectSheet({
+  // ignore: unused_element
+  Future<void> _showPremiumFilterModal({
+    required BuildContext context,
     required String title,
-    required List<String> options,
-    required List<String> currentSelection,
-    required void Function(List<String>) onApply,
+    required List<String> items,
+    required String? selectedItem,
+    required void Function(String?) onItemSelected,
   }) async {
-    var tempSelected = List<String>.from(currentSelection);
+    var searchQuery = '';
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        final maxH = MediaQuery.sizeOf(ctx).height * 0.55;
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final sheetBg = isDark ? const Color(0xFF111019) : Colors.white;
+        final titleColor =
+            isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+
         return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-                      child: Text(
-                        title,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
+          builder: (modalContext, setModalState) {
+            final filteredItems = items
+                .where(
+                  (item) => item.toLowerCase().contains(
+                    searchQuery.toLowerCase(),
+                  ),
+                )
+                .toList(growable: false);
+
+            return Container(
+              height: MediaQuery.of(modalContext).size.height * 0.75,
+              decoration: BoxDecoration(
+                color: sheetBg,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: titleColor,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            onItemSelected(null);
+                            Navigator.pop(modalContext);
+                          },
+                          child: Text(
+                            'Wissen',
+                            style: GoogleFonts.inter(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    child: TextField(
+                      onChanged: (value) =>
+                          setModalState(() => searchQuery = value),
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        hintText: 'Zoeken...',
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey.shade500,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.grey,
+                        ),
+                        filled: true,
+                        fillColor: isDark
+                            ? const Color(0xFF1B1B23)
+                            : Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
                         ),
                       ),
                     ),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: maxH),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: options.length,
-                        itemBuilder: (_, i) {
-                          final opt = options[i];
-                          final checked = tempSelected.contains(opt);
-                          return CheckboxListTile(
-                            title: Text(
-                              opt,
+                  ),
+                  Expanded(
+                    child: filteredItems.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Geen resultaten gevonden',
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
                               ),
                             ),
-                            value: checked,
-                            onChanged: (v) {
-                              setModalState(() {
-                                if (v == true) {
-                                  if (!tempSelected.contains(opt)) {
-                                    tempSelected.add(opt);
-                                  }
-                                } else {
-                                  tempSelected.remove(opt);
-                                }
-                              });
+                          )
+                        : ListView.builder(
+                            itemCount: filteredItems.length,
+                            itemBuilder: (context, index) {
+                              final item = filteredItems[index];
+                              final isSelected = item == selectedItem;
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 4,
+                                ),
+                                title: Text(
+                                  item,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? Colors.blue.shade700
+                                        : (isDark
+                                              ? Colors.white70
+                                              : Colors.black87),
+                                  ),
+                                ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        Icons.check_circle,
+                                        color: Colors.blue.shade700,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  onItemSelected(item);
+                                  Navigator.pop(modalContext);
+                                },
+                              );
                             },
-                          );
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () {
-                            onApply(List<String>.from(tempSelected));
-                            Navigator.pop(ctx);
-                          },
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
                           ),
-                          child: Text(
-                            'Toepassen',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             );
           },
         );
       },
+    );
+  }
+
+  Future<void> _showPremiumMultiFilterModal({
+    required String title,
+    required List<String> items,
+    required List<String> currentSelection,
+    required void Function(List<String>) onApply,
+  }) async {
+    var searchQuery = '';
+    var tempSelected = List<String>.from(currentSelection);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final sheetBg = isDark ? const Color(0xFF111019) : Colors.white;
+        final titleColor =
+            isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+        final cs = Theme.of(sheetContext).colorScheme;
+
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final filteredItems = items
+                .where(
+                  (item) => item.toLowerCase().contains(
+                    searchQuery.toLowerCase(),
+                  ),
+                )
+                .toList(growable: false);
+
+            return Container(
+              height: MediaQuery.of(modalContext).size.height * 0.75,
+              decoration: BoxDecoration(
+                color: sheetBg,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: titleColor,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            onApply(const []);
+                            Navigator.pop(modalContext);
+                          },
+                          child: Text(
+                            'Wissen',
+                            style: GoogleFonts.inter(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    child: TextField(
+                      onChanged: (value) =>
+                          setModalState(() => searchQuery = value),
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        hintText: 'Zoeken...',
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey.shade500,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.grey,
+                        ),
+                        filled: true,
+                        fillColor: isDark
+                            ? const Color(0xFF1B1B23)
+                            : Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: filteredItems.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Geen resultaten gevonden',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: filteredItems.length,
+                            itemBuilder: (context, index) {
+                              final item = filteredItems[index];
+                              final isSelected = tempSelected.contains(item);
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 4,
+                                ),
+                                title: Text(
+                                  item,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? Colors.blue.shade700
+                                        : (isDark
+                                              ? Colors.white70
+                                              : Colors.black87),
+                                  ),
+                                ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        Icons.check_circle,
+                                        color: Colors.blue.shade700,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  setModalState(() {
+                                    if (isSelected) {
+                                      tempSelected.remove(item);
+                                    } else {
+                                      tempSelected.add(item);
+                                    }
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: FilledButton(
+                        onPressed: () {
+                          onApply(List<String>.from(tempSelected));
+                          Navigator.pop(modalContext);
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: cs.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(
+                          'Gereed',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showManualMultiSelectSheet({
+    required String title,
+    required List<String> options,
+    required List<String> currentSelection,
+    required void Function(List<String>) onApply,
+  }) {
+    return _showPremiumMultiFilterModal(
+      title: title,
+      items: options,
+      currentSelection: currentSelection,
+      onApply: onApply,
     );
   }
 
@@ -3931,51 +5431,89 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     required VoidCallback onTap,
     required ColorScheme cs,
     bool fullWidth = false,
+    bool isDark = false,
+    String? selectedPreview,
   }) {
     final active = selectedCount > 0;
+    final displayText = active
+        ? (selectedPreview != null && selectedPreview.isNotEmpty
+              ? selectedPreview
+              : '$label ($selectedCount)')
+        : label;
+
     return SizedBox(
       width: fullWidth ? double.infinity : null,
-      child: OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          minimumSize: fullWidth ? const Size(double.infinity, 48) : null,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          side: BorderSide(
-            color: active
-                ? cs.primary.withValues(alpha: 0.45)
-                : cs.onSurface.withValues(alpha: 0.12),
-          ),
-          backgroundColor:
-              active ? cs.primary.withValues(alpha: 0.08) : Colors.transparent,
-        ),
-        child: Row(
-          mainAxisAlignment:
-              fullWidth ? MainAxisAlignment.spaceBetween : MainAxisAlignment.start,
-          mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
-          children: [
-            Text(
-              active ? '$label ($selectedCount)' : label,
-              style: GoogleFonts.inter(
-                fontWeight: FontWeight.w800,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: active
+                  ? cs.primary.withValues(alpha: isDark ? 0.14 : 0.06)
+                  : (isDark
+                        ? const Color(0xFF1B1B23)
+                        : Colors.grey.shade50),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
                 color: active
-                    ? cs.primary
-                    : cs.onSurface.withValues(alpha: 0.85),
+                    ? cs.primary.withValues(alpha: 0.35)
+                    : (isDark
+                          ? cs.onSurface.withValues(alpha: 0.12)
+                          : Colors.grey.shade200),
               ),
             ),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 18,
-              color: active
-                  ? cs.primary
-                  : cs.onSurface.withValues(alpha: 0.65),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        displayText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          color: active
+                              ? cs.primary
+                              : cs.onSurface.withValues(alpha: 0.88),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.expand_more_rounded,
+                  size: 22,
+                  color: active
+                      ? cs.primary
+                      : cs.onSurface.withValues(alpha: 0.55),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  String _manualFilterPreview(List<String> selected) {
+    if (selected.isEmpty) return '';
+    if (selected.length == 1) return selected.first;
+    return '${selected.length} geselecteerd';
   }
 
   Widget _buildManualPlanningTab(bool isDark) {
@@ -4147,42 +5685,55 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   _buildManualFilterButton(
                     label: 'Klant',
                     selectedCount: _manualFilterKlanten.length,
+                    selectedPreview: _manualFilterPreview(_manualFilterKlanten),
                     cs: cs,
+                    isDark: isDark,
                     fullWidth: true,
-                    onTap: () => _showManualMultiSelectSheet(
-                      title: "Selecteer klant(en)",
-                      options: klantOptions,
+                    onTap: () => _showPremiumMultiFilterModal(
+                      title: 'Selecteer klant',
+                      items: klantOptions,
                       currentSelection: _manualFilterKlanten,
-                      onApply: (sel) =>
-                          setState(() => _manualFilterKlanten = sel),
+                      onApply: (sel) {
+                        setState(() => _manualFilterKlanten = sel);
+                        _loadTasks();
+                      },
                     ),
                   ),
                   const SizedBox(height: 8),
                   _buildManualFilterButton(
                     label: 'Project',
                     selectedCount: _manualFilterProjecten.length,
+                    selectedPreview:
+                        _manualFilterPreview(_manualFilterProjecten),
                     cs: cs,
+                    isDark: isDark,
                     fullWidth: true,
-                    onTap: () => _showManualMultiSelectSheet(
-                      title: "Selecteer project(en)",
-                      options: projectOptions,
+                    onTap: () => _showPremiumMultiFilterModal(
+                      title: 'Selecteer project',
+                      items: projectOptions,
                       currentSelection: _manualFilterProjecten,
-                      onApply: (sel) =>
-                          setState(() => _manualFilterProjecten = sel),
+                      onApply: (sel) {
+                        setState(() => _manualFilterProjecten = sel);
+                        _loadTasks();
+                      },
                     ),
                   ),
                   const SizedBox(height: 8),
                   _buildManualFilterButton(
                     label: 'Regio',
                     selectedCount: _manualFilterRegios.length,
+                    selectedPreview: _manualFilterPreview(_manualFilterRegios),
                     cs: cs,
+                    isDark: isDark,
                     fullWidth: true,
-                    onTap: () => _showManualMultiSelectSheet(
-                      title: "Selecteer regio('s)",
-                      options: regioOptions,
+                    onTap: () => _showPremiumMultiFilterModal(
+                      title: 'Selecteer regio',
+                      items: regioOptions,
                       currentSelection: _manualFilterRegios,
-                      onApply: (sel) =>
-                          setState(() => _manualFilterRegios = sel),
+                      onApply: (sel) {
+                        setState(() => _manualFilterRegios = sel);
+                        _loadTasks();
+                      },
                     ),
                   ),
                 ],
@@ -5362,6 +6913,61 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
   Widget _manualWeekDayNavigatorStrip() {
     return _manualMonthNavigator();
   }
+}
+
+/// Dwingt een volledige detail-reset bij project-wissel via [ValueKey].
+class _SmartPlannerDetailPanel extends StatefulWidget {
+  const _SmartPlannerDetailPanel({
+    super.key,
+    required this.project,
+    required this.onInit,
+    required this.child,
+  });
+
+  final Map<String, dynamic> project;
+  final void Function(Map<String, dynamic> project) onInit;
+  final Widget child;
+
+  @override
+  State<_SmartPlannerDetailPanel> createState() =>
+      _SmartPlannerDetailPanelState();
+}
+
+class _SmartPlannerDetailPanelState extends State<_SmartPlannerDetailPanel> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onInit(widget.project);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SmartPlannerDetailPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldScope = _scopeId(oldWidget.project);
+    final newScope = _scopeId(widget.project);
+    if (oldScope != newScope) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onInit(widget.project);
+      });
+    }
+  }
+
+  String _scopeId(Map<String, dynamic> project) {
+    final opdrachtId = _text(project['hoofdopdracht_id']);
+    if (opdrachtId.isNotEmpty) return opdrachtId;
+    final projectId = _text(project['project_id']);
+    if (projectId.isNotEmpty) return projectId;
+    return _text(project['id']);
+  }
+
+  String _text(dynamic value) => (value ?? '').toString().trim();
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _StepperCircleButton extends StatelessWidget {

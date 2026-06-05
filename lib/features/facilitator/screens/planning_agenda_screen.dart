@@ -496,9 +496,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final plannedOperators = _text(item['geplande_operators_aantal']).isEmpty
         ? '0'
         : _text(item['geplande_operators_aantal']);
-    final neededOperators = _text(item['benodigde_operators']).isEmpty
-        ? '1'
-        : _text(item['benodigde_operators']);
+    final neededOperatorsRaw = _text(item['benodigde_operators']).isNotEmpty
+        ? _text(item['benodigde_operators'])
+        : _text(item['voorkeur_aantal_operators']);
+    final neededOperators = neededOperatorsRaw.isEmpty ? '1' : neededOperatorsRaw;
     final isRood = agendaKleur.toLowerCase() == 'rood';
 
     return InkWell(

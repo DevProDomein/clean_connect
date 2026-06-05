@@ -99,6 +99,9 @@ class _TaskCompletionModalState extends State<TaskCompletionModal> {
   bool get _allChecked =>
       _taken.isNotEmpty && _taken.every((t) => _checked[t.key] == true);
 
+  bool get _canSubmit =>
+      _taken.isEmpty || _taken.every((t) => _checked[t.key] == true);
+
   void _toggleSelectAll(bool? value) {
     final v = value ?? false;
     setState(() {
@@ -113,7 +116,7 @@ class _TaskCompletionModalState extends State<TaskCompletionModal> {
   }
 
   Future<void> _indienen() async {
-    if (!_allChecked || _submitting) return;
+    if (!_canSubmit || _submitting) return;
     final planningId = _planningId();
     final opdrachtId = _opdrachtId();
     if (planningId.isEmpty || opdrachtId.isEmpty) {
@@ -176,18 +179,186 @@ class _TaskCompletionModalState extends State<TaskCompletionModal> {
     );
   }
 
+  Widget _buildKlantPanel(Map<String, dynamic> item, String datum, String start, String eind) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Klantgegevens',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+          const Divider(height: 20),
+          _infoRow(
+            'Klant',
+            _text(item['bedrijfsnaam']).isEmpty
+                ? 'Onbekend'
+                : _text(item['bedrijfsnaam']),
+          ),
+          _infoRow(
+            'Adres',
+            _text(item['uitvoer_adres_volledig']).isEmpty
+                ? 'Adres onbekend'
+                : _text(item['uitvoer_adres_volledig']),
+          ),
+          _infoRow('Datum', datum),
+          _infoRow('Tijdslot', '$start – $eind'),
+          _infoRow(
+            'Project',
+            _text(item['project_naam']).isEmpty
+                ? '—'
+                : _text(item['project_naam']),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTakenCheckboxList({required bool isMobile}) {
+    if (_taken.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Text(
+          'Er zijn geen specifieke deeltaken om af te vinken voor deze opdracht. '
+          'Je kunt hem direct afronden.',
+          style: TextStyle(
+            fontStyle: FontStyle.italic,
+            color: Colors.grey,
+          ),
+        ),
+      );
+    }
+
+    final listView = ListView.builder(
+      shrinkWrap: isMobile,
+      physics: isMobile
+          ? const NeverScrollableScrollPhysics()
+          : null,
+      itemCount: _taken.length,
+      itemBuilder: (context, i) {
+        final t = _taken[i];
+        return CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(
+            t.taakNaam,
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            t.ruimteLabel,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          value: _checked[t.key] == true,
+          onChanged: (v) => _toggleTaak(t.key, v),
+        );
+      },
+    );
+
+    final checklist = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(
+            'Selecteer alles',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+          ),
+          value: _allChecked,
+          tristate: true,
+          onChanged: _toggleSelectAll,
+        ),
+        const Divider(height: 8),
+        if (isMobile) listView else Expanded(child: listView),
+      ],
+    );
+
+    return isMobile ? checklist : Expanded(child: checklist);
+  }
+
+  Widget _buildDienstenPanel({required bool isMobile}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          Text(
+            'Uit te voeren diensten',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildTakenCheckboxList(isMobile: isMobile),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+              ),
+              onPressed: _canSubmit && !_submitting ? _indienen : null,
+              icon: _submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.check_circle),
+              label: Text(
+                'Indienen & uren invullen',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.planningItem;
     final start = _safeTime(item['rooster_starttijd'] ?? item['starttijd']);
     final eind = _safeTime(item['rooster_eindtijd'] ?? item['eindtijd']);
     final datum = _text(item['geplande_datum']);
+    final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 920, maxHeight: 640),
+        constraints: BoxConstraints(
+          maxWidth: 920,
+          maxHeight: isMobile
+              ? MediaQuery.of(context).size.height * 0.9
+              : 640,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -216,185 +387,35 @@ class _TaskCompletionModalState extends State<TaskCompletionModal> {
                     ? const Center(child: CircularProgressIndicator())
                     : _loadError != null
                         ? Center(child: Text(_loadError!))
-                        : Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
+                        : isMobile
+                            ? SingleChildScrollView(
+                                child: Flex(
+                                  direction: Axis.vertical,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildKlantPanel(item, datum, start, eind),
+                                    const SizedBox(height: 24),
+                                    _buildDienstenPanel(isMobile: true),
+                                  ],
+                                ),
+                              )
+                            : Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: _buildKlantPanel(
+                                      item,
+                                      datum,
+                                      start,
+                                      eind,
                                     ),
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Klantgegevens',
-                                        style: GoogleFonts.inter(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const Divider(height: 20),
-                                      _infoRow(
-                                        'Klant',
-                                        _text(item['bedrijfsnaam']).isEmpty
-                                            ? 'Onbekend'
-                                            : _text(item['bedrijfsnaam']),
-                                      ),
-                                      _infoRow(
-                                        'Adres',
-                                        _text(item['uitvoer_adres_volledig'])
-                                                .isEmpty
-                                            ? 'Adres onbekend'
-                                            : _text(
-                                                item['uitvoer_adres_volledig'],
-                                              ),
-                                      ),
-                                      _infoRow('Datum', datum),
-                                      _infoRow('Tijdslot', '$start – $eind'),
-                                      _infoRow(
-                                        'Project',
-                                        _text(item['project_naam']).isEmpty
-                                            ? '—'
-                                            : _text(item['project_naam']),
-                                      ),
-                                    ],
+                                  const SizedBox(width: 24),
+                                  Expanded(
+                                    child: _buildDienstenPanel(isMobile: false),
                                   ),
-                                ),
+                                ],
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Text(
-                                        'Uit te voeren diensten',
-                                        style: GoogleFonts.inter(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      CheckboxListTile(
-                                        contentPadding: EdgeInsets.zero,
-                                        controlAffinity:
-                                            ListTileControlAffinity.leading,
-                                        title: Text(
-                                          'Selecteer alles',
-                                          style: GoogleFonts.inter(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        value: _allChecked,
-                                        tristate: true,
-                                        onChanged: _taken.isEmpty
-                                            ? null
-                                            : _toggleSelectAll,
-                                      ),
-                                      const Divider(height: 8),
-                                      Expanded(
-                                        child: _taken.isEmpty
-                                            ? Center(
-                                                child: Text(
-                                                  'Geen diensten gevonden in het werkprogramma.',
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                              )
-                                            : ListView.builder(
-                                                itemCount: _taken.length,
-                                                itemBuilder: (context, i) {
-                                                  final t = _taken[i];
-                                                  return CheckboxListTile(
-                                                    contentPadding:
-                                                        EdgeInsets.zero,
-                                                    controlAffinity:
-                                                        ListTileControlAffinity
-                                                            .leading,
-                                                    title: Text(
-                                                      t.taakNaam,
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                    ),
-                                                    subtitle: Text(
-                                                      t.ruimteLabel,
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: Colors
-                                                            .grey.shade600,
-                                                      ),
-                                                    ),
-                                                    value:
-                                                        _checked[t.key] ==
-                                                            true,
-                                                    onChanged: (v) =>
-                                                        _toggleTaak(
-                                                          t.key,
-                                                          v,
-                                                        ),
-                                                  );
-                                                },
-                                              ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 48,
-                                        child: ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                Colors.green.shade700,
-                                            foregroundColor: Colors.white,
-                                            disabledBackgroundColor:
-                                                Colors.grey.shade300,
-                                          ),
-                                          onPressed: _allChecked && !_submitting
-                                              ? _indienen
-                                              : null,
-                                          icon: _submitting
-                                              ? const SizedBox(
-                                                  width: 18,
-                                                  height: 18,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: Colors.white,
-                                                  ),
-                                                )
-                                              : const Icon(Icons.check_circle),
-                                          label: Text(
-                                            'Indienen & uren invullen',
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
               ),
             ],
           ),

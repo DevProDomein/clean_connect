@@ -1864,7 +1864,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
           ),
         ),
         SizedBox(
-          height: 240,
+          height: (MediaQuery.of(context).size.height * 0.35).clamp(300.0, 420.0),
           child: Stack(
             alignment: Alignment.center,
             children: [

@@ -44,6 +44,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
   final _contactTelefoon = TextEditingController();
 
   // Section 3 - Contract instellingen
+  final _eenmaligAantalDagenController = TextEditingController(text: '1');
   String _contractType = 'flexibel';
   String _periodiekeFrequentie = '1_keer_per_jaar';
   String _looptijd = '1_jaar';
@@ -213,6 +214,12 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         final ct = _text(m['contract_type']).toLowerCase();
         if (ct.isNotEmpty) _contractType = ct;
 
+        final dagenRaw = m['eenmalig_aantal_dagen'];
+        final dagen = dagenRaw is int
+            ? dagenRaw
+            : int.tryParse(_text(dagenRaw)) ?? 1;
+        _eenmaligAantalDagenController.text = '${dagen > 0 ? dagen : 1}';
+
         final freq = _text(m['periodieke_frequentie']).toLowerCase();
         if (freq.isNotEmpty) _periodiekeFrequentie = freq;
 
@@ -280,38 +287,212 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
     _contactAchternaam.dispose();
     _contactEmail.dispose();
     _contactTelefoon.dispose();
+    _eenmaligAantalDagenController.dispose();
     super.dispose();
   }
 
-  InputDecoration _fieldDecoration(
-    BuildContext context,
-    String label, {
-    IconData? icon,
-    String? hint,
+  InputDecoration _modernInputDecoration({
+    String? hintText,
+    Widget? suffixIcon,
+    Widget? prefixIcon,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixIcon: icon == null ? null : Icon(icon),
+      hintText: hintText,
+      hintStyle: TextStyle(
+        color: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
+      ),
       filled: true,
-      fillColor: isDark ? const Color(0xFF1B1B23) : Colors.grey.shade100,
+      fillColor: isDark ? const Color(0xFF1B1B23) : Colors.grey.shade50,
+      suffixIcon: suffixIcon,
+      prefixIcon: prefixIcon,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: Theme.of(context).colorScheme.primary,
-          width: 1.4,
+          color: isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+          width: 1,
         ),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+          width: 1,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: isDark
+              ? Theme.of(context).colorScheme.primary
+              : Colors.blueAccent,
+          width: 2,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFCC2F2F), width: 1),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFCC2F2F), width: 2),
+      ),
+    );
+  }
+
+  TextStyle _modernFieldLabelStyle() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GoogleFonts.inter(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+    );
+  }
+
+  TextStyle _modernFieldValueStyle() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GoogleFonts.inter(
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      color: isDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A),
+    );
+  }
+
+  Widget _buildModernTextField({
+    required String label,
+    required TextEditingController controller,
+    String? hintText,
+    TextInputType? keyboardType,
+    int maxLines = 1,
+    bool readOnly = false,
+    bool enabled = true,
+    Widget? suffixIcon,
+    Widget? prefixIcon,
+    VoidCallback? onTap,
+    String? Function(String?)? validator,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: _modernFieldLabelStyle()),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: controller,
+            keyboardType: keyboardType,
+            maxLines: maxLines,
+            readOnly: readOnly,
+            enabled: enabled,
+            onTap: onTap,
+            validator: validator,
+            style: _modernFieldValueStyle(),
+            decoration: _modernInputDecoration(
+              hintText: hintText,
+              suffixIcon: suffixIcon,
+              prefixIcon: prefixIcon,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernDropdown({
+    required String label,
+    required String? value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?>? onChanged,
+    String? Function(String?)? validator,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: _modernFieldLabelStyle()),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: value,
+            items: items,
+            onChanged: onChanged,
+            validator: validator,
+            style: _modernFieldValueStyle(),
+            decoration: _modernInputDecoration(),
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernPickerField({
+    required String label,
+    required String value,
+    required IconData icon,
+    required VoidCallback onTap,
+    String? Function(String?)? validator,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: _modernFieldLabelStyle()),
+          const SizedBox(height: 8),
+          TextFormField(
+            readOnly: true,
+            onTap: _saving ? null : onTap,
+            validator: validator,
+            style: _modernFieldValueStyle(),
+            controller: TextEditingController(text: value),
+            decoration: _modernInputDecoration(
+              suffixIcon: Icon(
+                icon,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumSectionCard({
+    required String title,
+    required Widget child,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111019) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.blue.shade200 : Colors.blue.shade900,
+            ),
+          ),
+          const SizedBox(height: 24),
+          child,
+        ],
+      ),
     );
   }
 
@@ -514,6 +695,9 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         'contact_email': _contactEmail.text.trim(),
         'contact_telefoon': _contactTelefoon.text.trim(),
         'contract_type': contractTypeDb,
+        'eenmalig_aantal_dagen': isEenmalig
+            ? (int.tryParse(_eenmaligAantalDagenController.text.trim()) ?? 1)
+            : 1,
         'periodieke_frequentie': isIncidenteel ? 'op_afroep' : frequentieDb,
         'uitvoer_datum': isEenmalig
             ? geselecteerdeUitvoerDatum?.toIso8601String()
@@ -599,42 +783,8 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF0A0912) : const Color(0xFFF5F5F7);
-    final cardBg = isDark ? const Color(0xFF111019) : Colors.white;
+    final bg = isDark ? const Color(0xFF0A0912) : Colors.grey.shade100;
     final contractEindPreview = _autoCalculatedEndDate();
-
-    Widget sectionCard({required String title, required Widget child}) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 20,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.3,
-              ),
-            ),
-            const SizedBox(height: 16),
-            child,
-          ],
-        ),
-      );
-    }
 
     Widget twoCol({required Widget left, required Widget right}) {
       return LayoutBuilder(
@@ -651,23 +801,6 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
             ],
           );
         },
-      );
-    }
-
-    Widget pickerField({
-      required String label,
-      required String value,
-      required IconData icon,
-      required VoidCallback onTap,
-      String? Function(String?)? validator,
-    }) {
-      return TextFormField(
-        readOnly: true,
-        onTap: _saving ? null : onTap,
-        validator: validator,
-        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-        controller: TextEditingController(text: value),
-        decoration: _fieldDecoration(context, label, icon: icon),
       );
     }
 
@@ -747,57 +880,33 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        // Section 1 - Bedrijf
-                        sectionCard(
-                          title: '1. Bedrijf',
+                        _buildPremiumSectionCard(
+                          title: 'Klantgegevens',
                           child: Column(
                             children: [
-                              TextFormField(
+                              _buildModernTextField(
+                                label: 'Bedrijfsnaam klant *',
                                 controller: _bedrijfsnaam,
-                                decoration: _fieldDecoration(
-                                  context,
-                                  'Bedrijfsnaam klant *',
-                                  icon: Icons.business,
-                                ),
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                prefixIcon: const Icon(Icons.business_outlined),
                                 validator: (v) =>
                                     (v == null || v.trim().isEmpty)
                                     ? 'Bedrijfsnaam is verplicht'
                                     : null,
                               ),
-                              const SizedBox(height: 12),
-                              TextFormField(
+                              _buildModernTextField(
+                                label: 'KVK-nummer',
                                 controller: _kvk,
-                                decoration: _fieldDecoration(
-                                  context,
-                                  'KVK-nummer',
-                                ),
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                ),
                               ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                initialValue: _werkRegio,
-                                decoration: _fieldDecoration(
-                                  context,
-                                  'Werkregio (Verplicht)',
-                                  icon: Icons.map_outlined,
-                                ),
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              _buildModernDropdown(
+                                label: 'Werkregio *',
+                                value: _werkRegio,
                                 items: _werkRegioOpties
                                     .map(
                                       (regio) => DropdownMenuItem<String>(
                                         value: regio,
                                         child: Text(
                                           regio,
-                                          style: GoogleFonts.inter(
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                          style: _modernFieldValueStyle(),
                                         ),
                                       ),
                                     )
@@ -811,53 +920,79 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                     ? 'Werkregio is verplicht'
                                     : null,
                               ),
-                              const SizedBox(height: 12),
-                              TextFormField(
+                              twoCol(
+                                left: _buildModernTextField(
+                                  label: 'Voornaam *',
+                                  controller: _contactVoornaam,
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                      ? 'Voornaam is verplicht'
+                                      : null,
+                                ),
+                                right: _buildModernTextField(
+                                  label: 'Achternaam *',
+                                  controller: _contactAchternaam,
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                      ? 'Achternaam is verplicht'
+                                      : null,
+                                ),
+                              ),
+                              _buildModernTextField(
+                                label: 'E-mail *',
+                                controller: _contactEmail,
+                                keyboardType: TextInputType.emailAddress,
+                                prefixIcon: const Icon(Icons.mail_outline),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'E-mail is verplicht';
+                                  }
+                                  if (!_isEmailValid(v)) {
+                                    return 'Ongeldig e-mailadres';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              _buildModernTextField(
+                                label: 'Telefoonnummer',
+                                controller: _contactTelefoon,
+                                keyboardType: TextInputType.phone,
+                                prefixIcon: const Icon(Icons.phone_outlined),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        _buildPremiumSectionCard(
+                          title: 'Uitvoerlocatie',
+                          child: Column(
+                            children: [
+                              _buildModernTextField(
+                                label: 'Straat + huisnummer *',
                                 controller: _adresStraat,
-                                decoration: _fieldDecoration(
-                                  context,
-                                  'Adres: straat + huisnummer *',
-                                ),
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                ),
                                 validator: (v) =>
                                     (v == null || v.trim().isEmpty)
                                     ? 'Adres is verplicht'
                                     : null,
                               ),
-                              const SizedBox(height: 12),
                               twoCol(
-                                left: TextFormField(
+                                left: _buildModernTextField(
+                                  label: 'Postcode *',
                                   controller: _adresPostcode,
-                                  decoration: _fieldDecoration(
-                                    context,
-                                    'Postcode *',
-                                  ),
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700,
-                                  ),
                                   validator: (v) =>
                                       (v == null || v.trim().isEmpty)
                                       ? 'Postcode is verplicht'
                                       : null,
                                 ),
-                                right: TextFormField(
+                                right: _buildModernTextField(
+                                  label: 'Stad *',
                                   controller: _adresStad,
-                                  decoration: _fieldDecoration(
-                                    context,
-                                    'Stad *',
-                                  ),
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700,
-                                  ),
                                   validator: (v) =>
                                       (v == null || v.trim().isEmpty)
                                       ? 'Stad is verplicht'
                                       : null,
                                 ),
                               ),
-                              const SizedBox(height: 8),
                               SwitchListTile.adaptive(
                                 value: _heeftAfwijkendUitvoerAdres,
                                 onChanged: _saving
@@ -880,16 +1015,9 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                     ? const SizedBox.shrink()
                                     : Column(
                                         children: [
-                                          const SizedBox(height: 8),
-                                          TextFormField(
+                                          _buildModernTextField(
+                                            label: 'Uitvoer: straat + huisnummer *',
                                             controller: _uitvoerAdresStraat,
-                                            decoration: _fieldDecoration(
-                                              context,
-                                              'Uitvoer adres: straat + huisnummer *',
-                                            ),
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.w700,
-                                            ),
                                             validator: (v) {
                                               if (!_heeftAfwijkendUitvoerAdres) {
                                                 return null;
@@ -901,17 +1029,10 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                               return null;
                                             },
                                           ),
-                                          const SizedBox(height: 12),
                                           twoCol(
-                                            left: TextFormField(
+                                            left: _buildModernTextField(
+                                              label: 'Uitvoer postcode *',
                                               controller: _uitvoerAdresPostcode,
-                                              decoration: _fieldDecoration(
-                                                context,
-                                                'Uitvoer postcode *',
-                                              ),
-                                              style: GoogleFonts.inter(
-                                                fontWeight: FontWeight.w700,
-                                              ),
                                               validator: (v) {
                                                 if (!_heeftAfwijkendUitvoerAdres) {
                                                   return null;
@@ -923,15 +1044,9 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                                 return null;
                                               },
                                             ),
-                                            right: TextFormField(
+                                            right: _buildModernTextField(
+                                              label: 'Uitvoer stad *',
                                               controller: _uitvoerAdresStad,
-                                              decoration: _fieldDecoration(
-                                                context,
-                                                'Uitvoer stad *',
-                                              ),
-                                              style: GoogleFonts.inter(
-                                                fontWeight: FontWeight.w700,
-                                              ),
                                               validator: (v) {
                                                 if (!_heeftAfwijkendUitvoerAdres) {
                                                   return null;
@@ -950,92 +1065,9 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 16),
 
-                        // Section 2 - Contactpersoon
-                        sectionCard(
-                          title: '2. Contactpersoon',
-                          child: Column(
-                            children: [
-                              twoCol(
-                                left: TextFormField(
-                                  controller: _contactVoornaam,
-                                  decoration: _fieldDecoration(
-                                    context,
-                                    'Voornaam *',
-                                  ),
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  validator: (v) =>
-                                      (v == null || v.trim().isEmpty)
-                                      ? 'Voornaam is verplicht'
-                                      : null,
-                                ),
-                                right: TextFormField(
-                                  controller: _contactAchternaam,
-                                  decoration: _fieldDecoration(
-                                    context,
-                                    'Achternaam *',
-                                  ),
-                                  style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  validator: (v) =>
-                                      (v == null || v.trim().isEmpty)
-                                      ? 'Achternaam is verplicht'
-                                      : null,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _contactEmail,
-                                decoration: _fieldDecoration(
-                                  context,
-                                  'E-mail *',
-                                  icon: Icons.mail_outline,
-                                ),
-                                keyboardType: TextInputType.emailAddress,
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) {
-                                    return 'E-mail is verplicht';
-                                  }
-                                  if (!_isEmailValid(v)) {
-                                    return 'Ongeldig e-mailadres';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _contactTelefoon,
-                                decoration: _fieldDecoration(
-                                  context,
-                                  'Telefoonnummer',
-                                  icon: Icons.phone_outlined,
-                                ),
-                                keyboardType: TextInputType.phone,
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) {
-                                    return null;
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Section 3 - Contract Instellingen
-                        sectionCard(
-                          title: '3. Contract instellingen',
+                        _buildPremiumSectionCard(
+                          title: 'Contract & Planning',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1097,18 +1129,17 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                     .toList(growable: false),
                               ),
                               if (_contractType != 'eenmalig') ...[
-                                const SizedBox(height: 12),
-                                DropdownButtonFormField<String>(
-                                  initialValue: _periodiekeFrequentie,
-                                  decoration: _fieldDecoration(
-                                    context,
-                                    'Frequentie *',
-                                  ),
+                                _buildModernDropdown(
+                                  label: 'Frequentie *',
+                                  value: _periodiekeFrequentie,
                                   items: _frequenties
                                       .map(
                                         (o) => DropdownMenuItem(
                                           value: o.value,
-                                          child: Text(o.label),
+                                          child: Text(
+                                            o.label,
+                                            style: _modernFieldValueStyle(),
+                                          ),
                                         ),
                                       )
                                       .toList(growable: false),
@@ -1140,44 +1171,46 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                       },
                               ),
                               if (_contractType == 'eenmalig') ...[
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: const Icon(
-                                    Icons.calendar_today,
-                                    color: Colors.blue,
+                                _buildModernPickerField(
+                                  label: 'Gewenste uitvoerdatum *',
+                                  value: geselecteerdeUitvoerDatum != null
+                                      ? _fmtDateHuman(geselecteerdeUitvoerDatum)
+                                      : '',
+                                  icon: Icons.calendar_today_rounded,
+                                  onTap: () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate:
+                                          geselecteerdeUitvoerDatum ??
+                                          DateTime.now(),
+                                      firstDate: DateTime.now(),
+                                      lastDate: DateTime.now().add(
+                                        const Duration(days: 365 * 2),
+                                      ),
+                                    );
+                                    if (picked != null) {
+                                      setState(
+                                        () => geselecteerdeUitvoerDatum = picked,
+                                      );
+                                    }
+                                  },
+                                ),
+                                _buildModernTextField(
+                                  label: 'Verdeel totale uren over X dagen',
+                                  controller: _eenmaligAantalDagenController,
+                                  hintText: 'Aantal dagen (verdeling)',
+                                  keyboardType: TextInputType.number,
+                                  enabled: !_saving,
+                                  prefixIcon: const Icon(
+                                    Icons.calendar_view_week_rounded,
                                   ),
-                                  title: const Text('Gewenste uitvoerdatum'),
-                                  subtitle: Text(
-                                    geselecteerdeUitvoerDatum != null
-                                        ? '${geselecteerdeUitvoerDatum!.day}-'
-                                              '${geselecteerdeUitvoerDatum!.month}-'
-                                              '${geselecteerdeUitvoerDatum!.year}'
-                                        : 'Kies een datum',
-                                  ),
-                                  trailing: const TextButton(
-                                    onPressed: null,
-                                    child: Text('Kiezen'),
-                                  ),
-                                  onTap: _saving
-                                      ? null
-                                      : () async {
-                                          final picked = await showDatePicker(
-                                            context: context,
-                                            initialDate:
-                                                geselecteerdeUitvoerDatum ??
-                                                DateTime.now(),
-                                            firstDate: DateTime.now(),
-                                            lastDate: DateTime.now().add(
-                                              const Duration(days: 365 * 2),
-                                            ),
-                                          );
-                                          if (picked != null) {
-                                            setState(
-                                              () => geselecteerdeUitvoerDatum =
-                                                  picked,
-                                            );
-                                          }
-                                        },
+                                  validator: (v) {
+                                    final n = int.tryParse((v ?? '').trim());
+                                    if (n == null || n < 1) {
+                                      return 'Minimaal 1 dag';
+                                    }
+                                    return null;
+                                  },
                                 ),
                                 CheckboxListTile(
                                   contentPadding: EdgeInsets.zero,
@@ -1196,8 +1229,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                 const SizedBox(height: 16),
                               ],
                               if (_contractType != 'eenmalig') ...[
-                                const SizedBox(height: 12),
-                                pickerField(
+                                _buildModernPickerField(
                                   label: 'Startdatum *',
                                   value: _fmtDateHuman(_contractStartDatum),
                                   icon: Icons.calendar_today_rounded,
@@ -1278,8 +1310,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                         )
                                       : Column(
                                           children: [
-                                            const SizedBox(height: 12),
-                                            pickerField(
+                                            _buildModernPickerField(
                                               label: 'Einddatum contract *',
                                               value: _fmtDateHuman(
                                                 _contractEindDatumHandmatig,
@@ -1348,9 +1379,8 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                   },
                                 ),
                               ],
-                              const SizedBox(height: 12),
                               twoCol(
-                                left: pickerField(
+                                left: _buildModernPickerField(
                                   label: 'Begin tijd *',
                                   value: _fmtTimeHuman(_tijdslotStart),
                                   icon: Icons.schedule_rounded,
@@ -1363,7 +1393,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                       ? 'Begin tijd is verplicht'
                                       : null,
                                 ),
-                                right: pickerField(
+                                right: _buildModernPickerField(
                                   label: 'Eindtijd *',
                                   value: _fmtTimeHuman(_tijdslotEind),
                                   icon: Icons.schedule_rounded,
@@ -1382,11 +1412,8 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                         ),
                         if (_contractType != 'incidenteel' &&
                             _contractType != 'eenmalig') ...[
-                          const SizedBox(height: 16),
-
-                          // Section 4 - Afwijkende periode
-                          sectionCard(
-                            title: '4. Afwijkende periode',
+                          _buildPremiumSectionCard(
+                            title: 'Afwijkende periode',
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -1419,7 +1446,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                           children: [
                                             const SizedBox(height: 8),
                                             twoCol(
-                                              left: pickerField(
+                                              left: _buildModernPickerField(
                                                 label: 'Start seizoen *',
                                                 value: _fmtDateHuman(
                                                   _afwijkendePeriodeStart,
@@ -1446,7 +1473,7 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                                   return null;
                                                 },
                                               ),
-                                              right: pickerField(
+                                              right: _buildModernPickerField(
                                                 label: 'Eind seizoen *',
                                                 value: _fmtDateHuman(
                                                   _afwijkendePeriodeEind,
@@ -1507,22 +1534,24 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                               ],
                             ),
                           ),
-                          const SizedBox(height: 24),
                         ],
 
                         SizedBox(
                           width: double.infinity,
+                          height: 56,
                           child: FilledButton.icon(
                             onPressed: _saving ? null : _save,
                             style: FilledButton.styleFrom(
                               backgroundColor: cs.primary,
                               foregroundColor: Colors.white,
+                              elevation: 2,
+                              shadowColor: cs.primary.withValues(alpha: 0.35),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
+                                borderRadius: BorderRadius.circular(16),
                               ),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 18,
-                                vertical: 20,
+                                horizontal: 24,
+                                vertical: 16,
                               ),
                             ),
                             icon: _saving
