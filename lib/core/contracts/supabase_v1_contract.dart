@@ -106,6 +106,7 @@ abstract final class OpdrachtenTable {
   static const String bedrijfsnaam = 'bedrijfsnaam';
   static const String uitvoerAdresVolledig = 'uitvoer_adres_volledig';
   static const String werkbonPdfUrl = 'werkbon_pdf_url';
+  static const String toelichtingPlanning = 'toelichting_planning';
 }
 
 abstract final class OpdrachtStatus {

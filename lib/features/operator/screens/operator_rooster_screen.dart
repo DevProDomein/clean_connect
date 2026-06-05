@@ -174,6 +174,49 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
       final kpiVandaag = today.length;
 
+      // Fetch toelichting_planning from opdrachten for all loaded tasks (single query).
+      try {
+        final ids = <String>{};
+        for (final t in rawTaken) {
+          final id = _opdrachtIdFromItem(t);
+          if (id.isNotEmpty) ids.add(id);
+        }
+
+        if (ids.isNotEmpty) {
+          final rows = await _supabase
+              .from('opdrachten')
+              .select('id, toelichting_planning')
+              .inFilter('id', ids.toList(growable: false));
+
+          final map = <String, String>{};
+          for (final r in rows as List) {
+            if (r is! Map) continue;
+            final id = r['id']?.toString().trim() ?? '';
+            if (id.isEmpty) continue;
+            final text = r['toelichting_planning']?.toString().trim() ?? '';
+            if (text.isNotEmpty && text.toLowerCase() != 'null') {
+              map[id] = text;
+            }
+          }
+
+          void attachToelichting(List<Map<String, dynamic>> list) {
+            for (final t in list) {
+              final id = _opdrachtIdFromItem(t);
+              if (id.isEmpty) continue;
+              final v = map[id];
+              if (v != null && v.isNotEmpty) {
+                t['toelichting_planning'] = v;
+              }
+            }
+          }
+
+          attachToelichting(today);
+          attachToelichting(upcoming);
+        }
+      } catch (e) {
+        debugPrint('toelichting_planning fetch: $e');
+      }
+
       if (mounted) {
         setState(() {
           _todaysTasks = today;
@@ -397,6 +440,20 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     final pid = item['planning_id']?.toString().trim();
     if (pid != null && pid.isNotEmpty) return pid;
     return item['id']?.toString().trim() ?? '';
+  }
+
+  String _opdrachtIdFromItem(Map<String, dynamic> item) {
+    final opdrachtEmbed = item['opdracht'];
+    final raw = item['opdracht_id']?.toString().trim() ??
+        (opdrachtEmbed is Map ? opdrachtEmbed['id']?.toString().trim() : null) ??
+        item['id']?.toString().trim() ??
+        '';
+    return raw;
+  }
+
+  bool _hasPlanningToelichting(Map<String, dynamic> item) {
+    final t = item['toelichting_planning']?.toString().trim() ?? '';
+    return t.isNotEmpty && t.toLowerCase() != 'null';
   }
 
   String _statusRaw(Map<String, dynamic> item) {
@@ -737,6 +794,8 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
             ? opdrachtEmbed['id']?.toString()
             : null) ??
         '';
+    final toelichtingPlanning =
+        planningMap['toelichting_planning']?.toString().trim() ?? '';
 
     if (opdrachtId.isEmpty || planningId.isEmpty) return;
 
@@ -915,6 +974,45 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
             height: 600,
             child: ListView(
               children: [
+                if (toelichtingPlanning.isNotEmpty &&
+                    toelichtingPlanning.toLowerCase() != 'null') ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.notification_important_rounded,
+                              color: Colors.orange.shade800,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Opmerking vanuit planning:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          toelichtingPlanning,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (globaleMaterialen.isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -1560,6 +1658,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     final eind = _safeTime(task['rooster_eindtijd'] ?? task['eindtijd']);
     final projectNaam = task['project_naam']?.toString().trim() ?? '';
     final thumbnail = _roosterPandThumbnail(task);
+    final hasToelichting = _hasPlanningToelichting(task);
 
     return Container(
       margin: margin,
@@ -1594,6 +1693,41 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                     ),
                   ),
                 ),
+              if (hasToelichting) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.notification_important_rounded,
+                        size: 16,
+                        color: Colors.orange.shade200,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Opmerking toegevoegd',
+                        style: GoogleFonts.lato(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11,
+                          color: Colors.orange.shade100,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               _buildTaakCompactActions(task, forPremiumCard: true),
             ],
           ),

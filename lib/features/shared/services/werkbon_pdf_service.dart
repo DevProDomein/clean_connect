@@ -52,6 +52,8 @@ class WerkbonPdfService {
     final String opdrachtDatum = opdracht['geplande_datum']?.toString() ?? '';
     final String startTijd = opdracht['tijdslot_start']?.toString() ?? '--:--';
     final String eindTijd = opdracht['tijdslot_eind']?.toString() ?? '--:--';
+    final String toelichtingPlanning =
+        opdracht['toelichting_planning']?.toString().trim() ?? '';
 
     final operatorNamen = <String>[];
     for (final p in planningen as List) {
@@ -274,6 +276,24 @@ class WerkbonPdfService {
           );
 
           elements.add(pw.SizedBox(height: 10));
+
+          if (toelichtingPlanning.isNotEmpty &&
+              toelichtingPlanning.toLowerCase() != 'null') {
+            elements.add(
+              buildSectionBox(
+                'OPMERKING PLANNING',
+                pw.Text(
+                  toelichtingPlanning,
+                  style: pw.TextStyle(
+                    font: _fontReg,
+                    fontSize: 10,
+                    color: PdfColors.black,
+                  ),
+                ),
+              ),
+            );
+          }
+
           elements.add(
             pw.Text(
               'WERKPROGRAMMA',

@@ -57,6 +57,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay = DateTime.now();
   String? _selectedManualProjectId;
+  List<String> _manualFilterKlanten = [];
+  List<String> _manualFilterProjecten = [];
+  List<String> _manualFilterRegios = [];
+  String _manualSearchTerm = '';
   String _calendarViewMode = 'Maand';
   bool _showFilters = true;
   Map<DateTime, List<Map<String, dynamic>>> _groupedOpenTaken = {};
@@ -1754,6 +1758,176 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
   }
 
+  BoxDecoration _smartPlannerPremiumPanelDecoration({
+    required bool isDark,
+    required ColorScheme cs,
+  }) {
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF111019) : Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 20,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    );
+  }
+
+  ButtonStyle _smartPlannerActionButtonStyle(ColorScheme cs) {
+    return ElevatedButton.styleFrom(
+      backgroundColor: cs.primary,
+      foregroundColor: Colors.white,
+      elevation: 2,
+      minimumSize: const Size(0, 52),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    );
+  }
+
+  ButtonStyle _smartPlannerFilledButtonStyle() {
+    return FilledButton.styleFrom(
+      minimumSize: const Size.fromHeight(52),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    );
+  }
+
+  BoxDecoration _smartPlannerPremiumCardDecoration({required bool selected}) {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(20),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          const Color(0xFF0F172A).withValues(alpha: 0.95),
+          const Color(0xFF0052CC).withValues(alpha: 0.85),
+        ],
+      ),
+      border: selected
+          ? Border.all(color: Colors.white.withValues(alpha: 0.55), width: 2)
+          : null,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.1),
+          blurRadius: 15,
+          offset: const Offset(0, 5),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSmartPlannerPremiumListTile({
+    required Map<String, dynamic> project,
+    required bool selected,
+    required bool hasAssignedHours,
+    required VoidCallback? onTap,
+    required ColorScheme cs,
+    required bool isDark,
+  }) {
+    final projectName = _text(project['project_naam']).isEmpty
+        ? 'Naamloos project'
+        : _text(project['project_naam']);
+    final region = _text(project['werk_regio']).isEmpty
+        ? 'Geen regio'
+        : _text(project['werk_regio']);
+    final openTaskCount = _asInt(project['open_taken']);
+    final totalTaskCount = _asInt(project['totaal_taken']);
+    final neededOperators = _asInt(
+      project['standaard_aantal_operators'] ?? project['benodigde_operators'],
+      fallback: 1,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              decoration: _smartPlannerPremiumCardDecoration(selected: selected),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (hasAssignedHours)
+                      Container(
+                        width: 6,
+                        color: Colors.orange.shade400,
+                      ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              projectName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              region,
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Benodigde operators: $neededOperators',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '$openTaskCount open taken van de $totalTaskCount',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSmartPlannerTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
     final isMobile = MediaQuery.of(context).size.width < 800;
@@ -1792,12 +1966,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     Widget buildLeftColumn() {
       return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF111019) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-        ),
+        padding: const EdgeInsets.all(16),
+        decoration: _smartPlannerPremiumPanelDecoration(isDark: isDark, cs: cs),
         child: _isLoadingSmartProjects
             ? const Center(child: CircularProgressIndicator())
             : _smartProjectsError != null
@@ -1811,196 +1981,107 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       ),
                     ),
                   )
-                : ListView.builder(
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Projecten klaar voor Smart Planning',
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: visibleProjects.length,
                     itemBuilder: (context, index) {
-                  final project = Map<String, dynamic>.from(
-                    visibleProjects[index],
-                  );
+                      final project = Map<String, dynamic>.from(
+                        visibleProjects[index],
+                      );
                       final projectId = _text(project['project_id']).isNotEmpty
                           ? _text(project['project_id'])
                           : _text(project['id']);
-                      final projectName = _text(project['project_naam']).isEmpty
-                          ? 'Naamloos project'
-                          : _text(project['project_naam']);
-                      final region = _text(project['werk_regio']).isEmpty
-                          ? 'Geen regio'
-                          : _text(project['werk_regio']);
-                      final openTaskCount = _asInt(project['open_taken']);
-                      final totalTaskCount = _asInt(project['totaal_taken']);
-                      final neededOperators = _asInt(
-                    project['standaard_aantal_operators'] ??
-                        project['benodigde_operators'],
-                        fallback: 1,
-                      );
-                  final hasAssignedHours =
-                      _asDouble(project['reeds_toegewezen_uren']) > 0;
-                  final selected =
-                      selectedProjectId.isNotEmpty &&
+                      final hasAssignedHours =
+                          _asDouble(project['reeds_toegewezen_uren']) > 0;
+                      final selected =
+                          selectedProjectId.isNotEmpty &&
                           projectId.isNotEmpty &&
                           selectedProjectId == projectId;
 
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
+                      return _buildSmartPlannerPremiumListTile(
+                        project: project,
+                        selected: selected,
+                        hasAssignedHours: hasAssignedHours,
                         onTap: projectId.isEmpty
                             ? null
                             : () => _onProjectSelected(projectId),
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: selected ? cs.primaryContainer : cs.surface,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: hasAssignedHours
-                                      ? Colors.orange
-                                      : selected
-                                          ? cs.primary.withValues(alpha: 0.60)
-                                          : cs.onSurface.withValues(alpha: 0.06),
-                                  width: hasAssignedHours ? 2 : 1,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                color: Colors.black.withValues(
-                                  alpha: isDark ? 0.12 : 0.03,
-                                ),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 5),
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    projectName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    region,
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.w700,
-                                      color: cs.onSurface.withValues(alpha: 0.68),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Benodigde operators: $neededOperators',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: cs.onSurface.withValues(alpha: 0.74),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                    decoration: BoxDecoration(
-                                      color: cs.primary.withValues(alpha: 0.10),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      '$openTaskCount open taken van de $totalTaskCount',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                        color: cs.primary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                        cs: cs,
+                        isDark: isDark,
                       );
                     },
+                  ),
+                    ],
                   ),
       );
     }
 
     Widget buildRightColumnDesktop() {
       return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF111019) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-        ),
-        child: _selectedProject == null
-            ? Center(
-                child: Text(
-                  'Selecteer een project in de lijst om de slimme planner te starten.',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w700,
-                    color: cs.onSurface.withValues(alpha: 0.72),
+        padding: const EdgeInsets.all(24),
+        decoration: _smartPlannerPremiumPanelDecoration(isDark: isDark, cs: cs),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (showMultiOperatorWarning) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(
+                    alpha: isDark ? 0.18 : 0.14,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.orange.withValues(
+                      alpha: isDark ? 0.35 : 0.30,
+                    ),
                   ),
                 ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (showMultiOperatorWarning) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withValues(
-                          alpha: isDark ? 0.18 : 0.14,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Let op: Er is al een operator ingepland voor deze opdracht '
+                        '(Starttijd: ${_smartReedsIngeplandStart!}). '
+                        'Probeer de nieuwe operator op dezelfde tijd te laten starten.',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface.withValues(alpha: 0.86),
                         ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.orange.withValues(
-                            alpha: isDark ? 0.35 : 0.30,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orange.shade700,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Let op: Er is al een operator ingepland voor deze opdracht '
-                              '(Starttijd: ${_smartReedsIngeplandStart!}). '
-                              'Probeer de nieuwe operator op dezelfde tijd te laten starten.',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                                color: cs.onSurface.withValues(alpha: 0.86),
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                     ),
-                    const SizedBox(height: 12),
                   ],
-                  Text(
-                    'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
-                    style: GoogleFonts.inter(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
+              style: GoogleFonts.inter(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.4,
+              ),
+            ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -2330,13 +2411,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         height: 52,
                         child: ElevatedButton(
                           onPressed: _isCalculating ? null : _runSmartPlanning,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: cs.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
+                          style: _smartPlannerActionButtonStyle(cs),
                           child: _isCalculating
                               ? const SizedBox(
                                   width: 18,
@@ -2409,32 +2484,23 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       onPressed: selectedResult == null
                           ? null
                           : () => _submitSmartPlannerBooking(selectedResult),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
+                      style: _smartPlannerFilledButtonStyle(),
                       child: Text(
                         'Definitief Inplannen',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w900),
                       ),
                     ),
                   ),
-                ],
-              ),
+          ],
+        ),
       );
     }
 
     Widget buildRightColumnMobile() {
       // On mobile we only show this column when a project is selected.
       return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF111019) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
-        ),
+        padding: const EdgeInsets.all(24),
+        decoration: _smartPlannerPremiumPanelDecoration(isDark: isDark, cs: cs),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2452,8 +2518,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     Text(
                       'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
                       style: GoogleFonts.inter(
-                        fontSize: 22,
+                        fontSize: 24,
                         fontWeight: FontWeight.w900,
+                        letterSpacing: -0.4,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -2759,13 +2826,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       height: 52,
                       child: ElevatedButton(
                         onPressed: _isCalculating ? null : _runSmartPlanning,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: cs.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
+                        style: _smartPlannerActionButtonStyle(cs),
                         child: _isCalculating
                             ? const SizedBox(
                                 width: 18,
@@ -2836,12 +2897,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         onPressed: selectedResult == null
                             ? null
                             : () => _submitSmartPlannerBooking(selectedResult),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
+                        style: _smartPlannerFilledButtonStyle(),
                         child: Text(
                           'Definitief Inplannen',
                           style: GoogleFonts.inter(fontWeight: FontWeight.w900),
@@ -2865,32 +2921,52 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 ? (_selectedProject == null
                       ? buildLeftColumn()
                       : buildRightColumnMobile())
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final w = constraints.maxWidth;
-                      const gap = 14.0;
-                      final leftW = (w - gap) / 3.0;
-                      final rightW = w - gap - leftW;
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: leftW,
-                            child: buildLeftColumn(),
-                          ),
-                          const SizedBox(width: gap),
-                          SizedBox(
-                            width: rightW,
+                : AnimatedSize(
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topLeft,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: _selectedProject == null ? 1 : 2,
+                          child: buildLeftColumn(),
+                        ),
+                        if (_selectedProject != null) ...[
+                          const SizedBox(width: 14),
+                          Expanded(
+                            flex: 3,
                             child: buildRightColumnDesktop(),
                           ),
                         ],
-                      );
-                    },
+                      ],
+                    ),
                   ),
           ),
           const SizedBox(height: 120),
         ],
       ),
+    );
+  }
+
+  BoxDecoration _manualPremiumTaskDecoration() {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(20),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          const Color(0xFF0F172A).withValues(alpha: 0.95),
+          const Color(0xFF0052CC).withValues(alpha: 0.85),
+        ],
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.1),
+          blurRadius: 15,
+          offset: const Offset(0, 5),
+        ),
+      ],
     );
   }
 
@@ -2911,54 +2987,22 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final safeOperators = _safeOperatorsVoorOpdracht(task);
     final urenPerPersoon = totaalUrenKaart / safeOperators;
     final title = project.isNotEmpty ? project : company;
-    final isSelectedDay = DateUtils.isSameDay(
-      _selectedDay ?? _focusedDay,
-      date,
-    );
-    final accent = Colors.blue.shade700;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12, left: 4, right: 4),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           onTap: opdrachtId.isEmpty
               ? null
               : () => _openManualPlanModal(opdrachtId),
           child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: isSelectedDay
-                  ? accent.withValues(alpha: isDark ? 0.14 : 0.06)
-                  : isDark
-                  ? const Color(0xFF171722)
-                  : const Color(0xFFFDFDFE),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isSelectedDay
-                    ? accent.withValues(alpha: 0.35)
-                    : cs.onSurface.withValues(alpha: 0.06),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.035),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
+            constraints: const BoxConstraints(minHeight: 120),
+            padding: const EdgeInsets.all(24),
+            decoration: _manualPremiumTaskDecoration(),
             child: Row(
               children: [
-                Container(
-                  width: 6,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.90),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2966,20 +3010,21 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       Text(
                         title,
                         style: GoogleFonts.inter(
-                          fontSize: 15,
+                          fontSize: 18,
                           fontWeight: FontWeight.w900,
-                          color: accent,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        company,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w600,
-                          color: cs.onSurface.withValues(alpha: 0.70),
+                          color: Colors.white,
                         ),
                       ),
                       const SizedBox(height: 6),
+                      Text(
+                        company,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -2990,17 +3035,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.18),
+                              color: Colors.white.withValues(alpha: 0.14),
                               borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: accent.withValues(alpha: 0.45),
-                              ),
                             ),
                             child: Text(
                               _formatTaakDatumTag(date),
                               style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w900,
-                                color: accent,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
                               ),
                             ),
                           ),
@@ -3010,14 +3052,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.12),
+                              color: Colors.white.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               '$start - $end',
                               style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w800,
-                                color: accent,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white70,
                               ),
                             ),
                           ),
@@ -3027,34 +3069,35 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: cs.onSurface.withValues(alpha: 0.06),
+                              color: Colors.white.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
                               _manualRegion(task),
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w700,
-                                color: cs.onSurface.withValues(alpha: 0.75),
+                                color: Colors.white70,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 6),
                       Text(
                         'Nodig: $safeOperators operators · '
                         'ca. ${formatHoursToText(urenPerPersoon)} per persoon',
                         style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w800,
-                          color: accent.withValues(alpha: 0.92),
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white70,
                         ),
                       ),
                     ],
                   ),
                 ),
-                Icon(
+                const Icon(
                   Icons.chevron_right_rounded,
-                  color: cs.onSurface.withValues(alpha: 0.45),
+                  size: 28,
+                  color: Colors.white70,
                 ),
               ],
             ),
@@ -3467,170 +3510,137 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final start = _timeLabel(planningDetails?['starttijd']);
     final end = _timeLabel(planningDetails?['eindtijd']);
     final date = _toDate(item['geplande_datum']);
-    final isSelectedDay = DateUtils.isSameDay(
-      _selectedDay ?? _focusedDay,
-      date,
-    );
-    final accent = Colors.red.shade400;
     final weergaveNaam = _extractIngeplandWeergaveNaam(item);
     final totaalUrenKaart = _totaalUrenVoorOpdrachtKaart(item);
     final safeOperators = _safeOperatorsVoorOpdracht(item);
     final urenPerPersoon = totaalUrenKaart / safeOperators;
 
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12, left: 4, right: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
           onTap: opdrachtId.isEmpty
               ? null
               : () => _openReedsGeplandeInfoModal(item),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(14),
-                                          decoration: BoxDecoration(
-                                            color: isSelectedDay
-                  ? accent.withValues(alpha: isDark ? 0.14 : 0.06)
-                                                : isDark
-                                                    ? const Color(0xFF171722)
-                                                    : const Color(0xFFFDFDFE),
-                                            borderRadius: BorderRadius.circular(16),
-                                            border: Border.all(
-                                              color: isSelectedDay
-                    ? accent.withValues(alpha: 0.35)
-                                                  : cs.onSurface.withValues(alpha: 0.06),
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.035),
-                                                blurRadius: 14,
-                                                offset: const Offset(0, 6),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Row(
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: _manualPremiumTaskDecoration(),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Container(
-                                                width: 6,
-                                                height: 52,
-                                                decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.90),
-                                                  borderRadius: BorderRadius.circular(20),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         bedrijf,
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 15,
-                                                        fontWeight: FontWeight.w900,
-                          color: accent,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
                         projectLabel,
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight: FontWeight.w600,
-                                                        color: cs.onSurface.withValues(alpha: 0.70),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 6),
-                                                    Wrap(
-                                                      spacing: 8,
-                                                      runSpacing: 8,
-                                                      children: [
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                          decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.12),
-                                                            borderRadius: BorderRadius.circular(999),
-                                                          ),
-                                                          child: Text(
-                                                            '$start - $end',
-                                                            style: GoogleFonts.inter(
-                                                              fontWeight: FontWeight.w800,
-                                color: accent,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                          decoration: BoxDecoration(
-                                                            color: cs.onSurface.withValues(alpha: 0.06),
-                                                            borderRadius: BorderRadius.circular(999),
-                                                          ),
-                                                          child: Text(
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '$start - $end',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
                               _manualRegion(item),
-                                                            style: GoogleFonts.inter(
-                                                              fontWeight: FontWeight.w700,
-                                                              color: cs.onSurface.withValues(alpha: 0.75),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    const SizedBox(height: 6),
-                                                    Text(
-                                                      DateFormat('d MMMM yyyy', 'nl_NL').format(date),
-                                                      style: GoogleFonts.inter(
-                                                        fontWeight: FontWeight.w700,
-                                                        color: cs.onSurface.withValues(alpha: 0.70),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 2),
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        DateFormat('d MMMM yyyy', 'nl_NL').format(date),
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
                       Text(
                         'Nodig: $safeOperators operators · '
                         'ca. ${formatHoursToText(urenPerPersoon)} per persoon',
                         style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w800,
-                          color: accent.withValues(alpha: 0.92),
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white70,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.person_outline,
                             size: 16,
-                            color: cs.onSurface.withValues(alpha: 0.55),
+                            color: Colors.white70,
                           ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               'Uitvoerder: $weergaveNaam',
-                                                      style: GoogleFonts.inter(
+                              style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w600,
-                                color: cs.onSurface.withValues(alpha: 0.70),
+                                color: Colors.white70,
                               ),
-                                                      ),
+                            ),
                           ),
                         ],
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              Icon(
-                                                Icons.chevron_right_rounded,
-                                                color: cs.onSurface.withValues(alpha: 0.45),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  );
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white70,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   String _formatTaakDatumTag(DateTime d) {
@@ -3639,6 +3649,50 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     } catch (_) {
       return DateFormat('E d MMM').format(d);
     }
+  }
+
+  Widget _manualListSectionHeader({
+    required IconData icon,
+    required String title,
+    required int count,
+    required Color accent,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: accent, size: 20),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w900,
+              color: accent,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _manualSplitOpenColumn(
@@ -3651,13 +3705,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Nog in te plannen (${weergaveLijst.length})',
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            color: accent,
-          ),
+        _manualListSectionHeader(
+          icon: Icons.inbox_rounded,
+          title: 'Nog in te plannen',
+          count: weergaveLijst.length,
+          accent: accent,
         ),
         const SizedBox(height: 10),
         if (weergaveLijst.isEmpty)
@@ -3698,13 +3750,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Ingepland (${reedsGeplande.length})',
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            color: accent,
-          ),
+        _manualListSectionHeader(
+          icon: Icons.check_circle_outline_rounded,
+          title: 'Ingepland',
+          count: reedsGeplande.length,
+          accent: accent,
         ),
         const SizedBox(height: 10),
         if (isLoadingReedsGeplande)
@@ -3737,174 +3787,621 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
   }
 
+  List<String> _collectManualKlantOptions(
+    List<Map<String, dynamic>> tasks,
+  ) {
+    final set = <String>{};
+    for (final t in tasks) {
+      final klant = _text(t['bedrijfsnaam']).trim();
+      if (klant.isNotEmpty) set.add(klant);
+    }
+    return set.toList()..sort();
+  }
+
+  List<String> _collectManualProjectOptions(
+    List<Map<String, dynamic>> tasks,
+  ) {
+    final set = <String>{};
+    for (final t in tasks) {
+      final project = _projectName(t).trim();
+      if (project.isNotEmpty) set.add(project);
+    }
+    for (final raw in _projects) {
+      final naam = _text(
+        Map<String, dynamic>.from(raw as Map)['project_naam'],
+      ).trim();
+      if (naam.isNotEmpty) set.add(naam);
+    }
+    return set.toList()..sort();
+  }
+
+  List<String> _collectManualRegioOptions(
+    List<Map<String, dynamic>> tasks,
+  ) {
+    final set = <String>{};
+    for (final t in tasks) {
+      final region = _manualRegion(t).trim();
+      if (region.isNotEmpty) set.add(region);
+    }
+    return set.toList()..sort();
+  }
+
+  Future<void> _showManualMultiSelectSheet({
+    required String title,
+    required List<String> options,
+    required List<String> currentSelection,
+    required void Function(List<String>) onApply,
+  }) async {
+    var tempSelected = List<String>.from(currentSelection);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.55;
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                      child: Text(
+                        title,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: maxH),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (_, i) {
+                          final opt = options[i];
+                          final checked = tempSelected.contains(opt);
+                          return CheckboxListTile(
+                            title: Text(
+                              opt,
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            value: checked,
+                            onChanged: (v) {
+                              setModalState(() {
+                                if (v == true) {
+                                  if (!tempSelected.contains(opt)) {
+                                    tempSelected.add(opt);
+                                  }
+                                } else {
+                                  tempSelected.remove(opt);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () {
+                            onApply(List<String>.from(tempSelected));
+                            Navigator.pop(ctx);
+                          },
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: Text(
+                            'Toepassen',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildManualFilterButton({
+    required String label,
+    required int selectedCount,
+    required VoidCallback onTap,
+    required ColorScheme cs,
+    bool fullWidth = false,
+  }) {
+    final active = selectedCount > 0;
+    return SizedBox(
+      width: fullWidth ? double.infinity : null,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          minimumSize: fullWidth ? const Size(double.infinity, 48) : null,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          side: BorderSide(
+            color: active
+                ? cs.primary.withValues(alpha: 0.45)
+                : cs.onSurface.withValues(alpha: 0.12),
+          ),
+          backgroundColor:
+              active ? cs.primary.withValues(alpha: 0.08) : Colors.transparent,
+        ),
+        child: Row(
+          mainAxisAlignment:
+              fullWidth ? MainAxisAlignment.spaceBetween : MainAxisAlignment.start,
+          mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            Text(
+              active ? '$label ($selectedCount)' : label,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w800,
+                color: active
+                    ? cs.primary
+                    : cs.onSurface.withValues(alpha: 0.85),
+              ),
+            ),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 18,
+              color: active
+                  ? cs.primary
+                  : cs.onSurface.withValues(alpha: 0.65),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildManualPlanningTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
     final isMobile = MediaQuery.of(context).size.width < 800;
-    final weergaveLijst = _getZichtbareOpenTaken();
+    final weergaveLijstRaw = _getZichtbareOpenTaken();
+    final allTasksForFilters = <Map<String, dynamic>>[
+      ...weergaveLijstRaw,
+      ..._reedsGeplandeTaken,
+    ];
+    final klantOptions = _collectManualKlantOptions(allTasksForFilters);
+    final projectOptions = _collectManualProjectOptions(allTasksForFilters);
+    final regioOptions = _collectManualRegioOptions(allTasksForFilters);
+
+    final searchTerm = _manualSearchTerm.trim().toLowerCase();
+
+    bool matchesManualFilters(Map<String, dynamic> task) {
+      final klant = _text(task['bedrijfsnaam']).trim();
+      final project = _projectName(task).trim();
+      final region = _manualRegion(task).trim();
+
+      if (_manualFilterKlanten.isNotEmpty &&
+          !_manualFilterKlanten.contains(klant)) {
+        return false;
+      }
+      if (_manualFilterProjecten.isNotEmpty &&
+          !_manualFilterProjecten.contains(project)) {
+        return false;
+      }
+      if (_manualFilterRegios.isNotEmpty &&
+          !_manualFilterRegios.contains(region)) {
+        return false;
+      }
+      if (searchTerm.isNotEmpty) {
+        final bedrijf = klant.toLowerCase();
+        final projectLower = project.toLowerCase();
+        final adres = _text(task['uitvoer_adres_volledig']).toLowerCase();
+        if (!bedrijf.contains(searchTerm) &&
+            !projectLower.contains(searchTerm) &&
+            !region.toLowerCase().contains(searchTerm) &&
+            !adres.contains(searchTerm)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    final weergaveLijst =
+        weergaveLijstRaw.where(matchesManualFilters).toList(growable: false);
+    final filteredPlannedTaken =
+        _reedsGeplandeTaken.where(matchesManualFilters).toList(growable: false);
     final openLeegBericht = _openTakenLeegBericht();
+
+    final activeFilterCount = _manualFilterKlanten.length +
+        _manualFilterProjecten.length +
+        _manualFilterRegios.length +
+        (searchTerm.isNotEmpty ? 1 : 0);
 
     return SingleChildScrollView(
       child: Column(
         children: [
-        if (isMobile)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: OutlinedButton(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
               onPressed: () => setState(() => _showFilters = !_showFilters),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+              icon: Icon(
+                Icons.filter_list_rounded,
+                size: 20,
+                color: _showFilters ? cs.primary : cs.onSurface.withValues(alpha: 0.75),
+              ),
+              label: Text(
+                _showFilters ? 'Filters verbergen' : 'Filters',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w900,
+                  color: _showFilters
+                      ? cs.primary
+                      : cs.onSurface.withValues(alpha: 0.85),
                 ),
               ),
-              child: Text(
-                _showFilters
-                    ? 'Filters & Zoeken verbergen'
-                    : 'Filters & Zoeken tonen',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                side: BorderSide(
+                  color: _showFilters
+                      ? cs.primary.withValues(alpha: 0.45)
+                      : cs.onSurface.withValues(alpha: 0.12),
+                ),
+                backgroundColor: _showFilters
+                    ? cs.primary.withValues(alpha: 0.08)
+                    : (isDark
+                        ? const Color(0xFF171722)
+                        : Colors.white),
               ),
             ),
           ),
+        ),
         AnimatedCrossFade(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 200),
           crossFadeState: _showFilters
               ? CrossFadeState.showFirst
               : CrossFadeState.showSecond,
           secondChild: const SizedBox.shrink(),
-          firstChild: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF111019) : Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: cs.onSurface.withValues(alpha: 0.06),
-                    ),
+          firstChild: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF12121A) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: cs.onSurface.withValues(alpha: 0.08),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
                   ),
-                  child: DropdownButtonFormField<String?>(
-                    initialValue: _selectedManualProjectId,
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (activeFilterCount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        '$activeFilterCount actieve filter${activeFilterCount == 1 ? '' : 's'}',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: cs.primary,
+                        ),
+                      ),
+                    ),
+                  TextField(
+                    onChanged: (val) =>
+                        setState(() => _manualSearchTerm = val),
                     decoration: InputDecoration(
-                      labelText: isMobile ? 'Project' : 'Projectfilter',
-                      labelStyle: GoogleFonts.inter(
-                        fontWeight: FontWeight.w700,
+                      hintText: 'Zoek op klant, project of regio',
+                      hintStyle: GoogleFonts.inter(
+                        color: cs.onSurface.withValues(alpha: 0.45),
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: cs.primary.withValues(alpha: 0.9),
                       ),
                       filled: true,
                       fillColor: isDark
                           ? const Color(0xFF1B1B23)
                           : const Color(0xFFF5F5F7),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
-                    ),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text(
-                          'Alle projecten',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                        ),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 14,
                       ),
-                      ..._projects
-                          .map((raw) => Map<String, dynamic>.from(raw as Map))
-                          .map(
-                            (project) => DropdownMenuItem<String?>(
-                              value: _text(project['id']),
-                              child: Text(
-                                _text(project['project_naam']).isEmpty
-                                    ? 'Naamloos project'
-                                    : _text(project['project_naam']),
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                    ],
-                    onChanged: _isLoading
-                        ? null
-                        : (value) async {
-                            setState(() => _selectedManualProjectId = value);
-                            await _loadTasks();
-                          },
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.icon(
-                    onPressed: _isLoading ? null : _openExtraOpdrachtModal,
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: Text(
-                      '+ Extra Opdracht',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w900),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 10),
+                  _buildManualFilterButton(
+                    label: 'Klant',
+                    selectedCount: _manualFilterKlanten.length,
+                    cs: cs,
+                    fullWidth: true,
+                    onTap: () => _showManualMultiSelectSheet(
+                      title: "Selecteer klant(en)",
+                      options: klantOptions,
+                      currentSelection: _manualFilterKlanten,
+                      onApply: (sel) =>
+                          setState(() => _manualFilterKlanten = sel),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildManualFilterButton(
+                    label: 'Project',
+                    selectedCount: _manualFilterProjecten.length,
+                    cs: cs,
+                    fullWidth: true,
+                    onTap: () => _showManualMultiSelectSheet(
+                      title: "Selecteer project(en)",
+                      options: projectOptions,
+                      currentSelection: _manualFilterProjecten,
+                      onApply: (sel) =>
+                          setState(() => _manualFilterProjecten = sel),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildManualFilterButton(
+                    label: 'Regio',
+                    selectedCount: _manualFilterRegios.length,
+                    cs: cs,
+                    fullWidth: true,
+                    onTap: () => _showManualMultiSelectSheet(
+                      title: "Selecteer regio('s)",
+                      options: regioOptions,
+                      currentSelection: _manualFilterRegios,
+                      onApply: (sel) =>
+                          setState(() => _manualFilterRegios = sel),
+                    ),
+                  ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<String>(
-                      segments: <ButtonSegment<String>>[
-                        ButtonSegment<String>(
-                          value: 'Maand',
-                          label: Text(
-                            'Maand',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          icon: const Icon(
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? cs.onSurface.withValues(alpha: 0.10)
+                  : cs.onSurface.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => setState(() => _calendarViewMode = 'Maand'),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _calendarViewMode == 'Maand'
+                            ? Colors.white
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: _calendarViewMode == 'Maand'
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
                             Icons.calendar_view_month_rounded,
                             size: 18,
+                            color: _calendarViewMode == 'Maand'
+                                ? cs.primary
+                                : cs.onSurface.withValues(alpha: 0.65),
                           ),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'Week',
-                          label: Text(
+                          const SizedBox(height: 4),
+                          Text(
+                            'Maand',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _calendarViewMode == 'Maand'
+                                  ? cs.primary
+                                  : cs.onSurface.withValues(alpha: 0.65),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => setState(() => _calendarViewMode = 'Week'),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _calendarViewMode == 'Week'
+                            ? Colors.white
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: _calendarViewMode == 'Week'
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.view_week_rounded,
+                            size: 18,
+                            color: _calendarViewMode == 'Week'
+                                ? cs.primary
+                                : cs.onSurface.withValues(alpha: 0.65),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
                             'Week',
                             style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _calendarViewMode == 'Week'
+                                  ? cs.primary
+                                  : cs.onSurface.withValues(alpha: 0.65),
                             ),
                           ),
-                          icon: const Icon(Icons.view_week_rounded, size: 18),
-                        ),
-                        ButtonSegment<String>(
-                          value: 'Dag',
-                          label: Text(
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => setState(() => _calendarViewMode = 'Dag'),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _calendarViewMode == 'Dag'
+                            ? Colors.white
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: _calendarViewMode == 'Dag'
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.view_day_rounded,
+                            size: 18,
+                            color: _calendarViewMode == 'Dag'
+                                ? cs.primary
+                                : cs.onSurface.withValues(alpha: 0.65),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
                             'Dag',
                             style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _calendarViewMode == 'Dag'
+                                  ? cs.primary
+                                  : cs.onSurface.withValues(alpha: 0.65),
                             ),
                           ),
-                          icon: const Icon(Icons.view_day_rounded, size: 18),
-                        ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                height: 52,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        cs.primary.withValues(alpha: isDark ? 0.95 : 1.0),
+                        isDark
+                            ? const Color(0xFF0F172A)
+                            : cs.primary.withValues(alpha: 0.85),
                       ],
-                      selected: <String>{_calendarViewMode},
-                      onSelectionChanged: (Set<String> next) {
-                        if (next.isEmpty) return;
-                        setState(() => _calendarViewMode = next.first);
-                      },
-                      multiSelectionEnabled: false,
-                      emptySelectionAllowed: false,
-                      showSelectedIcon: false,
-                      style: SegmentedButton.styleFrom(
-                        selectedBackgroundColor: const Color(0xFF004A99),
-                        selectedForegroundColor: Colors.white,
-                        foregroundColor: cs.onSurface.withValues(alpha: 0.85),
-                        side: BorderSide(
-                          color: cs.onSurface.withValues(alpha: 0.12),
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: _isLoading ? null : _openExtraOpdrachtModal,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 14 : 18,
+                          vertical: 14,
                         ),
-                        visualDensity: VisualDensity.compact,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.add_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            if (!isMobile) ...[
+                              const SizedBox(width: 10),
+                              Text(
+                                'Extra Opdracht',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -3979,9 +4476,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                 _openManualPlanModal(id);
               },
               onPlannedTap: (task) {
-                final id = _text(task['id']);
-                if (id.isEmpty) return;
-                _openManualPlanModal(id);
+                _openReedsGeplandeInfoModal(task);
               },
             ),
           ),
@@ -4026,7 +4521,14 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (isMobile)
+                    if (weergaveLijst.isEmpty)
+                      _manualSplitPlannedColumn(
+                        cs,
+                        isDark,
+                        filteredPlannedTaken,
+                        _isLoadingReedsGeplande,
+                      )
+                    else if (isMobile)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -4046,7 +4548,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           _manualSplitPlannedColumn(
                             cs,
                             isDark,
-                            _reedsGeplandeTaken,
+                            filteredPlannedTaken,
                             _isLoadingReedsGeplande,
                           ),
                         ],
@@ -4056,6 +4558,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
+                            flex: 2,
                             child: _manualSplitOpenColumn(
                               cs,
                               isDark,
@@ -4071,10 +4574,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           ),
                           const SizedBox(width: 16),
                           Expanded(
+                            flex: 1,
                             child: _manualSplitPlannedColumn(
                               cs,
                               isDark,
-                              _reedsGeplandeTaken,
+                              filteredPlannedTaken,
                               _isLoadingReedsGeplande,
                             ),
                           ),
@@ -4362,7 +4866,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     return _norm(sel);
   }
 
-  double _hourHeightPm() => 1.0;
+  double _hourHeightPm() => 1.7;
 
   String _monthYearTitleNl() {
     final raw = DateFormat('MMMM yyyy', 'nl_NL').format(widget.focusedDay);
@@ -4419,26 +4923,52 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
   Widget _manualMonthDayHeader(DateTime day) {
     final cs = widget.colorScheme;
     final norm = _norm(day);
+    final selectedNorm =
+        widget.selectedDay != null ? _norm(widget.selectedDay!) : null;
+    final isSelected = selectedNorm != null &&
+        DateUtils.isSameDay(norm, selectedNorm);
+
     final openCount = widget.groupedOpenTaken[norm]?.length ?? 0;
     final planCount = widget.groupedGeplandeTaken[norm]?.length ?? 0;
     final inMonth =
-        day.month == widget.focusedDay.month &&
-        day.year == widget.focusedDay.year;
+        day.month == widget.focusedDay.month && day.year == widget.focusedDay.year;
     final hasAny = openCount > 0 || planCount > 0;
     final red = Colors.red.shade700;
     final blue = Colors.blue.shade700;
 
+    final cellDecoration = BoxDecoration(
+      color: isSelected ? cs.primary : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: isSelected
+          ? [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ]
+          : null,
+    );
+
     if (!hasAny) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: Align(
-          alignment: Alignment.topRight,
-          child: Text(
-            '${day.day}',
-            style: GoogleFonts.inter(
-              fontSize: inMonth ? 20 : 16,
-              fontWeight: FontWeight.bold,
-              color: cs.onSurface.withValues(alpha: inMonth ? 0.92 : 0.42),
+        padding: const EdgeInsets.all(2),
+        child: DecoratedBox(
+          decoration: cellDecoration,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Text(
+                '${day.day}',
+                style: GoogleFonts.inter(
+                  fontSize: inMonth ? 20 : 16,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected
+                      ? Colors.white
+                      : cs.onSurface.withValues(alpha: inMonth ? 0.92 : 0.42),
+                ),
+              ),
             ),
           ),
         ),
@@ -4446,93 +4976,105 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Align(
-            alignment: Alignment.topLeft,
-            child: Text(
-              '${day.day}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                fontSize: inMonth ? 12 : 10.5,
-                fontWeight: FontWeight.w800,
-                color: cs.onSurface.withValues(alpha: inMonth ? 0.88 : 0.45),
-              ),
-            ),
-          ),
-          Row(
+      padding: const EdgeInsets.all(2),
+      child: DecoratedBox(
+        decoration: cellDecoration,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Tooltip(
-                  message: '$openCount openstaand',
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: openCount > 0
-                          ? Colors.red.withValues(alpha: 0.05)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: red.withValues(
-                          alpha: openCount > 0 ? 0.28 : 0.12,
-                        ),
-                      ),
-                    ),
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Text(
-                          '$openCount',
-                          style: GoogleFonts.inter(
-                            color: red,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            height: 1,
-                          ),
-                        ),
-                      ),
-                    ),
+              Align(
+                alignment: Alignment.topLeft,
+                child: Text(
+                  '${day.day}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: inMonth ? 12 : 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: isSelected
+                        ? Colors.white.withValues(alpha: 0.96)
+                        : cs.onSurface.withValues(alpha: inMonth ? 0.88 : 0.45),
                   ),
                 ),
               ),
-              const SizedBox(width: 3),
-              Expanded(
-                child: Tooltip(
-                  message: '$planCount ingepland',
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: planCount > 0
-                          ? Colors.blue.withValues(alpha: 0.05)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: blue.withValues(
-                          alpha: planCount > 0 ? 0.28 : 0.12,
+              Row(
+                children: [
+                  Expanded(
+                    child: Tooltip(
+                      message: '$openCount openstaand',
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : (openCount > 0
+                                  ? Colors.red.withValues(alpha: 0.05)
+                                  : Colors.transparent),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.white.withValues(alpha: 0.38)
+                                : red.withValues(alpha: openCount > 0 ? 0.28 : 0.12),
+                          ),
                         ),
-                      ),
-                    ),
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Text(
-                          '$planCount',
-                          style: GoogleFonts.inter(
-                            color: blue,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            height: 1,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text(
+                              '$openCount',
+                              style: GoogleFonts.inter(
+                                color: isSelected ? Colors.white : red,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                height: 1,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 3),
+                  Expanded(
+                    child: Tooltip(
+                      message: '$planCount ingepland',
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : (planCount > 0
+                                  ? Colors.blue.withValues(alpha: 0.05)
+                                  : Colors.transparent),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.white.withValues(alpha: 0.38)
+                                : blue.withValues(alpha: planCount > 0 ? 0.28 : 0.12),
+                          ),
+                        ),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text(
+                              '$planCount',
+                              style: GoogleFonts.inter(
+                                color: isSelected ? Colors.white : blue,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -4613,8 +5155,8 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     const nlWeekdayShort = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
     final weekParam = WeekParam(
       startOfWeekDay: 1,
-      headerHeight: 34,
-      weekHeight: 58,
+      headerHeight: 32,
+      weekHeight: 98,
       daySpacing: 3,
       weekDecoration: WeekParam.defaultWeekDecoration(context),
       headerDayBuilder: (weekdayIndex) {
@@ -4633,7 +5175,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
     );
 
     final daysParam = DaysParam(
-      headerHeight: 54,
+      headerHeight: 90,
       eventHeight: 200,
       eventSpacing: 0,
       spaceBetweenHeaderAndEvents: 0,
@@ -4705,15 +5247,20 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
           ],
         ),
         daysHeaderParam: DaysHeaderParam(
-          daysHeaderHeight: 44,
+          daysHeaderHeight: 64,
           daysHeaderColor: _cleanConnectBlue,
           daysHeaderForegroundColor: Colors.white,
           dayHeaderBuilder: (day, isToday) {
+            final isSelected = widget.selectedDay != null &&
+                day.year == widget.selectedDay!.year &&
+                day.month == widget.selectedDay!.month &&
+                day.day == widget.selectedDay!.day;
+            final textColor =
+                isSelected ? Colors.white : Colors.lightBlue.shade200;
             return InkWell(
               onTap: () => widget.onDaySelected(_norm(day), _norm(day)),
-              borderRadius: BorderRadius.circular(10),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -4722,16 +5269,16 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white.withValues(alpha: 0.92),
+                        color: textColor,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${day.day}',
                       style: GoogleFonts.inter(
-                        fontWeight: isToday ? FontWeight.w900 : FontWeight.w800,
-                        fontSize: isToday ? 18 : 17,
-                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        color: textColor,
                       ),
                     ),
                   ],
@@ -4772,11 +5319,11 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
   @override
   Widget build(BuildContext context) {
     final mqShort = MediaQuery.sizeOf(context).shortestSide;
-    final plannerH = mqShort < 550 ? 600.0 : 520.0;
+    final plannerH = mqShort < 550 ? 640.0 : 560.0;
 
     Widget body;
     if (widget.viewMode == 'Maand') {
-      body = SizedBox(height: 420, child: _buildMonth(context));
+      body = SizedBox(height: 680, child: _buildMonth(context));
     } else if (widget.viewMode == 'Week') {
       body = SizedBox(height: plannerH, child: _buildPlanner(context, days: 7));
     } else {
