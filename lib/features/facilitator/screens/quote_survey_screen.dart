@@ -1358,7 +1358,7 @@ class _QuoteSurveyScreenState extends State<QuoteSurveyScreen> {
           if (!isConcept) return const SizedBox.shrink();
           final isMobileCompact = MediaQuery.of(context).size.width < 600;
           return Padding(
-            padding: EdgeInsets.only(bottom: isMobileCompact ? 200 : 260),
+            padding: EdgeInsets.only(bottom: isMobileCompact ? 12 : 24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,

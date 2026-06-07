@@ -4596,7 +4596,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                 foregroundColor: Colors.white,
                               ),
                               icon: const Icon(Icons.picture_as_pdf),
-                              label: const Text('Download Definitieve Werkbon'),
+                              label: const Text('Bekijk Werkbon PDF'),
                               onPressed: opdrachtId.isEmpty
                                   ? null
                                   : () async {
@@ -4718,6 +4718,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final totaalUrenKaart = _totaalUrenVoorOpdrachtKaart(item);
     final safeOperators = _safeOperatorsVoorOpdracht(item);
     final urenPerPersoon = totaalUrenKaart / safeOperators;
+    final isAfgerond = _text(item['status']).toLowerCase() == 'afgerond' ||
+        _text(item['status']).toLowerCase() == 'voltooid';
 
                                   return Padding(
       padding: const EdgeInsets.only(bottom: 12, left: 4, right: 4),
@@ -4730,7 +4732,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
               : () => _openReedsGeplandeInfoModal(item),
                                         child: Container(
             padding: const EdgeInsets.all(16),
-            decoration: _manualPremiumTaskDecoration(),
+            decoration: isAfgerond
+                ? BoxDecoration(
+                    color: Colors.grey.shade600,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.grey.shade500),
+                  )
+                : _manualPremiumTaskDecoration(),
                                           child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
@@ -4738,13 +4746,27 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                                 child: Column(
                                                   crossAxisAlignment: CrossAxisAlignment.start,
                                                   children: [
-                                                    Text(
+                                                    Row(
+                                                      children: [
+                                                        if (isAfgerond) ...[
+                                                          const Icon(
+                                                            Icons.lock,
+                                                            size: 14,
+                                                            color: Colors.white70,
+                                                          ),
+                                                          const SizedBox(width: 6),
+                                                        ],
+                                                        Expanded(
+                                                          child: Text(
                         bedrijf,
                                                       style: GoogleFonts.inter(
                                                         fontSize: 15,
                                                         fontWeight: FontWeight.w900,
                           color: Colors.white,
                                                       ),
+                                                    ),
+                                                        ),
+                                                      ],
                                                     ),
                                                     const SizedBox(height: 4),
                                                     Text(

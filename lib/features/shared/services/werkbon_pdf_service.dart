@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -453,30 +454,10 @@ class WerkbonPdfService {
 
           elements.add(pw.SizedBox(height: 30));
           if (isAfgerond) {
-            var afrondTijd = eindTijd;
-            for (final p in planningen as List) {
-              final plan = _mapFrom(p);
-              final rawTijd = plan['werkelijke_eindtijd']?.toString().trim();
-              if (rawTijd != null && rawTijd.isNotEmpty) {
-                afrondTijd =
-                    rawTijd.length >= 5 ? rawTijd.substring(0, 5) : rawTijd;
-                break;
-              }
-            }
-            if (afrondTijd == '--:--' || afrondTijd.isEmpty) {
-              for (final p in planningen as List) {
-                final plan = _mapFrom(p);
-                final planEind = plan['eindtijd']?.toString().trim();
-                if (planEind != null && planEind.isNotEmpty) {
-                  afrondTijd =
-                      planEind.length >= 5 ? planEind.substring(0, 5) : planEind;
-                  break;
-                }
-              }
-            }
             final datumDisplay = opdrachtDatum.length >= 10
                 ? opdrachtDatum.substring(0, 10)
                 : opdrachtDatum;
+            final afrondTijd = DateFormat('HH:mm').format(DateTime.now());
 
             elements.add(
               pw.Container(

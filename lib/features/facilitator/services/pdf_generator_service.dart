@@ -1297,6 +1297,13 @@ class PdfGeneratorService {
     // ==========================================
     final String cTypePrijs = _text(offerte['contract_type']).toLowerCase();
     final bool isMateriaalInbegrepen = offerte['inclusief_materialen'] == true;
+    final bool isVastePrijs = offerte['is_vaste_prijs'] == true ||
+        offerte['vaste_prijs_per_beurt'] != null ||
+        (double.tryParse(
+              offerte['vaste_prijs_override']?.toString() ?? '',
+            ) ??
+            0) >
+            0;
     var bedragHeader = 'Bedrag per maand';
     var inbegrepenTekst =
         'Inclusief alle reguliere, frequente en periodieke diensten.';
@@ -1412,7 +1419,9 @@ class PdfGeneratorService {
                                             pw.CrossAxisAlignment.start,
                                         children: [
                                           pw.Text(
-                                            'Schoonmaakonderhoud volgens specificatie',
+                                            isVastePrijs
+                                                ? 'Vaste prijs (inclusief materialen)'
+                                                : 'Schoonmaakonderhoud volgens specificatie',
                                             style: pw.TextStyle(
                                               font: fontBold,
                                               fontSize: 11,
@@ -1420,7 +1429,9 @@ class PdfGeneratorService {
                                           ),
                                           pw.SizedBox(height: 4),
                                           pw.Text(
-                                            inbegrepenTekst,
+                                            isVastePrijs
+                                                ? 'All-in prijsafspraak; materialen zijn inbegrepen.'
+                                                : inbegrepenTekst,
                                             style: pw.TextStyle(
                                               font: fontRegular,
                                               fontSize: 9,
@@ -1440,7 +1451,7 @@ class PdfGeneratorService {
                                   ],
                                 ),
                               ),
-                              if (isMateriaalInbegrepen) ...[
+                              if (isMateriaalInbegrepen && !isVastePrijs) ...[
                                 pw.Divider(color: PdfColors.grey300, height: 1),
                                 pw.Padding(
                                   padding: const pw.EdgeInsets.all(16),

@@ -131,6 +131,9 @@ abstract final class OffertePricingService {
     return 'Maandprijs';
   }
 
+  static double _roundMoney(double value) =>
+      double.parse(value.toStringAsFixed(2));
+
   static double _asDouble(dynamic v) {
     if (v == null) return 0;
     if (v is num) return v.toDouble();
@@ -146,8 +149,8 @@ abstract final class OffertePricingService {
   /// Ex-BTW bedrag voor weergave (PDF / bottom bar).
   static double weergavePrijsExBtw(Map<String, dynamic> offerte) {
     final override = _asDouble(offerte['vaste_prijs_override']);
-    if (override > 0) return override;
-    return berekenTotalenUitMap(offerte).totaalExBtw;
+    if (override > 0) return _roundMoney(override);
+    return _roundMoney(berekenTotalenUitMap(offerte).totaalExBtw);
   }
 
   /// Aggregatie op basis van reeds geladen offerte-map (zonder extra query).
@@ -167,7 +170,7 @@ abstract final class OffertePricingService {
 
     if (losseKlus) {
       // Alleen totaal_prijs_ex_btw; maandprijs_ex_btw is abonnementsveld (kan 52× zijn).
-      final prijsPerBeurtExBtw = totaalDb > 0 ? totaalDb : 0.0;
+      final prijsPerBeurtExBtw = _roundMoney(totaalDb > 0 ? totaalDb : 0.0);
       return OfferteBerekenResult(
         totaalExBtw: prijsPerBeurtExBtw,
         totaleMinuten: urenPerBeurt * 60.0,
@@ -178,11 +181,11 @@ abstract final class OffertePricingService {
     }
 
     // Vast / flexibel: leidend = maandprijs uit DB (zoals vóór client-side 52/12).
-    final totaalExBtw = maandDb > 0 ? maandDb : totaalDb;
+    final totaalExBtw = _roundMoney(maandDb > 0 ? maandDb : totaalDb);
     return OfferteBerekenResult(
       totaalExBtw: totaalExBtw,
       totaleMinuten: urenPerBeurt * 60.0,
-      prijsPerBeurtExBtw: totaalDb > 0 ? totaalDb : totaalExBtw,
+      prijsPerBeurtExBtw: _roundMoney(totaalDb > 0 ? totaalDb : totaalExBtw),
       periodeFactor: 1.0,
       contractType: cType,
     );
@@ -647,9 +650,9 @@ abstract final class OffertePricingService {
     }
 
     return OfferteBerekenResult(
-      totaalExBtw: nieuwTotaalExBtw,
+      totaalExBtw: _roundMoney(nieuwTotaalExBtw),
       totaleMinuten: nieuweTotaleMinuten,
-      prijsPerBeurtExBtw: ruweBeurtExBtw,
+      prijsPerBeurtExBtw: _roundMoney(ruweBeurtExBtw),
       periodeFactor: 1.0,
       contractType: cType,
       glasUrenPerBeurt: glasUrenResult,

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart' hide WeekDays;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
@@ -134,9 +135,45 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     return candidate;
   }
 
+  bool _isTaskAfgerond(Map<String, dynamic> task) {
+    final status = _text(task['status']).toLowerCase();
+    return status == 'afgerond' || status == 'voltooid';
+  }
+
   bool _isVerplaatsbaarTask(Map<String, dynamic> task) {
     if (task['_persoonlijk_agenda'] == true) return false;
+    if (_isTaskAfgerond(task)) return false;
     return _opdrachtIdFromTask(task).isNotEmpty;
+  }
+
+  bool _isAfgerondAppointment(Appointment app) {
+    final day = _normalizeDate(_selectedDay ?? _focusedDay);
+    for (final taak in _allLoadedTasksForDay(day)) {
+      if (_opdrachtIdFromTask(taak) == app.id.toString()) {
+        return _isTaskAfgerond(taak);
+      }
+    }
+    return false;
+  }
+
+  bool _isAppointmentStartInVerleden(Appointment appointment) {
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+    return appointment.startTime.isBefore(vandaag);
+  }
+
+  Future<bool> _guardDragAgainstVerleden(Appointment appointment) async {
+    if (!_isAppointmentStartInVerleden(appointment)) return true;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Taken in het verleden kunnen niet worden verplaatst.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+    await _loadAgenda();
+    return false;
   }
 
   TimeOfDay _parseTimeOfDay(
@@ -175,7 +212,18 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     CalendarResource? resource,
   ) async {
     final task = _taskForAppointment(appointment);
-    if (task == null || !_isVerplaatsbaarTask(task)) return;
+    if (task == null) return;
+    if (!_isVerplaatsbaarTask(task)) {
+      if (_isTaskAfgerond(task) && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Afgeronde opdrachten kunnen niet worden verplaatst.'),
+          ),
+        );
+        await _loadAgenda();
+      }
+      return;
+    }
 
     final snappedStart = _roundTo5Mins(start);
     var snappedEnd = _roundTo5Mins(end);
@@ -318,6 +366,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   ) {
     if (events.isEmpty) return const SizedBox.shrink();
     final event = events.first;
+    final raw = event.event;
+    final task = raw is Map ? Map<String, dynamic>.from(raw as Map) : null;
+    final isAfgerond = task != null && _isTaskAfgerond(task);
+    final accent = isAfgerond ? Colors.grey.shade600 : event.color;
     final startStr =
         '${event.startTime!.hour.toString().padLeft(2, '0')}:${event.startTime!.minute.toString().padLeft(2, '0')}';
     final eindStr =
@@ -328,24 +380,34 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
-        color: event.color.withValues(alpha: 0.15),
+        color: accent.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
-        border: Border(left: BorderSide(color: event.color, width: 3)),
+        border: Border(left: BorderSide(color: accent, width: 3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            event.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              color: Colors.blue.shade900,
-              fontWeight: FontWeight.w700,
-              fontSize: 10,
-            ),
+          Row(
+            children: [
+              if (isAfgerond) ...[
+                Icon(Icons.lock, size: 10, color: Colors.grey.shade700),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                child: Text(
+                  event.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.blue.shade900,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+            ],
           ),
           Text(
             '$startStr - $eindStr',
@@ -384,6 +446,8 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final app = calendarAppointmentDetails.appointments.first as Appointment;
     final isTimeline = _calendarController.view == CalendarView.timelineDay;
     final isMonth = _calendarController.view == CalendarView.month;
+    final isAfgerond = _isAfgerondAppointment(app);
+    final tileColor = isAfgerond ? Colors.grey.shade600 : app.color;
 
     final startStr =
         '${app.startTime.hour.toString().padLeft(2, '0')}:${app.startTime.minute.toString().padLeft(2, '0')}';
@@ -396,9 +460,9 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: app.color.withValues(alpha: 0.15),
+          color: tileColor.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(4),
-          border: Border(left: BorderSide(color: app.color, width: 3)),
+          border: Border(left: BorderSide(color: tileColor, width: 3)),
         ),
         child: SingleChildScrollView(
           physics: const NeverScrollableScrollPhysics(),
@@ -406,15 +470,25 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                app.subject,
-                style: TextStyle(
-                  color: Colors.blue.shade900,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  if (isAfgerond) ...[
+                    Icon(Icons.lock, size: 10, color: Colors.grey.shade700),
+                    const SizedBox(width: 4),
+                  ],
+                  Expanded(
+                    child: Text(
+                      app.subject,
+                      style: TextStyle(
+                        color: Colors.blue.shade900,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
               if (!isMonth)
                 Text(
@@ -439,7 +513,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
-        color: app.color,
+        color: tileColor,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
@@ -453,15 +527,23 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            app.subject,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  app.subject,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (isAfgerond)
+                const Icon(Icons.lock, size: 12, color: Colors.white),
+            ],
           ),
           const SizedBox(height: 2),
           Text(
@@ -639,6 +721,8 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                 final rawNieuweStart = details.droppingTime;
                 if (appointment == null || rawNieuweStart == null) return;
 
+                if (!await _guardDragAgainstVerleden(appointment)) return;
+
                 final nieuweStart = _roundTo5Mins(rawNieuweStart);
                 final duur =
                     appointment.endTime.difference(appointment.startTime);
@@ -654,6 +738,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                   (AppointmentResizeEndDetails details) async {
                 final appointment = details.appointment as Appointment?;
                 if (appointment == null) return;
+                if (!await _guardDragAgainstVerleden(appointment)) return;
                 await _handleSyncfusionAppointmentChange(
                   appointment,
                   appointment.startTime,
@@ -825,6 +910,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   }
 
   Color _bepaalStatusKleur(Map<String, dynamic> task) {
+    if (_isTaskAfgerond(task)) return Colors.grey.shade600;
     final agendaKleur = _text(task['agenda_kleur']).toLowerCase();
     switch (agendaKleur) {
       case 'rood':
@@ -2860,9 +2946,23 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
     );
   }
 
+  bool _isTaskAfgerond(Map<String, dynamic> task) {
+    final status = _text(task['status']).toLowerCase();
+    return status == 'afgerond' || status == 'voltooid';
+  }
+
+  bool get _isVerleden {
+    final d = _parseDate(widget.task['geplande_datum']);
+    if (d == null) return false;
+    final today = DateTime.now();
+    final startOfToday = DateTime(today.year, today.month, today.day);
+    return DateTime(d.year, d.month, d.day).isBefore(startOfToday);
+  }
+
   bool get _canVerplaatsen =>
       widget.onVerplaatsVeilig != null &&
       widget.task['_persoonlijk_agenda'] != true &&
+      !_isTaskAfgerond(widget.task) &&
       _opdrachtIdFromTask(widget.task).isNotEmpty;
 
   bool get _planningChanged {
@@ -3075,7 +3175,7 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
   }
 
   Future<void> _saveToelichtingPlanning() async {
-    if (_savingToelichting) return;
+    if (_savingToelichting || _isVerleden) return;
     final opdrachtId = _opdrachtIdFromTask(widget.task);
     if (opdrachtId.isEmpty) return;
 
@@ -3321,8 +3421,8 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
               const SizedBox(height: 8),
               _block(context, 'Operator', _geplandeOperator),
 
-              const SizedBox(height: 16),
-              Container(
+              if (!_isVerleden)
+                Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: isDark
@@ -3414,7 +3514,47 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
                     ),
                   ],
                 ),
-              ),
+              )
+              else if (_toelichting != null && _toelichting!.isNotEmpty)
+                _block(context, 'Opmerking (alleen-lezen)', _toelichting!),
+
+              if (_text(widget.task['werkbon_pdf_url']).isNotEmpty) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.picture_as_pdf),
+                    label: const Text(
+                      'Bekijk Werkbon PDF',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade800,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () async {
+                      final werkbonUrl = _text(widget.task['werkbon_pdf_url']);
+                      final url = Uri.parse(werkbonUrl);
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(
+                          url,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      } else if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Kan PDF niet openen.'),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 16),
               SizedBox(

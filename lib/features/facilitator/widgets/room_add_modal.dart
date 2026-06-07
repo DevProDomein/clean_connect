@@ -69,14 +69,15 @@ class _RoomAddModalState extends State<RoomAddModal> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: titleColor,
+          Expanded(
+            child: Text(
+              title,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: titleColor,
+              ),
             ),
           ),
           InkWell(
@@ -326,67 +327,64 @@ class _RoomAddModalState extends State<RoomAddModal> {
   }
 
   Future<Map<String, dynamic>?> _kiesDienstModal() async {
-    var isLoading = true;
-    List<dynamic> dienstenLijst = [];
+    final dienstenFuture = Supabase.instance.client
+        .from('diensten')
+        .select('id, dienst_naam')
+        .order('dienst_naam');
 
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            if (isLoading && dienstenLijst.isEmpty) {
-              Supabase.instance.client
-                  .from('diensten')
-                  .select('id, dienst_naam')
-                  .order('dienst_naam')
-                  .then((data) {
-                if (!context.mounted) return;
-                setModalState(() {
-                  dienstenLijst = data as List;
-                  isLoading = false;
-                });
-              }).catchError((_) {
-                if (!context.mounted) return;
-                setModalState(() => isLoading = false);
-              });
-            }
-
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Kies de hoofddienst'),
+          content: SizedBox(
+            width: MediaQuery.of(ctx).size.width < 600 ? double.maxFinite : 400,
+            height: 400,
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: dienstenFuture.then(
+                (data) => List<Map<String, dynamic>>.from(data as List),
               ),
-              title: const Text('Kies de hoofddienst'),
-              content: SizedBox(
-                width: 400,
-                height: 400,
-                child: isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : ListView.builder(
-                        itemCount: dienstenLijst.length,
-                        itemBuilder: (c, i) {
-                          final dienst = dienstenLijst[i];
-                          return ListTile(
-                            leading: const Icon(
-                              Icons.cleaning_services,
-                              color: Colors.blue,
-                            ),
-                            title: Text(dienst['dienst_naam'] ?? 'Onbekend'),
-                            onTap: () => Navigator.pop(
-                              ctx,
-                              Map<String, dynamic>.from(dienst as Map),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Annuleren'),
-                ),
-              ],
-            );
-          },
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Kon diensten niet laden: ${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+                final dienstenLijst = snapshot.data ?? const [];
+                if (dienstenLijst.isEmpty) {
+                  return const Center(
+                    child: Text('Geen diensten gevonden in de database.'),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: dienstenLijst.length,
+                  itemBuilder: (c, i) {
+                    final dienst = dienstenLijst[i];
+                    return ListTile(
+                      leading: const Icon(Icons.cleaning_services_outlined),
+                      title: Text(dienst['dienst_naam']?.toString() ?? '—'),
+                      onTap: () => Navigator.pop(ctx, dienst),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuleren'),
+            ),
+          ],
         );
       },
     );
@@ -467,7 +465,9 @@ class _RoomAddModalState extends State<RoomAddModal> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: SizedBox(
-                width: 700,
+                width: MediaQuery.of(context).size.width < 600
+                    ? MediaQuery.of(context).size.width * 0.95
+                    : 700,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -480,14 +480,15 @@ class _RoomAddModalState extends State<RoomAddModal> {
                         ),
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Nieuwe Taak Aanmaken',
-                            style: GoogleFonts.inter(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade900,
+                          Expanded(
+                            child: Text(
+                              'Nieuwe Taak Aanmaken',
+                              style: GoogleFonts.inter(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue.shade900,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -809,6 +810,7 @@ class _RoomAddModalState extends State<RoomAddModal> {
                                 nieuwTaakId: nieuwId,
                               );
                             } catch (e) {
+                              debugPrint('Fout bij toevoegen moeder_bestek: $e');
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
