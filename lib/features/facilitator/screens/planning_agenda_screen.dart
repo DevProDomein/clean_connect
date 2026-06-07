@@ -1,9 +1,8 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:calendar_view/calendar_view.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
@@ -18,9 +17,12 @@ class PlanningAgendaScreen extends StatefulWidget {
 }
 
 class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
+  final EventController<Map<String, dynamic>> _eventController =
+      EventController<Map<String, dynamic>>();
+
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  CalendarFormat _calendarFormat = CalendarFormat.month;
+  String _currentView = 'Maand';
   Map<DateTime, List<dynamic>> _groupedTasks = {};
 
   bool _isLoading = true;
@@ -34,11 +36,41 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   String? _filterKlant;
   String? _filterProject;
   String? _filterRegio;
+  List<String> _filterOperators = [];
+  bool _showFilters = false;
 
   @override
   void initState() {
     super.initState();
     _loadAgenda();
+  }
+
+  @override
+  void dispose() {
+    _eventController.dispose();
+    super.dispose();
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  int _getWeekNumber(DateTime date) {
+    final firstJan = DateTime(date.year, 1, 1);
+    final dayOfYear = date.difference(firstJan).inDays;
+    return ((dayOfYear - date.weekday + 10) / 7).floor();
+  }
+
+  void _postFrameSetState(VoidCallback update) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(update);
+    });
+  }
+
+  void _onCalendarPageChange(DateTime date, int pageIndex) {
+    _postFrameSetState(() {
+      _focusedDay = date;
+    });
   }
 
   String _text(dynamic value) => (value ?? '').toString().trim();
@@ -63,6 +95,514 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final raw = _text(value);
     if (raw.isEmpty) return '--:--';
     return raw.length >= 5 ? raw.substring(0, 5) : raw;
+  }
+
+  DateTime _eventDateTime(DateTime date, dynamic rawTime, {int defaultHour = 9}) {
+    final t = _formatTime(rawTime);
+    if (t == '--:--') {
+      return DateTime(date.year, date.month, date.day, defaultHour);
+    }
+    final parts = t.split(':');
+    final hour = int.tryParse(parts.first) ?? defaultHour;
+    final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    return DateTime(date.year, date.month, date.day, hour, minute);
+  }
+
+  Color _bepaalStatusKleur(Map<String, dynamic> task) {
+    final agendaKleur = _text(task['agenda_kleur']).toLowerCase();
+    switch (agendaKleur) {
+      case 'rood':
+        return const Color(0xFFDC2626);
+      case 'groen':
+        return const Color(0xFF16A34A);
+      case 'oranje':
+      case 'geel':
+        return const Color(0xFFEA580C);
+      case 'blauw':
+        return const Color(0xFF2563EB);
+      default:
+        return const Color(0xFF0052CC);
+    }
+  }
+
+  CalendarEventData<Map<String, dynamic>> _calendarEventFromTask(
+    Map<String, dynamic> task,
+  ) {
+    final date = _normalizeDate(_parseDate(task['geplande_datum']));
+    final start = _eventDateTime(date, task['starttijd'], defaultHour: 9);
+    final end = _eventDateTime(date, task['eindtijd'], defaultHour: 10);
+    final project = _text(task['project_naam']);
+    final company = _text(task['bedrijfsnaam']);
+    final title = project.isNotEmpty
+        ? project
+        : (company.isNotEmpty ? company : 'Opdracht');
+
+    return CalendarEventData<Map<String, dynamic>>(
+      date: date,
+      startTime: start,
+      endTime: end.isAfter(start) ? end : start.add(const Duration(hours: 1)),
+      title: title,
+      event: task,
+      color: _bepaalStatusKleur(task),
+    );
+  }
+
+  void _syncEventController() {
+    _eventController.clear();
+    for (final list in _filteredGroupedTasks().values) {
+      for (final raw in list) {
+        if (raw is! Map) continue;
+        _eventController.add(
+          _calendarEventFromTask(Map<String, dynamic>.from(raw)),
+        );
+      }
+    }
+  }
+
+  void _onMonthCellTap(DateTime date) {
+    setState(() {
+      _selectedDay = _normalizeDate(date);
+      _focusedDay = date;
+      _currentView = 'Dag';
+    });
+  }
+
+  void _onCalendarDateTap(DateTime date) {
+    setState(() {
+      _selectedDay = _normalizeDate(date);
+      _focusedDay = date;
+    });
+  }
+
+  void _onCalendarEventTap(
+    CalendarEventData<Map<String, dynamic>> event,
+    DateTime date,
+  ) {
+    final raw = event.event;
+    if (raw == null) return;
+    _onAgendaTaskTap(Map<String, dynamic>.from(raw));
+  }
+
+  void _onCalendarEventsCellTap(
+    List<CalendarEventData<Map<String, dynamic>>> events,
+    DateTime date,
+  ) {
+    if (events.isEmpty) return;
+    _onCalendarEventTap(events.first, date);
+  }
+
+  HeaderStyle _calendarHeaderStyle(bool isDark) {
+    return HeaderStyle(
+      decoration: BoxDecoration(color: Colors.blue.shade900),
+      headerTextStyle: GoogleFonts.inter(
+        color: Colors.white,
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+      ),
+      headerPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      leftIconConfig: const IconDataConfig(color: Colors.white),
+      rightIconConfig: const IconDataConfig(color: Colors.white),
+    );
+  }
+
+  double _calendarViewportHeight(BuildContext context) {
+    return (MediaQuery.of(context).size.height * 0.75).clamp(520.0, 720.0);
+  }
+
+  Widget _buildPremiumEventTile(
+    DateTime date,
+    List<CalendarEventData<Map<String, dynamic>>> events,
+    Rect boundary,
+    DateTime startDuration,
+    DateTime endDuration,
+  ) {
+    if (events.isEmpty) return const SizedBox.shrink();
+    final event = events.first;
+    return GestureDetector(
+      onTap: () => _onCalendarEventTap(event, date),
+      child: Container(
+        width: boundary.width,
+        height: boundary.height,
+        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: event.color.withValues(alpha: 0.18),
+          border: Border.all(color: event.color.withValues(alpha: 0.45)),
+        ),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: Text(
+            event.title,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: event.color.withValues(alpha: 0.95),
+              height: 1.15,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPremiumFilterModal({
+    required BuildContext context,
+    required String title,
+    required List<String> items,
+    required String? selectedItem,
+    required void Function(String?) onItemSelected,
+  }) async {
+    var searchQuery = '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final modalDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final sheetBg = modalDark ? const Color(0xFF111019) : Colors.white;
+        final titleColor =
+            modalDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final filteredItems = items
+                .where(
+                  (item) => item.toLowerCase().contains(
+                    searchQuery.toLowerCase(),
+                  ),
+                )
+                .toList(growable: false);
+
+            return Container(
+              height: MediaQuery.of(modalContext).size.height * 0.75,
+              decoration: BoxDecoration(
+                color: sheetBg,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: titleColor,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            onItemSelected(null);
+                            Navigator.pop(modalContext);
+                          },
+                          child: Text(
+                            'Wissen',
+                            style: GoogleFonts.inter(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    child: TextField(
+                      onChanged: (value) =>
+                          setModalState(() => searchQuery = value),
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        hintText: 'Zoeken...',
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey.shade500,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.grey,
+                        ),
+                        filled: true,
+                        fillColor: modalDark
+                            ? const Color(0xFF1B1B23)
+                            : Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: filteredItems.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Geen resultaten gevonden',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: filteredItems.length,
+                            itemBuilder: (context, index) {
+                              final item = filteredItems[index];
+                              final isSelected = item == selectedItem;
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 4,
+                                ),
+                                title: Text(
+                                  item,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? Colors.blue.shade700
+                                        : (modalDark
+                                              ? Colors.white70
+                                              : Colors.black87),
+                                  ),
+                                ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        Icons.check_circle,
+                                        color: Colors.blue.shade700,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  onItemSelected(item);
+                                  Navigator.pop(modalContext);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showPremiumMultiFilterModal({
+    required String title,
+    required List<String> items,
+    required List<String> selectedItems,
+    required void Function(List<String>) onItemsChanged,
+  }) async {
+    var searchQuery = '';
+    final working = List<String>.from(selectedItems);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final modalDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final sheetBg = modalDark ? const Color(0xFF111019) : Colors.white;
+        final titleColor =
+            modalDark ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final filteredItems = items
+                .where(
+                  (item) => item.toLowerCase().contains(
+                    searchQuery.toLowerCase(),
+                  ),
+                )
+                .toList(growable: false);
+
+            return Container(
+              height: MediaQuery.of(modalContext).size.height * 0.75,
+              decoration: BoxDecoration(
+                color: sheetBg,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: titleColor,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            working.clear();
+                            onItemsChanged(const []);
+                            setModalState(() {});
+                          },
+                          child: Text(
+                            'Wissen',
+                            style: GoogleFonts.inter(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Sluiten',
+                          onPressed: () => Navigator.pop(modalContext),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    child: TextField(
+                      onChanged: (value) =>
+                          setModalState(() => searchQuery = value),
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        hintText: 'Zoeken...',
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey.shade500,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.grey,
+                        ),
+                        filled: true,
+                        fillColor: modalDark
+                            ? const Color(0xFF1B1B23)
+                            : Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: filteredItems.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Geen resultaten gevonden',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: filteredItems.length,
+                            itemBuilder: (context, index) {
+                              final item = filteredItems[index];
+                              final isSelected = working.contains(item);
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 4,
+                                ),
+                                title: Text(
+                                  item,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? Colors.blue.shade700
+                                        : (modalDark
+                                              ? Colors.white70
+                                              : Colors.black87),
+                                  ),
+                                ),
+                                trailing: isSelected
+                                    ? Icon(
+                                        Icons.check_circle,
+                                        color: Colors.blue.shade700,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  setModalState(() {
+                                    if (working.contains(item)) {
+                                      working.remove(item);
+                                    } else {
+                                      working.add(item);
+                                    }
+                                  });
+                                  onItemsChanged(List<String>.from(working));
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _loadAgenda() async {
@@ -118,6 +658,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         _currentUserId = uid.isEmpty ? null : uid;
         _isLoading = false;
       });
+      _syncEventController();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -151,6 +692,11 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         regio != _filterRegio) {
       return false;
     }
+    if (_filterOperators.isNotEmpty) {
+      if (!_taskMatchesAnyOperator(task, _filterOperators)) {
+        return false;
+      }
+    }
     final q = _searchQuery.trim().toLowerCase();
     if (q.isNotEmpty) {
       if (!klant.toLowerCase().contains(q) &&
@@ -172,6 +718,86 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       if (filtered.isNotEmpty) out[entry.key] = filtered;
     }
     return out;
+  }
+
+  String _operatorNaamUitPlanning(Map<String, dynamic> planning) {
+    final user = planning['gebruikers'];
+    Map<String, dynamic>? userMap;
+    if (user is Map) {
+      userMap = Map<String, dynamic>.from(user);
+    } else if (user is List && user.isNotEmpty && user.first is Map) {
+      userMap = Map<String, dynamic>.from(user.first as Map);
+    }
+    if (userMap == null) return '';
+    return '${_text(userMap['voornaam'])} ${_text(userMap['achternaam'])}'.trim();
+  }
+
+  bool _taskHasOperator(Map<String, dynamic> task, String operator) {
+    final planningen = task['opdracht_planning'];
+    if (planningen is List) {
+      for (final raw in planningen) {
+        if (raw is! Map) continue;
+        final naam = _operatorNaamUitPlanning(Map<String, dynamic>.from(raw));
+        if (naam == operator) return true;
+      }
+    }
+
+    final namen = _text(task['operator_namen']);
+    if (namen.isNotEmpty) {
+      for (final part in namen.split(',')) {
+        if (part.trim() == operator) return true;
+      }
+    }
+
+    final enkel = _text(task['operator_naam']);
+    return enkel == operator;
+  }
+
+  bool _taskMatchesAnyOperator(
+    Map<String, dynamic> task,
+    List<String> operators,
+  ) {
+    for (final operator in operators) {
+      if (_taskHasOperator(task, operator)) return true;
+    }
+    return false;
+  }
+
+  String _operatorFilterLabel() {
+    if (_filterOperators.isEmpty) return 'Alle';
+    if (_filterOperators.length == 1) return _filterOperators.first;
+    return '${_filterOperators.length} geselecteerd';
+  }
+
+  List<String> _agendaOperatorOptions() {
+    final set = <String>{};
+    for (final list in _groupedTasks.values) {
+      for (final item in list) {
+        if (item is! Map) continue;
+        final task = Map<String, dynamic>.from(item);
+
+        final namen = _text(task['operator_namen']);
+        if (namen.isNotEmpty) {
+          for (final part in namen.split(',')) {
+            final n = part.trim();
+            if (n.isNotEmpty) set.add(n);
+          }
+        }
+
+        final enkel = _text(task['operator_naam']);
+        if (enkel.isNotEmpty) set.add(enkel);
+
+        final planningen = task['opdracht_planning'];
+        if (planningen is List) {
+          for (final raw in planningen) {
+            if (raw is! Map) continue;
+            final naam = _operatorNaamUitPlanning(Map<String, dynamic>.from(raw));
+            if (naam.isNotEmpty) set.add(naam);
+          }
+        }
+      }
+    }
+    return set.toList()..sort();
   }
 
   List<String> _agendaFilterOptions(String field) {
@@ -199,20 +825,21 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
 
   List<dynamic> _tasksForVisiblePeriod({
     required DateTime focusedDay,
-    required CalendarFormat format,
+    required String view,
     DateTime? excludeDay,
   }) {
     final excludeKey = excludeDay == null ? null : _normalizeDate(excludeDay);
 
     DateTime start;
     DateTime end;
-    if (format == CalendarFormat.week) {
-      // Monday-based week.
-      final weekday = focusedDay.weekday; // Mon=1..Sun=7
+    if (view == 'Week') {
+      final weekday = focusedDay.weekday;
       start = _normalizeDate(focusedDay.subtract(Duration(days: weekday - 1)));
       end = _normalizeDate(start.add(const Duration(days: 6)));
+    } else if (view == 'Dag') {
+      start = _normalizeDate(focusedDay);
+      end = start;
     } else {
-      // Month view.
       start = DateTime(focusedDay.year, focusedDay.month, 1);
       end = DateTime(focusedDay.year, focusedDay.month + 1, 0);
     }
@@ -221,55 +848,63 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     for (final entry in _groupedTasks.entries) {
       final day = entry.key;
       if (day.isBefore(start) || day.isAfter(end)) continue;
-      if (excludeKey != null && isSameDay(day, excludeKey)) continue;
+      if (excludeKey != null && _isSameDay(day, excludeKey)) continue;
       out.addAll(_filterTaskList(entry.value));
     }
     return out;
   }
 
-  Widget _agendaFilterDropdown({
+  Widget _buildAgendaFilterButton({
     required String label,
     required String? value,
-    required List<String> options,
-    required ValueChanged<String?> onChanged,
+    required VoidCallback onTap,
     required ColorScheme cs,
     required bool isDark,
   }) {
-    return DropdownButtonFormField<String?>(
-      key: ValueKey('$label-$value'),
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
-        filled: true,
-        fillColor: isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+    final fill = isDark ? const Color(0xFF1B1B23) : const Color(0xFFF5F5F7);
+    return Material(
+      color: fill,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: cs.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value ?? 'Alle',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface.withValues(alpha: 0.92),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: cs.onSurface.withValues(alpha: 0.55),
+              ),
+            ],
+          ),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       ),
-      items: [
-        DropdownMenuItem<String?>(
-          value: null,
-          child: Text(
-            'Alle',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
-        ),
-        ...options.map(
-          (opt) => DropdownMenuItem<String?>(
-            value: opt,
-            child: Text(
-              opt,
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ),
-      ],
-      onChanged: onChanged,
     );
   }
 
@@ -280,6 +915,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final klantOptions = _agendaFilterOptions('bedrijfsnaam');
     final projectOptions = _agendaFilterOptions('project_naam');
     final regioOptions = _agendaFilterOptions('werk_regio');
+    final operatorOptions = _agendaOperatorOptions();
 
     return Container(
       width: double.infinity,
@@ -300,127 +936,560 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            onChanged: (val) => setState(() => _searchQuery = val),
-            decoration: InputDecoration(
-              hintText: 'Zoek op klant of project',
-              hintStyle: GoogleFonts.inter(
-                color: cs.onSurface.withValues(alpha: 0.45),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (val) {
+                    setState(() => _searchQuery = val);
+                    _syncEventController();
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Zoek op klant of project',
+                    hintStyle: GoogleFonts.inter(
+                      color: cs.onSurface.withValues(alpha: 0.45),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: cs.primary.withValues(alpha: 0.9),
+                    ),
+                    filled: true,
+                    fillColor: isDark
+                        ? const Color(0xFF1B1B23)
+                        : const Color(0xFFF5F5F7),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 14,
+                    ),
+                  ),
+                ),
               ),
-              prefixIcon: Icon(
-                Icons.search_rounded,
-                color: cs.primary.withValues(alpha: 0.9),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildAgendaFilterButton(
+                  label: 'Regio',
+                  value: _filterRegio,
+                  cs: cs,
+                  isDark: isDark,
+                  onTap: () => _showPremiumFilterModal(
+                    context: context,
+                    title: 'Filter op Regio',
+                    items: regioOptions,
+                    selectedItem: _filterRegio,
+                    onItemSelected: (v) {
+                      setState(() => _filterRegio = v);
+                      _syncEventController();
+                    },
+                  ),
+                ),
               ),
-              filled: true,
-              fillColor: isDark
-                  ? const Color(0xFF1B1B23)
-                  : const Color(0xFFF5F5F7),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildAgendaFilterButton(
+                  label: 'Klant',
+                  value: _filterKlant,
+                  cs: cs,
+                  isDark: isDark,
+                  onTap: () => _showPremiumFilterModal(
+                    context: context,
+                    title: 'Filter op Klant',
+                    items: klantOptions,
+                    selectedItem: _filterKlant,
+                    onItemSelected: (v) {
+                      setState(() => _filterKlant = v);
+                      _syncEventController();
+                    },
+                  ),
+                ),
               ),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 14,
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildAgendaFilterButton(
+                  label: 'Project',
+                  value: _filterProject,
+                  cs: cs,
+                  isDark: isDark,
+                  onTap: () => _showPremiumFilterModal(
+                    context: context,
+                    title: 'Filter op Project',
+                    items: projectOptions,
+                    selectedItem: _filterProject,
+                    onItemSelected: (v) {
+                      setState(() => _filterProject = v);
+                      _syncEventController();
+                    },
+                  ),
+                ),
               ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildAgendaFilterButton(
+            label: 'Operators',
+            value: _operatorFilterLabel(),
+            cs: cs,
+            isDark: isDark,
+            onTap: () => _showPremiumMultiFilterModal(
+              title: 'Filter op Operators',
+              items: operatorOptions,
+              selectedItems: _filterOperators,
+              onItemsChanged: (items) {
+                setState(() => _filterOperators = List<String>.from(items));
+                _syncEventController();
+              },
             ),
-          ),
-          const SizedBox(height: 10),
-          _agendaFilterDropdown(
-            label: 'Klant',
-            value: _filterKlant,
-            options: klantOptions,
-            cs: cs,
-            isDark: isDark,
-            onChanged: (v) => setState(() => _filterKlant = v),
-          ),
-          const SizedBox(height: 8),
-          _agendaFilterDropdown(
-            label: 'Project',
-            value: _filterProject,
-            options: projectOptions,
-            cs: cs,
-            isDark: isDark,
-            onChanged: (v) => setState(() => _filterProject = v),
-          ),
-          const SizedBox(height: 8),
-          _agendaFilterDropdown(
-            label: 'Regio',
-            value: _filterRegio,
-            options: regioOptions,
-            cs: cs,
-            isDark: isDark,
-            onChanged: (v) => setState(() => _filterRegio = v),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCalendarDayCell({
-    required DateTime date,
-    required ColorScheme colorScheme,
-    bool isSelected = false,
-    bool isToday = false,
-  }) {
-    final isMonth = _calendarFormat == CalendarFormat.month;
-
-    if (isMonth) {
-      final bgColor = isSelected
-          ? colorScheme.primary
-          : (isToday ? colorScheme.primary.withValues(alpha: 0.14) : null);
-      final textColor = isSelected ? Colors.white : colorScheme.onSurface;
-      final borderColor = isToday && !isSelected
-          ? colorScheme.primary.withValues(alpha: 0.35)
-          : null;
-
-      return Container(
-        margin: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-          border: borderColor != null ? Border.all(color: borderColor) : null,
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          '${date.day}',
-          style: GoogleFonts.inter(
-            color: textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
+  Widget _buildAgendaViewSwitcher(ColorScheme cs, bool isDark) {
+    const views = ['Maand', 'Week', 'Dag'];
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: views.map((view) {
+        final selected = _currentView == view;
+        return Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => setState(() => _currentView = view),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? cs.primary
+                      : (isDark
+                          ? const Color(0xFF1A2132)
+                          : const Color(0xFFEAF0FA)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  view,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800,
+                    color: selected
+                        ? Colors.white
+                        : cs.onSurface.withValues(alpha: 0.82),
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-      );
-    }
+        );
+      }).toList(),
+    );
+  }
 
-    final textColor = isSelected
-        ? colorScheme.primary
-        : (isToday ? colorScheme.primary : colorScheme.onSurface);
+  Widget _buildAppleMonthCell(
+    dynamic dateRaw,
+    bool isToday,
+    bool isInMonth,
+    ColorScheme cs,
+    bool isDark,
+  ) {
+    final date = dateRaw as DateTime;
+    final isSelected =
+        _selectedDay != null && _isSameDay(_selectedDay!, date);
+    final dayEvents = _eventController.getEventsOnDay(date);
+    final textColor = !isInMonth
+        ? cs.onSurface.withValues(alpha: 0.28)
+        : (isSelected ? Colors.white : cs.onSurface);
+
+    return InkWell(
+      onTap: () => _onMonthCellTap(date),
+      child: Container(
+        margin: const EdgeInsets.all(2),
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? cs.primary
+              : (isToday
+                  ? cs.primary.withValues(alpha: 0.12)
+                  : Colors.transparent),
+          borderRadius: BorderRadius.circular(10),
+          border: isToday && !isSelected
+              ? Border.all(color: cs.primary.withValues(alpha: 0.35))
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: Text(
+                '${date.day}',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: textColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final event in dayEvents.take(3))
+                    GestureDetector(
+                      onTap: () => _onCalendarEventTap(event, date),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: event.color.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          event.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (dayEvents.length > 3)
+                    Text(
+                      '+ ${dayEvents.length - 3} meer',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCalendarView(ColorScheme cs, bool isDark) {
+    final minDay = DateTime.now().subtract(const Duration(days: 730));
+    final maxDay = DateTime.now().add(const Duration(days: 730));
+    final activeDay = _selectedDay ?? _focusedDay;
+    final headerStyle = _calendarHeaderStyle(isDark);
+    final hourLines = HourIndicatorSettings(
+      color: Colors.grey.shade200,
+      height: 1,
+    );
+    final liveLine = LiveTimeIndicatorSettings(
+      color: Colors.blue.shade700,
+    );
+
+    switch (_currentView) {
+      case 'Week':
+        return WeekView<Map<String, dynamic>>(
+          key: const ValueKey('week_view'),
+          controller: _eventController,
+          minDay: minDay,
+          maxDay: maxDay,
+          initialDay: activeDay,
+          startDay: WeekDays.monday,
+          heightPerMinute: 1.1,
+          timeLineWidth: 60,
+          showVerticalLines: false,
+          headerStyle: headerStyle,
+          headerStringBuilder: (date, {secondaryDate}) {
+            return 'Week ${_getWeekNumber(date)}';
+          },
+          hourIndicatorSettings: hourLines,
+          liveTimeIndicatorSettings: liveLine,
+          eventTileBuilder: _buildPremiumEventTile,
+          onPageChange: _onCalendarPageChange,
+          onDateTap: _onCalendarDateTap,
+          onEventTap: _onCalendarEventsCellTap,
+          backgroundColor: isDark ? const Color(0xFF131722) : Colors.white,
+        );
+      case 'Dag':
+        return DayView<Map<String, dynamic>>(
+          key: const ValueKey('day_view'),
+          controller: _eventController,
+          minDay: minDay,
+          maxDay: maxDay,
+          initialDay: activeDay,
+          heightPerMinute: 1.1,
+          timeLineWidth: 60,
+          showVerticalLine: false,
+          headerStyle: headerStyle,
+          hourIndicatorSettings: hourLines,
+          liveTimeIndicatorSettings: liveLine,
+          eventTileBuilder: _buildPremiumEventTile,
+          onPageChange: _onCalendarPageChange,
+          onDateTap: _onCalendarDateTap,
+          onEventTap: _onCalendarEventsCellTap,
+          backgroundColor: isDark ? const Color(0xFF131722) : Colors.white,
+        );
+      default:
+        return MonthView<Map<String, dynamic>>(
+          key: const ValueKey('month_view'),
+          controller: _eventController,
+          monthViewStyle: MonthViewStyle(
+            initialMonth: _focusedDay,
+            minMonth: minDay,
+            maxMonth: maxDay,
+            startDay: WeekDays.monday,
+            cellAspectRatio: 0.72,
+            hideDaysNotInMonth: false,
+            borderColor: cs.onSurface.withValues(alpha: 0.06),
+            headerStyle: headerStyle,
+          ),
+          monthViewBuilders: MonthViewBuilders(
+            headerStringBuilder: (date, {secondaryDate}) =>
+                DateFormat('MMMM yyyy', 'nl_NL').format(date),
+            weekDayStringBuilder: (dayIndex) {
+              const labels = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
+              return labels[dayIndex.clamp(0, labels.length - 1)];
+            },
+            onPageChange: _onCalendarPageChange,
+            onCellTap: (events, date) => _onMonthCellTap(date),
+            onEventTap: (event, date) {
+              final raw = event.event;
+              if (raw is Map) {
+                _onAgendaTaskTap(Map<String, dynamic>.from(raw));
+              }
+            },
+            cellBuilder: (date, events, isToday, isInMonth, hideDaysNotInMonth) {
+              return _buildAppleMonthCell(
+                date,
+                isToday,
+                isInMonth,
+                cs,
+                isDark,
+              );
+            },
+          ),
+        );
+    }
+  }
+
+  Widget _buildPremiumCalendarShell({
+    required ColorScheme cs,
+    required bool isDark,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF131722) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildCalendarSection({
+    required ColorScheme cs,
+    required bool isDark,
+  }) {
+    final calendarHeight = _calendarViewportHeight(context);
 
     return Container(
-      margin: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isSelected
-            ? colorScheme.primary.withValues(alpha: 0.12)
-            : (isToday ? colorScheme.primary.withValues(alpha: 0.06) : null),
-        border: isSelected
-            ? Border.all(color: colorScheme.primary, width: 2)
-            : (isToday
-                ? Border.all(
-                    color: colorScheme.primary.withValues(alpha: 0.35),
-                  )
-                : null),
+      padding: const EdgeInsets.all(12),
+      decoration: _premiumAgendaCardDecoration(isDark: isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.filter_list),
+                label: const Text('Filters'),
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () => setState(() => _showFilters = !_showFilters),
+              ),
+              Expanded(child: _buildAgendaViewSwitcher(cs, isDark)),
+            ],
+          ),
+          if (_showFilters)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: _buildAgendaFilterContainer(cs: cs, isDark: isDark),
+            ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: calendarHeight,
+            child: _buildPremiumCalendarShell(
+              cs: cs,
+              isDark: isDark,
+              child: _buildCalendarView(cs, isDark),
+            ),
+          ),
+        ],
       ),
-      alignment: Alignment.center,
-      child: Text(
-        '${date.day}',
-        style: GoogleFonts.inter(
-          color: textColor,
-          fontSize: 14,
-          fontWeight: isSelected || isToday ? FontWeight.w900 : FontWeight.w700,
-        ),
+    );
+  }
+
+  void _onAgendaTaskTap(Map<String, dynamic> item) {
+    final pers = item['_persoonlijk_agenda'] == true;
+    final maker = _text(item['maker_id']);
+    final uid = _text(_currentUserId);
+    if (pers && maker.isNotEmpty && maker != uid) {
+      _openPersoonlijkAlleenLezen(item);
+      return;
+    }
+    _openAgendaDetailModal(item);
+  }
+
+  Widget _buildSelectedDayPanel({
+    required ColorScheme cs,
+    required bool isDark,
+    required List<dynamic> dayTasks,
+  }) {
+    final selectedDay = _selectedDay!;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      decoration: _premiumAgendaCardDecoration(isDark: isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  'Geplande taken op ${DateFormat('d MMMM yyyy', 'nl_NL').format(selectedDay)}',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+              if (_selectedDay != null)
+                IconButton(
+                  tooltip: 'Sluiten',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    setState(() {
+                      _selectedDay = null;
+                    });
+                  },
+                  icon: const Icon(Icons.close),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (dayTasks.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Geen taken gepland op deze dag.',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface.withValues(alpha: 0.65),
+                ),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: dayTasks.length,
+              itemBuilder: (context, index) {
+                final item = Map<String, dynamic>.from(
+                  dayTasks[index] as Map,
+                );
+                return _premiumAgendaTaskTile(
+                  item: item,
+                  cs: cs,
+                  isDark: isDark,
+                  onTap: () => _onAgendaTaskTap(item),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPeriodOverview({
+    required ColorScheme cs,
+    required bool isDark,
+    required List<dynamic> periodTasks,
+  }) {
+    final periodLabel = _currentView == 'Week'
+        ? 'week'
+        : (_currentView == 'Dag' ? 'dag' : 'maand');
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      decoration: _premiumAgendaCardDecoration(isDark: isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Overzicht — deze $periodLabel',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (periodTasks.isEmpty)
+            Text(
+              'Geen opdrachten in deze $periodLabel.',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface.withValues(alpha: 0.72),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: periodTasks.length,
+              itemBuilder: (context, index) {
+                final item = Map<String, dynamic>.from(
+                  periodTasks[index] as Map,
+                );
+                return _premiumAgendaTaskTile(
+                  item: item,
+                  cs: cs,
+                  isDark: isDark,
+                  onTap: () => _onAgendaTaskTap(item),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
@@ -806,14 +1875,13 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cs = Theme.of(context).colorScheme;
     final bg = isDark ? const Color(0xFF090A12) : const Color(0xFFF2F4F7);
-    final filteredGrouped = _filteredGroupedTasks();
+    final isMobile = MediaQuery.of(context).size.width < 800;
     final dayTasks = _tasksForSelectedDay();
     final periodTasks = _tasksForVisiblePeriod(
       focusedDay: _focusedDay,
-      format: _calendarFormat,
+      view: _currentView,
       excludeDay: _selectedDay,
     );
-    final isMonthView = _calendarFormat == CalendarFormat.month;
 
     return Scaffold(
       backgroundColor: bg,
@@ -842,409 +1910,84 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
           ),
         ],
       ),
-      body: SelectionArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-            _buildInboxBanner(cs, isDark),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _loadError != null
-                      ? Center(
-                          child: Text(
-                            'Agenda laden mislukt: $_loadError',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                          ),
+      body: CalendarControllerProvider<Map<String, dynamic>>(
+        controller: _eventController,
+        child: SelectionArea(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildInboxBanner(cs, isDark),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 320,
+                          child: Center(child: CircularProgressIndicator()),
                         )
-                      : Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 5,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () {
-                                  if (_selectedDay != null) {
-                                    setState(() => _selectedDay = null);
-                                  }
-                                },
-                                child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: _premiumAgendaCardDecoration(
-                                  isDark: isDark,
-                                ),
-                                child: Column(
+                      : _loadError != null
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 48),
+                              child: Text(
+                                'Agenda laden mislukt: $_loadError',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                              ),
+                            )
+                          : isMobile
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    _buildAgendaFilterContainer(
+                                    _buildCalendarSection(
                                       cs: cs,
                                       isDark: isDark,
                                     ),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            color: isDark
-                                                ? const Color(0xFF1A2132)
-                                                : const Color(0xFFEAF0FA),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child:
-                                              CupertinoSlidingSegmentedControl<CalendarFormat>(
-                                            groupValue: _calendarFormat,
-                                            thumbColor: cs.primary,
-                                            backgroundColor: Colors.transparent,
-                                            children: {
-                                              CalendarFormat.month: Padding(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 16,
-                                                  vertical: 8,
-                                                ),
-                                                child: Text(
-                                                  'Maand',
-                                                  style: GoogleFonts.inter(
-                                                    fontWeight: FontWeight.w800,
-                                                    color: _calendarFormat ==
-                                                            CalendarFormat.month
-                                                        ? Colors.white
-                                                        : cs.onSurface.withValues(
-                                                            alpha: 0.82,
-                                                          ),
-                                                  ),
-                                                ),
-                                              ),
-                                              CalendarFormat.week: Padding(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 16,
-                                                  vertical: 8,
-                                                ),
-                                                child: Text(
-                                                  'Week',
-                                                  style: GoogleFonts.inter(
-                                                    fontWeight: FontWeight.w800,
-                                                    color: _calendarFormat ==
-                                                            CalendarFormat.week
-                                                        ? Colors.white
-                                                        : cs.onSurface.withValues(
-                                                            alpha: 0.82,
-                                                          ),
-                                                  ),
-                                                ),
-                                              ),
-                                            },
-                                            onValueChanged: (format) {
-                                              if (format == null) return;
-                                              setState(
-                                                () => _calendarFormat = format,
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TableCalendar<dynamic>(
-                                      locale: 'nl_NL',
-                                      firstDay: DateTime.now()
-                                          .subtract(const Duration(days: 730)),
-                                      lastDay: DateTime.now()
-                                          .add(const Duration(days: 730)),
-                                      focusedDay: _focusedDay,
-                                      calendarFormat: _calendarFormat,
-                                      availableCalendarFormats: const {
-                                        CalendarFormat.month: 'Maand',
-                                        CalendarFormat.week: 'Week',
-                                      },
-                                      rowHeight: 90.0,
-                                      daysOfWeekHeight: 40.0,
-                                      selectedDayPredicate: (day) =>
-                                          isSameDay(_selectedDay, day),
-                                      startingDayOfWeek:
-                                          StartingDayOfWeek.monday,
-                                      eventLoader: (day) =>
-                                          filteredGrouped[_normalizeDate(day)] ??
-                                          const <dynamic>[],
-                                      onFormatChanged: (format) {
-                                        setState(() => _calendarFormat = format);
-                                      },
-                                      onPageChanged: (focusedDay) {
-                                        setState(() => _focusedDay = focusedDay);
-                                      },
-                                      onDaySelected: (selectedDay, focusedDay) {
-                                        setState(() {
-                                          _selectedDay = selectedDay;
-                                          _focusedDay = focusedDay;
-                                        });
-                                      },
-                                      headerStyle: const HeaderStyle(
-                                        formatButtonVisible: false,
+                                    if (_selectedDay != null) ...[
+                                      const SizedBox(height: 12),
+                                      _buildSelectedDayPanel(
+                                        cs: cs,
+                                        isDark: isDark,
+                                        dayTasks: dayTasks,
                                       ),
-                                      calendarStyle: CalendarStyle(
-                                        outsideTextStyle: TextStyle(
-                                          color:
-                                              cs.onSurface.withValues(alpha: 0.34),
-                                        ),
-                                        markerDecoration: const BoxDecoration(
-                                          color: Colors.transparent,
-                                        ),
-                                        todayDecoration: isMonthView
-                                            ? BoxDecoration(
-                                                shape: BoxShape.rectangle,
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                color: Colors.transparent,
-                                              )
-                                            : const BoxDecoration(
-                                                shape: BoxShape.circle,
-                                                color: Colors.transparent,
-                                              ),
-                                        selectedDecoration: isMonthView
-                                            ? BoxDecoration(
-                                                shape: BoxShape.rectangle,
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                color: cs.primary,
-                                              )
-                                            : const BoxDecoration(
-                                                shape: BoxShape.circle,
-                                                color: Colors.transparent,
-                                              ),
-                                      ),
-                                      calendarBuilders:
-                                          CalendarBuilders<dynamic>(
-                                        defaultBuilder: (context, date, _) =>
-                                            _buildCalendarDayCell(
-                                          date: date,
-                                          colorScheme: cs,
-                                        ),
-                                        selectedBuilder: (context, date, _) =>
-                                            _buildCalendarDayCell(
-                                          date: date,
-                                          colorScheme: cs,
-                                          isSelected: true,
-                                        ),
-                                        todayBuilder: (context, date, _) =>
-                                            _buildCalendarDayCell(
-                                          date: date,
-                                          colorScheme: cs,
-                                          isToday: true,
-                                        ),
-                                        markerBuilder: (context, date, events) {
-                                          if (events.isEmpty) {
-                                            return const SizedBox.shrink();
-                                          }
-                                          return Align(
-                                            alignment: Alignment.bottomCenter,
-                                            child: Container(
-                                              margin: const EdgeInsets.only(
-                                                bottom: 6,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFF101B35),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                '${events.length} taken',
-                                                style: GoogleFonts.inter(
-                                                  color: Colors.white,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w800,
-                                                  height: 1.0,
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        },
+                                    ],
+                                  ],
+                                )
+                              : Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      flex: _selectedDay == null ? 1 : 5,
+                                      child: _buildCalendarSection(
+                                        cs: cs,
+                                        isDark: isDark,
                                       ),
                                     ),
+                                    if (_selectedDay != null) ...[
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        flex: 3,
+                                        child: _buildSelectedDayPanel(
+                                          cs: cs,
+                                          isDark: isDark,
+                                          dayTasks: dayTasks,
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
-                              ),
-                              ),
-                            ),
-                            if (_selectedDay != null) ...[
-                              const SizedBox(width: 14),
-                              Expanded(
-                                flex: 3,
-                                child: Container(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    14,
-                                    14,
-                                    14,
-                                    10,
-                                  ),
-                                  decoration: _premiumAgendaCardDecoration(
-                                    isDark: isDark,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              'Geplande taken op ${DateFormat('d MMMM yyyy', 'nl_NL').format(_selectedDay!)}',
-                                              style: GoogleFonts.inter(
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 18,
-                                                letterSpacing: -0.2,
-                                              ),
-                                            ),
-                                          ),
-                                          IconButton(
-                                            tooltip: 'Sluiten',
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            onPressed: () => setState(
-                                              () => _selectedDay = null,
-                                            ),
-                                            icon: const Icon(Icons.close),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-                                      if (dayTasks.isEmpty)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 12,
-                                          ),
-                                          child: Text(
-                                            'Geen taken gepland op deze dag.',
-                                            style: GoogleFonts.inter(
-                                              fontWeight: FontWeight.w700,
-                                              color: cs.onSurface.withValues(
-                                                alpha: 0.65,
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        ListView.builder(
-                                          shrinkWrap: true,
-                                          physics:
-                                              const NeverScrollableScrollPhysics(),
-                                          itemCount: dayTasks.length,
-                                          itemBuilder: (context, index) {
-                                            final item =
-                                                Map<String, dynamic>.from(
-                                              dayTasks[index] as Map,
-                                            );
-                                            return _premiumAgendaTaskTile(
-                                              item: item,
-                                              cs: cs,
-                                              isDark: isDark,
-                                              onTap: () {
-                                                final pers =
-                                                    item['_persoonlijk_agenda'] ==
-                                                        true;
-                                                final maker =
-                                                    _text(item['maker_id']);
-                                                final uid =
-                                                    _text(_currentUserId);
-                                                if (pers &&
-                                                    maker.isNotEmpty &&
-                                                    maker != uid) {
-                                                  _openPersoonlijkAlleenLezen(
-                                                    item,
-                                                  );
-                                                  return;
-                                                }
-                                                _openAgendaDetailModal(item);
-                                              },
-                                            );
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-                decoration: _premiumAgendaCardDecoration(isDark: isDark),
-                child: Builder(
-                  builder: (context) {
-                    Widget emptyHint(String text) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          text,
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w700,
-                            color: cs.onSurface.withValues(alpha: 0.72),
-                          ),
-                        ),
-                      );
-                    }
-
-                    final periodLabel = _calendarFormat == CalendarFormat.week
-                        ? 'week'
-                        : 'maand';
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Overzicht — deze $periodLabel',
-                          style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (periodTasks.isEmpty)
-                          emptyHint('Geen opdrachten in deze $periodLabel.')
-                        else
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: periodTasks.length,
-                            itemBuilder: (context, index) {
-                              final item = Map<String, dynamic>.from(
-                                periodTasks[index] as Map,
-                              );
-                              return _premiumAgendaTaskTile(
-                                item: item,
-                                cs: cs,
-                                isDark: isDark,
-                                onTap: () {
-                                  final pers = item['_persoonlijk_agenda'] == true;
-                                  final maker = _text(item['maker_id']);
-                                  final uid = _text(_currentUserId);
-                                  if (pers && maker.isNotEmpty && maker != uid) {
-                                    _openPersoonlijkAlleenLezen(item);
-                                    return;
-                                  }
-                                  _openAgendaDetailModal(item);
-                                },
-                              );
-                            },
-                          ),
-                      ],
-                    );
-                  },
                 ),
-              ),
+                if (!_isLoading && _loadError == null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: _buildPeriodOverview(
+                      cs: cs,
+                      isDark: isDark,
+                      periodTasks: periodTasks,
+                    ),
+                  ),
+                SizedBox(height: isMobile ? 96 : 24),
+              ],
             ),
-            const SizedBox(height: 120),
-            ],
           ),
         ),
       ),
