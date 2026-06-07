@@ -93,33 +93,37 @@ Future<void> main() async {
     }
   });
 
-  // Load environment variables: defaults from the committed example, optional
-  // overrides from env.txt (see env.txt.example). Both must be listed in pubspec.yaml assets.
-  await dotenv.load(
-    fileName: 'env.txt.example',
-    overrideWithFiles: const ['env.txt'],
-    isOptional: true,
-  );
-
-  // Read variables securely - USE THE EXACT VARIABLE NAMES, NOT THE ACTUAL URL!
-  final supabaseUrl = dotenv.env['SUPABASE_URL'];
-  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'];
-
-  if (supabaseUrl == null ||
-      supabaseAnonKey == null ||
-      supabaseUrl.isEmpty ||
-      supabaseAnonKey.isEmpty) {
-    throw Exception('Supabase configuratie ontbreekt in env bestand');
-  }
-  if (supabaseUrl.contains('your-project.supabase.co') ||
-      supabaseAnonKey.contains('your-anon-key')) {
-    throw Exception(
-      'Supabase staat nog op placeholder-waarden. Kopieer env.txt.example naar env.txt '
-      'in de projectmap en vul SUPABASE_URL en SUPABASE_ANON_KEY in.',
+  // 1. Probeer de env in te laden en houd bij of dit is gelukt
+  var isEnvLoaded = false;
+  try {
+    await dotenv.load(fileName: 'assets/env.txt');
+    isEnvLoaded = true;
+  } catch (e) {
+    debugPrint(
+      'Let op: Env bestand niet gevonden of web-cache issue. '
+      'We gebruiken de hardcoded fallbacks.',
     );
   }
 
-  // Initialize Supabase
+  // 2. Haal de keys op: UITSLUITEND uit dotenv als deze geladen is, anders direct de fallback
+  final supabaseUrl = (isEnvLoaded ? dotenv.env['SUPABASE_URL'] : null) ??
+      const String.fromEnvironment(
+        'SUPABASE_URL',
+        defaultValue: 'https://acmilujwncqnnygrylol.supabase.co',
+      );
+
+  final supabaseAnonKey =
+      (isEnvLoaded ? dotenv.env['SUPABASE_ANON_KEY'] : null) ??
+          const String.fromEnvironment(
+            'SUPABASE_ANON_KEY',
+            defaultValue: 'sb_publishable_b2vWBHs3nESNuT7TyrTOUA_CM5e23e5',
+          );
+
+  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    throw Exception('Supabase configuratie is volledig leeg.');
+  }
+
+  // 3. Initialiseer Supabase
   await Supabase.initialize(
     url: supabaseUrl,
     anonKey: supabaseAnonKey,

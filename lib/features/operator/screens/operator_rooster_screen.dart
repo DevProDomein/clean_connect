@@ -1487,12 +1487,12 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                 _premiumBrightBlue.withValues(alpha: 0.92),
               ],
       ),
-      borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(24),
       border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      boxShadow: [
-        BoxShadow(
+        boxShadow: [
+          BoxShadow(
           color: Colors.black.withValues(alpha: 0.05),
-          blurRadius: 20,
+            blurRadius: 20,
           offset: const Offset(0, 10),
         ),
       ],
@@ -1505,9 +1505,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     int maxLines = 1,
   }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+              Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.12),
@@ -1517,7 +1517,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
+                child: Text(
             text,
             maxLines: maxLines,
             overflow: TextOverflow.ellipsis,
@@ -1543,7 +1543,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
 
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [
+            children: [
         IconButton(
           tooltip: 'Bekijk werkprogramma',
           icon: Icon(Icons.fact_check_outlined, color: werkprogrammaColor),
@@ -1575,9 +1575,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       return const SizedBox.shrink();
     }
     return SizedBox(
-      width: double.infinity,
+              width: double.infinity,
       height: 44,
-      child: ElevatedButton.icon(
+              child: ElevatedButton.icon(
         icon: const Icon(Icons.check_circle_outline, size: 18),
         label: Text(
           'Opdracht afronden',
@@ -1586,12 +1586,12 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
             fontSize: 15,
           ),
         ),
-        style: ElevatedButton.styleFrom(
+                style: ElevatedButton.styleFrom(
           backgroundColor: Colors.green.shade700,
           foregroundColor: Colors.white,
           elevation: 2,
           padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(
+                  shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
         ),
@@ -1611,7 +1611,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     if (raw == null || raw.isEmpty || raw == 'null') return null;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(12),
       child: SizedBox(
         width: 56,
         height: 56,
@@ -1679,7 +1679,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                       horizontal: 10,
                       vertical: 5,
                     ),
-                    decoration: BoxDecoration(
+      decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -1708,7 +1708,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
                     ),
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.notification_important_rounded,
@@ -1733,8 +1733,8 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
           ),
           if (topChipLabel != null) const SizedBox(height: 14),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
               Expanded(
                 child: Text(
                   bedrijfsnaam,
@@ -1775,9 +1775,9 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
           if (expandVertically) const Spacer() else const SizedBox(height: 14),
           const SizedBox(height: 12),
           _buildTaakAfrondenKnop(task),
-        ],
-      ),
-    );
+                ],
+              ),
+            );
   }
 
   Widget _buildTodayCard(Map<String, dynamic> task) {
@@ -1791,7 +1791,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       badgeLabel = 'Gepland';
     } else if (isVoltooid) {
       badgeLabel = 'Voltooid';
-    } else {
+          } else {
       badgeLabel = task['mijn_persoonlijke_status']?.toString() ?? '—';
     }
 

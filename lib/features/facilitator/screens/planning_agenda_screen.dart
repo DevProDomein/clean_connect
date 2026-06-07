@@ -3,6 +3,8 @@ import 'package:calendar_view/calendar_view.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:syncfusion_flutter_core/theme.dart';
+import 'package:syncfusion_flutter_calendar/calendar.dart' hide WeekDays;
 
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
@@ -17,10 +19,28 @@ class PlanningAgendaScreen extends StatefulWidget {
 }
 
 class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
+  static const _maandNamen = [
+    'Januari',
+    'Februari',
+    'Maart',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Augustus',
+    'September',
+    'Oktober',
+    'November',
+    'December',
+  ];
+
   final EventController<Map<String, dynamic>> _eventController =
       EventController<Map<String, dynamic>>();
+  final CalendarController _calendarController = CalendarController();
 
   DateTime _focusedDay = DateTime.now();
+  final GlobalKey _weekViewKey = GlobalKey();
+  DateTime _currentWeekDate = DateTime.now();
   DateTime? _selectedDay;
   String _currentView = 'Maand';
   Map<DateTime, List<dynamic>> _groupedTasks = {};
@@ -39,14 +59,20 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   List<String> _filterOperators = [];
   bool _showFilters = false;
 
+  static const double _heightPerMinute = 1.1;
+  static const double _weekTimeLineWidth = 60.0;
+
   @override
   void initState() {
     super.initState();
+    _calendarController.view = CalendarView.timelineDay;
+    _currentWeekDate = _selectedDay ?? DateTime.now();
     _loadAgenda();
   }
 
   @override
   void dispose() {
+    _calendarController.dispose();
     _eventController.dispose();
     super.dispose();
   }
@@ -73,6 +99,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     });
   }
 
+  void _onWeekPageChange(DateTime date, int pageIndex) {
+    _currentWeekDate = date;
+  }
+
   String _text(dynamic value) => (value ?? '').toString().trim();
 
   DateTime _normalizeDate(DateTime date) => DateTime(date.year, date.month, date.day);
@@ -97,6 +127,657 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     return raw.length >= 5 ? raw.substring(0, 5) : raw;
   }
 
+  String _opdrachtIdFromTask(Map<String, dynamic> task) {
+    final candidate = _text(task['opdracht_id']).isNotEmpty
+        ? _text(task['opdracht_id'])
+        : _text(task['id']);
+    return candidate;
+  }
+
+  bool _isVerplaatsbaarTask(Map<String, dynamic> task) {
+    if (task['_persoonlijk_agenda'] == true) return false;
+    return _opdrachtIdFromTask(task).isNotEmpty;
+  }
+
+  TimeOfDay _parseTimeOfDay(
+    dynamic value, {
+    int defaultHour = 9,
+    int defaultMinute = 0,
+  }) {
+    final t = _formatTime(value);
+    if (t == '--:--') {
+      return TimeOfDay(hour: defaultHour, minute: defaultMinute);
+    }
+    final parts = t.split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts.first) ?? defaultHour,
+      minute: parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : defaultMinute,
+    );
+  }
+
+  DateTime _roundTo5Mins(DateTime time) {
+    final roundedMinutes = (time.minute / 5).round() * 5;
+    return DateTime(time.year, time.month, time.day, time.hour, roundedMinutes);
+  }
+
+  String? _operatorIdFromResource(CalendarResource? resource) {
+    final id = resource?.id.toString();
+    if (id == null || id.isEmpty || id == 'ongepland' || id.startsWith('naam_')) {
+      return null;
+    }
+    return id;
+  }
+
+  Future<void> _handleSyncfusionAppointmentChange(
+    Appointment appointment,
+    DateTime start,
+    DateTime end,
+    CalendarResource? resource,
+  ) async {
+    final task = _taskForAppointment(appointment);
+    if (task == null || !_isVerplaatsbaarTask(task)) return;
+
+    final snappedStart = _roundTo5Mins(start);
+    var snappedEnd = _roundTo5Mins(end);
+    if (!snappedEnd.isAfter(snappedStart)) {
+      snappedEnd = snappedStart.add(const Duration(minutes: 5));
+    }
+
+    await _verplaatsOpdrachtVeilig(
+      appointment.id.toString(),
+      _normalizeDate(snappedStart),
+      TimeOfDay(hour: snappedStart.hour, minute: snappedStart.minute),
+      TimeOfDay(hour: snappedEnd.hour, minute: snappedEnd.minute),
+      nieuweOperatorId: _operatorIdFromResource(resource),
+    );
+    if (mounted) await _loadAgenda();
+  }
+
+  Map<String, dynamic>? _taskForAppointment(Appointment appointment) {
+    final opdrachtId = appointment.id.toString();
+    final day = _normalizeDate(_selectedDay ?? _focusedDay);
+    for (final taak in _allLoadedTasksForDay(day)) {
+      if (_opdrachtIdFromTask(taak) == opdrachtId) return taak;
+    }
+    return null;
+  }
+
+  OpdrachtDataSource _getCalendarDataSource(DateTime date) {
+    final appointments = <Appointment>[];
+    final resourceMap = <String, CalendarResource>{};
+    final day = _normalizeDate(date);
+
+    resourceMap['ongepland'] = CalendarResource(
+      id: 'ongepland',
+      displayName: 'Ongepland',
+      color: Colors.grey.shade400,
+    );
+
+    for (final taak in _allLoadedTasksForDay(day)) {
+      final taskDate = _normalizeDate(_parseDate(taak['geplande_datum']));
+      if (!_isSameDay(taskDate, day)) continue;
+
+      var resourceId = 'ongepland';
+      var resourceName = 'Ongepland';
+      final planningen = taak['opdracht_planning'];
+
+      if (planningen is List && planningen.isNotEmpty) {
+        final raw = planningen.first;
+        if (raw is Map) {
+          final planning = Map<String, dynamic>.from(raw);
+          final operatorId = _text(planning['operator_id']);
+          final naam = _operatorNaamUitPlanning(planning);
+          if (operatorId.isNotEmpty) {
+            resourceId = operatorId;
+            resourceName = naam.isEmpty ? 'Operator' : naam;
+          } else if (naam.isNotEmpty) {
+            resourceId = 'naam_$naam';
+            resourceName = naam;
+          }
+        }
+      } else {
+        final enkel = _text(taak['operator_naam']);
+        if (enkel.isNotEmpty) {
+          resourceId = 'naam_$enkel';
+          resourceName = enkel;
+        } else {
+          final namen = _text(taak['operator_namen']);
+          if (namen.isNotEmpty) {
+            final first = namen.split(',').first.trim();
+            if (first.isNotEmpty) {
+              resourceId = 'naam_$first';
+              resourceName = first;
+            }
+          }
+        }
+      }
+
+      resourceMap.putIfAbsent(
+        resourceId,
+        () => CalendarResource(
+          id: resourceId,
+          displayName: resourceName,
+          color: Colors.blue.shade900,
+        ),
+      );
+
+      final start = _safeParseTime(
+        day,
+        taak['tijdslot_start'] ?? taak['starttijd'],
+        8,
+      );
+      var end = _safeParseTime(
+        day,
+        taak['tijdslot_eind'] ?? taak['eindtijd'],
+        9,
+      );
+      if (!end.isAfter(start)) {
+        end = start.add(const Duration(hours: 1));
+      }
+
+      final project = _text(taak['project_naam']);
+      final company = _text(taak['bedrijfsnaam']);
+      final title = project.isNotEmpty
+          ? project
+          : (company.isNotEmpty ? company : 'Opdracht');
+
+      appointments.add(
+        Appointment(
+          id: _opdrachtIdFromTask(taak),
+          startTime: start,
+          endTime: end,
+          subject: title,
+          color: _bepaalStatusKleur(taak),
+          resourceIds: [resourceId],
+          notes: _text(taak['werk_regio']),
+        ),
+      );
+    }
+
+    if (!appointments.any((a) => a.resourceIds?.contains('ongepland') == true)) {
+      resourceMap.remove('ongepland');
+    }
+
+    if (resourceMap.isEmpty) {
+      resourceMap['algemeen'] = CalendarResource(
+        id: 'algemeen',
+        displayName: 'Algemene Planning',
+        color: Colors.blue.shade900,
+      );
+    }
+
+    return OpdrachtDataSource(appointments, resourceMap.values.toList());
+  }
+
+  Widget _buildWeekEventTile(
+    DateTime date,
+    List<CalendarEventData<Map<String, dynamic>>> events,
+    Rect boundary,
+    DateTime startDuration,
+    DateTime endDuration,
+  ) {
+    if (events.isEmpty) return const SizedBox.shrink();
+    final event = events.first;
+    final startStr =
+        '${event.startTime!.hour.toString().padLeft(2, '0')}:${event.startTime!.minute.toString().padLeft(2, '0')}';
+    final eindStr =
+        '${event.endTime!.hour.toString().padLeft(2, '0')}:${event.endTime!.minute.toString().padLeft(2, '0')}';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      clipBehavior: Clip.hardEdge,
+      decoration: BoxDecoration(
+        color: event.color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border(left: BorderSide(color: event.color, width: 3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            event.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              color: Colors.blue.shade900,
+              fontWeight: FontWeight.w700,
+              fontSize: 10,
+            ),
+          ),
+          Text(
+            '$startStr - $eindStr',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              color: Colors.blue.shade900,
+              fontWeight: FontWeight.w500,
+              fontSize: 9,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _shiftMatrixDay(int dayDelta) {
+    final base = _normalizeDate(_selectedDay ?? _focusedDay);
+    final next = _normalizeDate(base.add(Duration(days: dayDelta)));
+    _calendarController.displayDate = next;
+    setState(() {
+      _selectedDay = next;
+      _focusedDay = next;
+      _currentWeekDate = next;
+    });
+  }
+
+  Widget _buildPremiumAppointmentTile(
+    BuildContext context,
+    CalendarAppointmentDetails calendarAppointmentDetails,
+  ) {
+    if (calendarAppointmentDetails.appointments.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final app = calendarAppointmentDetails.appointments.first as Appointment;
+    final isTimeline = _calendarController.view == CalendarView.timelineDay;
+    final isMonth = _calendarController.view == CalendarView.month;
+
+    final startStr =
+        '${app.startTime.hour.toString().padLeft(2, '0')}:${app.startTime.minute.toString().padLeft(2, '0')}';
+    final eindStr =
+        '${app.endTime.hour.toString().padLeft(2, '0')}:${app.endTime.minute.toString().padLeft(2, '0')}';
+
+    if (isMonth || !isTimeline) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        clipBehavior: Clip.hardEdge,
+        decoration: BoxDecoration(
+          color: app.color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(4),
+          border: Border(left: BorderSide(color: app.color, width: 3)),
+        ),
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                app.subject,
+                style: TextStyle(
+                  color: Colors.blue.shade900,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (!isMonth)
+                Text(
+                  '$startStr - $eindStr',
+                  style: TextStyle(
+                    color: Colors.blue.shade900,
+                    fontSize: 9,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: calendarAppointmentDetails.bounds.width,
+      height: calendarAppointmentDetails.bounds.height,
+      margin: const EdgeInsets.only(right: 2, top: 2, bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      clipBehavior: Clip.hardEdge,
+      decoration: BoxDecoration(
+        color: app.color,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            app.subject,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '$startStr - $eindStr',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 10,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (app.notes != null && app.notes!.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.white70,
+                  size: 10,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    app.notes!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSyncfusionDayView(DateTime date, ColorScheme cs, bool isDark) {
+    final day = _normalizeDate(date);
+    _calendarController.view = CalendarView.timelineDay;
+    _calendarController.displayDate = day;
+
+    return Column(
+      children: [
+        Container(
+          height: 60,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            border: Border(
+              bottom: BorderSide(color: Colors.blue.shade900, width: 3),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              InkWell(
+                onTap: () => _shiftMatrixDay(-1),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.chevron_left,
+                    color: Colors.blue.shade900,
+                    size: 24,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  _getDutchDateString(day),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.blue.shade900,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: () => _shiftMatrixDay(1),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.chevron_right,
+                    color: Colors.blue.shade900,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SelectionContainer.disabled(
+            child: SfCalendarTheme(
+              data: SfCalendarThemeData(
+                todayHighlightColor: Colors.orange.shade700,
+                cellBorderColor: Colors.grey.shade200,
+              ),
+              child: SfCalendar(
+                key: ValueKey('sf_day_${day.year}_${day.month}_${day.day}'),
+                controller: _calendarController,
+                view: CalendarView.timelineDay,
+                dataSource: _getCalendarDataSource(day),
+                showNavigationArrow: false,
+                showDatePickerButton: false,
+                headerHeight: 0,
+                viewHeaderHeight: 0,
+                firstDayOfWeek: 1,
+                allowedViews: const [
+                  CalendarView.month,
+                  CalendarView.week,
+                  CalendarView.timelineDay,
+                ],
+                timeSlotViewSettings: const TimeSlotViewSettings(
+                  timeFormat: 'HH:mm',
+                  timeIntervalHeight: 80,
+                  timelineAppointmentHeight: 80,
+                ),
+              resourceViewSettings: const ResourceViewSettings(
+                visibleResourceCount: 4,
+                showAvatar: false,
+                width: 110,
+                height: 80,
+              ),
+              resourceViewHeaderBuilder: (context, details) {
+                return Container(
+                  margin: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade800,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    details.resource.displayName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              },
+              monthViewSettings: const MonthViewSettings(
+                appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
+                appointmentDisplayCount: 3,
+                showAgenda: true,
+              ),
+              allowDragAndDrop: true,
+              allowAppointmentResize: true,
+              dragAndDropSettings: const DragAndDropSettings(
+                showTimeIndicator: false,
+              ),
+              appointmentBuilder: _buildPremiumAppointmentTile,
+              onDragEnd: (AppointmentDragEndDetails details) async {
+                final appointment = details.appointment as Appointment?;
+                final rawNieuweStart = details.droppingTime;
+                if (appointment == null || rawNieuweStart == null) return;
+
+                final nieuweStart = _roundTo5Mins(rawNieuweStart);
+                final duur =
+                    appointment.endTime.difference(appointment.startTime);
+                final nieuweEind = nieuweStart.add(duur);
+                await _handleSyncfusionAppointmentChange(
+                  appointment,
+                  nieuweStart,
+                  nieuweEind,
+                  details.targetResource,
+                );
+              },
+              onAppointmentResizeEnd:
+                  (AppointmentResizeEndDetails details) async {
+                final appointment = details.appointment as Appointment?;
+                if (appointment == null) return;
+                await _handleSyncfusionAppointmentChange(
+                  appointment,
+                  appointment.startTime,
+                  appointment.endTime,
+                  null,
+                );
+              },
+              onTap: (CalendarTapDetails details) {
+                if (details.appointments == null ||
+                    details.appointments!.isEmpty) {
+                  return;
+                }
+                final clickedApp = details.appointments!.first as Appointment;
+                final task = _taskForAppointment(clickedApp);
+                if (task != null) _openAgendaDetailModal(task);
+              },
+            ),
+          ),
+        ),
+        ),
+      ],
+    );
+  }
+
+  Future<bool> _verplaatsOpdrachtVeilig(
+    String opdrachtId,
+    DateTime nieuweDatum,
+    TimeOfDay nieuweStart,
+    TimeOfDay nieuweEind, {
+    String? nieuweOperatorId,
+  }) async {
+    try {
+      final startStr =
+          '${nieuweStart.hour.toString().padLeft(2, '0')}:${nieuweStart.minute.toString().padLeft(2, '0')}:00';
+      final eindStr =
+          '${nieuweEind.hour.toString().padLeft(2, '0')}:${nieuweEind.minute.toString().padLeft(2, '0')}:00';
+      final datumStr = nieuweDatum.toIso8601String().split('T')[0];
+
+      final result = await AppSupabase.client.rpc('check_operator_overlap', params: {
+        'p_opdracht_id': opdrachtId,
+        'p_nieuwe_datum': datumStr,
+        'p_nieuwe_starttijd': startStr,
+        'p_nieuwe_eindtijd': eindStr,
+      });
+
+      if (!(result[0]['is_beschikbaar'] as bool)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result[0]['conflict_bericht'].toString()),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return false;
+      }
+
+      await AppSupabase.client.from('opdrachten').update({
+        'geplande_datum': datumStr,
+        'tijdslot_start': startStr,
+        'tijdslot_eind': eindStr,
+      }).eq('id', opdrachtId);
+      await AppSupabase.client.from('opdracht_planning').update({
+        'geplande_datum': datumStr,
+        'starttijd': startStr,
+        'eindtijd': eindStr,
+        if (nieuweOperatorId != null &&
+            nieuweOperatorId.isNotEmpty &&
+            nieuweOperatorId != 'ongepland' &&
+            !nieuweOperatorId.startsWith('naam_'))
+          'operator_id': nieuweOperatorId,
+      }).eq('opdracht_id', opdrachtId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Opdracht verplaatst!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Fout: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _onMonthEventDrop(
+    Map<String, dynamic> task,
+    DateTime targetDate,
+  ) async {
+    if (!_isVerplaatsbaarTask(task)) return;
+
+    final opdrachtId = _opdrachtIdFromTask(task);
+    if (opdrachtId.isEmpty) return;
+
+    final normalizedTarget = _normalizeDate(targetDate);
+    final currentDate = _normalizeDate(_parseDate(task['geplande_datum']));
+    if (_isSameDay(normalizedTarget, currentDate)) return;
+
+    final start = _parseTimeOfDay(task['starttijd'], defaultHour: 9);
+    final end = _parseTimeOfDay(task['eindtijd'], defaultHour: 10);
+
+    final ok = await _verplaatsOpdrachtVeilig(
+      opdrachtId,
+      normalizedTarget,
+      start,
+      end,
+    );
+
+    if (!mounted) return;
+    if (ok) {
+      await _loadAgenda();
+    } else {
+      _syncEventController();
+      setState(() {});
+    }
+  }
+
   DateTime _eventDateTime(DateTime date, dynamic rawTime, {int defaultHour = 9}) {
     final t = _formatTime(rawTime);
     if (t == '--:--') {
@@ -106,6 +787,41 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final hour = int.tryParse(parts.first) ?? defaultHour;
     final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
     return DateTime(date.year, date.month, date.day, hour, minute);
+  }
+
+  DateTime _safeParseTime(DateTime baseDate, dynamic timeStr, int fallbackHour) {
+    if (timeStr == null || timeStr.toString().isEmpty) {
+      return DateTime(baseDate.year, baseDate.month, baseDate.day, fallbackHour, 0);
+    }
+    try {
+      final parts = timeStr.toString().split(':');
+      return DateTime(
+        baseDate.year,
+        baseDate.month,
+        baseDate.day,
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+      );
+    } catch (_) {
+      return DateTime(baseDate.year, baseDate.month, baseDate.day, fallbackHour, 0);
+    }
+  }
+
+  List<Map<String, dynamic>> _allLoadedTasksForDay(DateTime date) {
+    final key = _normalizeDate(date);
+    return _filterTaskList(_groupedTasks[key] ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((raw) => Map<String, dynamic>.from(raw))
+        .toList();
+  }
+
+  String _getDutchDateString(DateTime date) {
+    const weekDays = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
+    const monthNames = [
+      'Jan', 'Feb', 'Mrt', 'Apr', 'Mei', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec',
+    ];
+    return '${weekDays[date.weekday - 1]}\n${date.day} ${monthNames[date.month - 1]}';
   }
 
   Color _bepaalStatusKleur(Map<String, dynamic> task) {
@@ -163,6 +879,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     setState(() {
       _selectedDay = _normalizeDate(date);
       _focusedDay = date;
+      _currentWeekDate = _normalizeDate(date);
       _currentView = 'Dag';
     });
   }
@@ -171,6 +888,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     setState(() {
       _selectedDay = _normalizeDate(date);
       _focusedDay = date;
+      _currentWeekDate = _normalizeDate(date);
     });
   }
 
@@ -180,7 +898,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   ) {
     final raw = event.event;
     if (raw == null) return;
-    _onAgendaTaskTap(Map<String, dynamic>.from(raw));
+    _onAgendaTaskTap(Map<String, dynamic>.from(raw as Map));
   }
 
   void _onCalendarEventsCellTap(
@@ -206,46 +924,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   }
 
   double _calendarViewportHeight(BuildContext context) {
+    if (_currentView == 'Dag') {
+      return (MediaQuery.of(context).size.height * 0.85).clamp(640.0, 920.0);
+    }
     return (MediaQuery.of(context).size.height * 0.75).clamp(520.0, 720.0);
-  }
-
-  Widget _buildPremiumEventTile(
-    DateTime date,
-    List<CalendarEventData<Map<String, dynamic>>> events,
-    Rect boundary,
-    DateTime startDuration,
-    DateTime endDuration,
-  ) {
-    if (events.isEmpty) return const SizedBox.shrink();
-    final event = events.first;
-    return GestureDetector(
-      onTap: () => _onCalendarEventTap(event, date),
-      child: Container(
-        width: boundary.width,
-        height: boundary.height,
-        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: event.color.withValues(alpha: 0.18),
-          border: Border.all(color: event.color.withValues(alpha: 0.45)),
-        ),
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: Text(
-            event.title,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: event.color.withValues(alpha: 0.95),
-              height: 1.15,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _showPremiumFilterModal({
@@ -1069,7 +1751,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
+            decoration: BoxDecoration(
                   color: selected
                       ? cs.primary
                       : (isDark
@@ -1109,83 +1791,139 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         ? cs.onSurface.withValues(alpha: 0.28)
         : (isSelected ? Colors.white : cs.onSurface);
 
-    return InkWell(
-      onTap: () => _onMonthCellTap(date),
-      child: Container(
-        margin: const EdgeInsets.all(2),
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? cs.primary
-              : (isToday
-                  ? cs.primary.withValues(alpha: 0.12)
-                  : Colors.transparent),
-          borderRadius: BorderRadius.circular(10),
-          border: isToday && !isSelected
-              ? Border.all(color: cs.primary.withValues(alpha: 0.35))
-              : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: Text(
-                '${date.day}',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
-                ),
-              ),
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (details) => _isVerplaatsbaarTask(details.data),
+      onAcceptWithDetails: (details) => _onMonthEventDrop(details.data, date),
+      builder: (context, candidateData, rejectedData) {
+        final isDropHover = candidateData.isNotEmpty;
+        return InkWell(
+          onTap: () => _onMonthCellTap(date),
+          child: Container(
+            margin: const EdgeInsets.all(2),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDropHover
+                  ? cs.primary.withValues(alpha: 0.22)
+                  : (isSelected
+                      ? cs.primary
+                      : (isToday
+                          ? cs.primary.withValues(alpha: 0.12)
+                          : Colors.transparent)),
+              borderRadius: BorderRadius.circular(10),
+              border: isDropHover
+                  ? Border.all(color: cs.primary, width: 2)
+                  : (isToday && !isSelected
+                      ? Border.all(color: cs.primary.withValues(alpha: 0.35))
+                      : null),
             ),
-            const SizedBox(height: 2),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final event in dayEvents.take(3))
-                    GestureDetector(
-                      onTap: () => _onCalendarEventTap(event, date),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 2),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: event.color.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          event.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Text(
+                    '${date.day}',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final event in dayEvents.take(3))
+                        _buildMonthEventChip(event, date, cs),
+                      if (dayEvents.length > 3)
+                        Text(
+                          '+ ${dayEvents.length - 3} meer',
                           style: GoogleFonts.inter(
-                            fontSize: 9,
+                            fontSize: 10,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            height: 1.1,
+                            color: cs.onSurface.withValues(alpha: 0.55),
                           ),
                         ),
-                      ),
-                    ),
-                  if (dayEvents.length > 3)
-                    Text(
-                      '+ ${dayEvents.length - 3} meer',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: cs.onSurface.withValues(alpha: 0.55),
-                      ),
-                    ),
-                ],
-              ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMonthEventChip(
+    CalendarEventData<Map<String, dynamic>> event,
+    DateTime date,
+    ColorScheme cs,
+  ) {
+    final raw = event.event;
+    final task = raw is Map ? Map<String, dynamic>.from(raw as Map) : null;
+    final chip = GestureDetector(
+      onTap: () => _onCalendarEventTap(event, date),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: event.color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(4),
+          border: Border(left: BorderSide(color: event.color, width: 3)),
+        ),
+        child: Text(
+          event.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            color: Colors.blue.shade900,
+            height: 1.1,
+          ),
         ),
       ),
+    );
+
+    if (task == null || !_isVerplaatsbaarTask(task)) return chip;
+
+    return LongPressDraggable<Map<String, dynamic>>(
+      data: task,
+      feedback: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(6),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 140),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: event.color.withValues(alpha: 0.95),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              event.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.35, child: chip),
+      onDragEnd: (details) {
+        if (details.wasAccepted) return;
+        _syncEventController();
+        if (mounted) setState(() {});
+      },
+      child: chip,
     );
   }
 
@@ -1205,46 +1943,86 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     switch (_currentView) {
       case 'Week':
         return WeekView<Map<String, dynamic>>(
-          key: const ValueKey('week_view'),
+          key: _weekViewKey,
           controller: _eventController,
           minDay: minDay,
           maxDay: maxDay,
-          initialDay: activeDay,
+          initialDay: _currentWeekDate,
           startDay: WeekDays.monday,
-          heightPerMinute: 1.1,
-          timeLineWidth: 60,
+          heightPerMinute: _heightPerMinute,
+          timeLineWidth: _weekTimeLineWidth,
           showVerticalLines: false,
           headerStyle: headerStyle,
+          weekTitleHeight: 70,
           headerStringBuilder: (date, {secondaryDate}) {
-            return 'Week ${_getWeekNumber(date)}';
+            final weekNum = _getWeekNumber(_currentWeekDate);
+            final maandNaam = _maandNamen[_currentWeekDate.month - 1];
+            return 'Week $weekNum - $maandNaam';
+          },
+          weekDayBuilder: (date) {
+            const weekDays = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
+
+            final startOfWeek = _currentWeekDate.subtract(
+              Duration(days: _currentWeekDate.weekday - 1),
+            );
+            final realDate = startOfWeek.add(
+              Duration(days: date.weekday - 1),
+            );
+
+            final now = DateTime.now();
+            final isToday = realDate.year == now.year &&
+                realDate.month == now.month &&
+                realDate.day == now.day;
+
+            return Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.only(top: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    weekDays[realDate.weekday - 1],
+                    style: TextStyle(
+                      color: isToday
+                          ? Colors.orange.shade700
+                          : Colors.blue.shade900,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: isToday
+                        ? BoxDecoration(
+                            color: Colors.orange.shade700,
+                            shape: BoxShape.circle,
+                          )
+                        : null,
+                    child: Text(
+                      realDate.day.toString(),
+                      style: TextStyle(
+                        color: isToday ? Colors.white : Colors.grey.shade600,
+                        fontSize: 13,
+                        fontWeight:
+                            isToday ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
           },
           hourIndicatorSettings: hourLines,
           liveTimeIndicatorSettings: liveLine,
-          eventTileBuilder: _buildPremiumEventTile,
-          onPageChange: _onCalendarPageChange,
+          eventTileBuilder: _buildWeekEventTile,
+          onPageChange: _onWeekPageChange,
           onDateTap: _onCalendarDateTap,
           onEventTap: _onCalendarEventsCellTap,
           backgroundColor: isDark ? const Color(0xFF131722) : Colors.white,
         );
       case 'Dag':
-        return DayView<Map<String, dynamic>>(
-          key: const ValueKey('day_view'),
-          controller: _eventController,
-          minDay: minDay,
-          maxDay: maxDay,
-          initialDay: activeDay,
-          heightPerMinute: 1.1,
-          timeLineWidth: 60,
-          showVerticalLine: false,
-          headerStyle: headerStyle,
-          hourIndicatorSettings: hourLines,
-          liveTimeIndicatorSettings: liveLine,
-          eventTileBuilder: _buildPremiumEventTile,
-          onPageChange: _onCalendarPageChange,
-          onDateTap: _onCalendarDateTap,
-          onEventTap: _onCalendarEventsCellTap,
-          backgroundColor: isDark ? const Color(0xFF131722) : Colors.white,
-        );
+        return _buildSyncfusionDayView(activeDay, cs, isDark);
       default:
         return MonthView<Map<String, dynamic>>(
           key: const ValueKey('month_view'),
@@ -1292,6 +2070,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     required ColorScheme cs,
     required bool isDark,
     required Widget child,
+    bool clipContent = true,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -1305,10 +2084,12 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: child,
-      ),
+      child: clipContent
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: child,
+            )
+          : child,
     );
   }
 
@@ -1350,6 +2131,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
             child: _buildPremiumCalendarShell(
               cs: cs,
               isDark: isDark,
+              clipContent: _currentView != 'Dag',
               child: _buildCalendarView(cs, isDark),
             ),
           ),
@@ -1388,12 +2170,12 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                 child: Text(
                   'Geplande taken op ${DateFormat('d MMMM yyyy', 'nl_NL').format(selectedDay)}',
                   style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                     fontSize: 18,
                     letterSpacing: -0.2,
-                  ),
                 ),
               ),
+            ),
               if (_selectedDay != null)
                 IconButton(
                   tooltip: 'Sluiten',
@@ -1680,7 +2462,11 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => SelectionArea(
-        child: AgendaDetailModal(task: task),
+        child: AgendaDetailModal(
+          task: task,
+          onVerplaatsVeilig: _verplaatsOpdrachtVeilig,
+          onAgendaUpdated: _loadAgenda,
+        ),
       ),
     );
   }
@@ -1913,24 +2699,24 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       body: CalendarControllerProvider<Map<String, dynamic>>(
         controller: _eventController,
         child: SelectionArea(
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildInboxBanner(cs, isDark),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: _isLoading
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+            _buildInboxBanner(cs, isDark),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: _isLoading
                       ? const SizedBox(
                           height: 320,
                           child: Center(child: CircularProgressIndicator()),
                         )
-                      : _loadError != null
+                    : _loadError != null
                           ? Padding(
                               padding: const EdgeInsets.symmetric(vertical: 48),
-                              child: Text(
-                                'Agenda laden mislukt: $_loadError',
-                                textAlign: TextAlign.center,
+                            child: Text(
+                              'Agenda laden mislukt: $_loadError',
+                              textAlign: TextAlign.center,
                                 style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                               ),
                             )
@@ -1953,9 +2739,9 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                                   ],
                                 )
                               : Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
                                       flex: _selectedDay == null ? 1 : 5,
                                       child: _buildCalendarSection(
                                         cs: cs,
@@ -1964,19 +2750,19 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                                     ),
                                     if (_selectedDay != null) ...[
                                       const SizedBox(width: 14),
-                                      Expanded(
+                                            Expanded(
                                         flex: 3,
                                         child: _buildSelectedDayPanel(
                                           cs: cs,
                                           isDark: isDark,
                                           dayTasks: dayTasks,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                ),
-                if (!_isLoading && _loadError == null)
+                                              ),
+                                            ),
+                                          ],
+                                      ],
+                                    ),
+                                  ),
+                if (!_isLoading && _loadError == null && _currentView != 'Dag')
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: _buildPeriodOverview(
@@ -1986,19 +2772,41 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                     ),
                   ),
                 SizedBox(height: isMobile ? 96 : 24),
-              ],
-            ),
-          ),
+                                      ],
+                                    ),
+                                  ),
         ),
       ),
     );
   }
 }
 
+class OpdrachtDataSource extends CalendarDataSource {
+  OpdrachtDataSource(
+    List<Appointment> source,
+    List<CalendarResource> resourceList,
+  ) {
+    appointments = source;
+    resources = resourceList;
+  }
+}
+
 class AgendaDetailModal extends StatefulWidget {
-  const AgendaDetailModal({required this.task, super.key});
+  const AgendaDetailModal({
+    required this.task,
+    this.onVerplaatsVeilig,
+    this.onAgendaUpdated,
+    super.key,
+  });
 
   final Map<String, dynamic> task;
+  final Future<bool> Function(
+    String opdrachtId,
+    DateTime nieuweDatum,
+    TimeOfDay nieuweStart,
+    TimeOfDay nieuweEind,
+  )? onVerplaatsVeilig;
+  final Future<void> Function()? onAgendaUpdated;
 
   @override
   State<AgendaDetailModal> createState() => _AgendaDetailModalState();
@@ -2012,6 +2820,11 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
   final TextEditingController _toelichtingController = TextEditingController();
   bool _loadingToelichting = false;
   bool _savingToelichting = false;
+  bool _savingVerplaatsing = false;
+
+  DateTime? _geplandeDatum;
+  TimeOfDay? _geplandeStartTod;
+  TimeOfDay? _geplandeEindTod;
 
   String _timeLabel(dynamic value) {
     final raw = _text(value);
@@ -2027,6 +2840,50 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
 
   String _dateHuman(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
+
+  String _timeHuman(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  TimeOfDay _parseTimeOfDay(
+    dynamic value, {
+    int defaultHour = 9,
+    int defaultMinute = 0,
+  }) {
+    final raw = _timeLabel(value);
+    if (raw == '--:--') {
+      return TimeOfDay(hour: defaultHour, minute: defaultMinute);
+    }
+    final parts = raw.split(':');
+    return TimeOfDay(
+      hour: int.tryParse(parts.first) ?? defaultHour,
+      minute: parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : defaultMinute,
+    );
+  }
+
+  bool get _canVerplaatsen =>
+      widget.onVerplaatsVeilig != null &&
+      widget.task['_persoonlijk_agenda'] != true &&
+      _opdrachtIdFromTask(widget.task).isNotEmpty;
+
+  bool get _planningChanged {
+    if (_geplandeDatum == null ||
+        _geplandeStartTod == null ||
+        _geplandeEindTod == null) {
+      return false;
+    }
+    final origD = _parseDate(widget.task['geplande_datum']);
+    final origStart = _parseTimeOfDay(widget.task['starttijd'], defaultHour: 9);
+    final origEnd = _parseTimeOfDay(widget.task['eindtijd'], defaultHour: 10);
+    if (origD == null) return true;
+    return !_sameDay(origD, _geplandeDatum!) ||
+        origStart.hour != _geplandeStartTod!.hour ||
+        origStart.minute != _geplandeStartTod!.minute ||
+        origEnd.hour != _geplandeEindTod!.hour ||
+        origEnd.minute != _geplandeEindTod!.minute;
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   String? _originalDateHuman;
   String _originalStart = '--:--';
@@ -2069,6 +2926,152 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
     } finally {
       if (mounted) setState(() => _loadingToelichting = false);
     }
+  }
+
+  Future<void> _pickGeplandeDatum() async {
+    if (!_canVerplaatsen || _geplandeDatum == null) return;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _geplandeDatum!,
+      firstDate: DateTime.now().subtract(const Duration(days: 730)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+      locale: const Locale('nl', 'NL'),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _geplandeDatum = DateTime(picked.year, picked.month, picked.day);
+      _geplandeDatumHuman = _dateHuman(_geplandeDatum!);
+    });
+  }
+
+  Future<void> _pickStartTijd() async {
+    if (!_canVerplaatsen || _geplandeStartTod == null) return;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _geplandeStartTod!,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _geplandeStartTod = picked;
+      _geplandeStart = _timeHuman(picked);
+    });
+  }
+
+  Future<void> _pickEindTijd() async {
+    if (!_canVerplaatsen || _geplandeEindTod == null) return;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _geplandeEindTod!,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _geplandeEindTod = picked;
+      _geplandeEind = _timeHuman(picked);
+    });
+  }
+
+  Future<void> _saveVerplaatsing() async {
+    if (!_canVerplaatsen || _savingVerplaatsing) return;
+    if (_geplandeDatum == null ||
+        _geplandeStartTod == null ||
+        _geplandeEindTod == null) {
+      return;
+    }
+
+    final startMin = _geplandeStartTod!.hour * 60 + _geplandeStartTod!.minute;
+    final endMin = _geplandeEindTod!.hour * 60 + _geplandeEindTod!.minute;
+    if (endMin <= startMin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade800,
+          content: Text(
+            'Eindtijd moet na starttijd liggen.',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final opdrachtId = _opdrachtIdFromTask(widget.task);
+    if (opdrachtId.isEmpty) return;
+
+    setState(() => _savingVerplaatsing = true);
+    try {
+      final ok = await widget.onVerplaatsVeilig!(
+        opdrachtId,
+        _geplandeDatum!,
+        _geplandeStartTod!,
+        _geplandeEindTod!,
+      );
+      if (!mounted) return;
+      if (ok) {
+        await widget.onAgendaUpdated?.call();
+        if (mounted) Navigator.of(context).pop();
+      }
+    } finally {
+      if (mounted) setState(() => _savingVerplaatsing = false);
+    }
+  }
+
+  Widget _editablePlanningTile({
+    required BuildContext context,
+    required String label,
+    required String value,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A2030) : const Color(0xFFF4F6FA),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: cs.primary.withValues(alpha: 0.22)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: cs.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    style: GoogleFonts.inter(
+                      color: cs.onSurface,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: '$label: ',
+                        style: GoogleFonts.inter(
+                          color: cs.onSurface.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      TextSpan(text: value),
+                    ],
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.edit_outlined,
+                size: 18,
+                color: cs.onSurface.withValues(alpha: 0.45),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _saveToelichtingPlanning() async {
@@ -2131,6 +3134,12 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
     _geplandeStart = _timeLabel(t['starttijd']);
     _geplandeEind = _timeLabel(t['eindtijd']);
     _geplandeOperator = _originalOperator;
+
+    _geplandeDatum = d == null
+        ? null
+        : DateTime(d.year, d.month, d.day);
+    _geplandeStartTod = _parseTimeOfDay(t['starttijd'], defaultHour: 9);
+    _geplandeEindTod = _parseTimeOfDay(t['eindtijd'], defaultHour: 10);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -2251,9 +3260,64 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
               ),
 
               const SizedBox(height: 16),
-              _block(context, 'Geplande datum', _geplandeDatumHuman ?? '—'),
-              const SizedBox(height: 8),
-              _block(context, 'Tijd', '$_geplandeStart – $_geplandeEind'),
+              if (_canVerplaatsen) ...[
+                _editablePlanningTile(
+                  context: context,
+                  label: 'Geplande datum',
+                  value: _geplandeDatumHuman ?? '—',
+                  icon: Icons.calendar_today_rounded,
+                  onTap: _pickGeplandeDatum,
+                ),
+                const SizedBox(height: 8),
+                _editablePlanningTile(
+                  context: context,
+                  label: 'Starttijd',
+                  value: _geplandeStart,
+                  icon: Icons.schedule_rounded,
+                  onTap: _pickStartTijd,
+                ),
+                const SizedBox(height: 8),
+                _editablePlanningTile(
+                  context: context,
+                  label: 'Eindtijd',
+                  value: _geplandeEind,
+                  icon: Icons.schedule_outlined,
+                  onTap: _pickEindTijd,
+                ),
+                if (_planningChanged) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: _savingVerplaatsing ? null : _saveVerplaatsing,
+                      icon: _savingVerplaatsing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(
+                        'Planning opslaan',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                      ),
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ] else ...[
+                _block(context, 'Geplande datum', _geplandeDatumHuman ?? '—'),
+                const SizedBox(height: 8),
+                _block(context, 'Tijd', '$_geplandeStart – $_geplandeEind'),
+              ],
               const SizedBox(height: 8),
               _block(context, 'Operator', _geplandeOperator),
 

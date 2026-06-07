@@ -2550,25 +2550,25 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   children: [
                     Container(width: 6, color: statusColor),
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    name,
-                                    style: GoogleFonts.inter(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: GoogleFonts.inter(
                                       color: const Color(0xFF0F172A),
                                       fontSize: 17,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 10,
@@ -2595,21 +2595,21 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                       Flexible(
                                         child: Text(
                                           badgeLabel,
-                                          textAlign: TextAlign.right,
-                                          style: GoogleFonts.inter(
+                        textAlign: TextAlign.right,
+                        style: GoogleFonts.inter(
                                             color: statusColor,
                                             fontSize: 11,
-                                            fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w800,
                                           ),
                                         ),
                                       ),
                                     ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
                               _text(result['match_type']).isNotEmpty &&
                                       total > 0
                                   ? '$available van de $total beurten beschikbaar'
@@ -2617,12 +2617,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                         eersteStart != '--:--'
                                   ? 'Vandaag: $takenVandaag taken · $eersteStart – $laatsteEind'
                                   : 'Beschikbaar voor deze shift',
-                              style: GoogleFonts.inter(
+                    style: GoogleFonts.inter(
                                 color: Colors.grey.shade600,
                                 fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                             if (reistijdMin > 0 || afstandKm > 0) ...[
                               const SizedBox(height: 6),
                               Row(
@@ -2650,56 +2650,56 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             ],
                             if (selected && voorgesteldePlanning.isNotEmpty)
                               _buildVoorgesteldePlanningRows(voorgesteldePlanning),
-                            if (conflicts.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Theme(
+                  if (conflicts.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Theme(
                                 data: Theme.of(context).copyWith(
                                   dividerColor: Colors.transparent,
                                 ),
-                                child: ExpansionTile(
-                                  tilePadding: EdgeInsets.zero,
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
                                   childrenPadding:
                                       const EdgeInsets.only(bottom: 6),
                                   iconColor: Colors.grey.shade700,
                                   collapsedIconColor: Colors.grey.shade700,
-                                  title: Text(
+                        title: Text(
                                     'Bekijk conflicten',
-                                    style: GoogleFonts.inter(
+                          style: GoogleFonts.inter(
                                       color: Colors.grey.shade700,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  children: conflicts
-                                      .map(
-                                        (conflict) => Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: Padding(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        children: conflicts
+                            .map(
+                              (conflict) => Align(
+                                alignment: Alignment.centerLeft,
+                                child: Padding(
                                             padding: const EdgeInsets.only(
                                               bottom: 4,
                                             ),
-                                            child: Text(
-                                              '• ${_text((conflict is Map) ? conflict['datum'] ?? conflict['date'] ?? conflict['omschrijving'] ?? conflict : conflict)}',
-                                              style: GoogleFonts.inter(
+                                  child: Text(
+                                    '• ${_text((conflict is Map) ? conflict['datum'] ?? conflict['date'] ?? conflict['omschrijving'] ?? conflict : conflict)}',
+                                    style: GoogleFonts.inter(
                                                 color: Colors.grey.shade600,
-                                                fontSize: 12.5,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                      .toList(growable: false),
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ],
-                            if (selected) ...[
+                            )
+                            .toList(growable: false),
+                      ),
+                    ),
+                  ],
+                  if (selected) ...[
                               const SizedBox(height: 14),
-                              if (_isTijdenLaden)
-                                const Padding(
-                                  padding: EdgeInsets.only(bottom: 10),
-                                  child: LinearProgressIndicator(minHeight: 3),
-                                )
+                    if (_isTijdenLaden)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: LinearProgressIndicator(minHeight: 3),
+                      )
                               else ...[
                                 _buildSmartStartTimeButton(
                                   time: startTijd.isEmpty
@@ -2743,7 +2743,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                                         ? () => _submitSmartPlannerBooking(
                                               result,
                                             )
-                                        : null,
+                                    : null,
                                     style: _smartPlannerFilledButtonStyle(),
                                     child: Text(
                                       'Definitief Inplannen',
@@ -2762,7 +2762,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   ],
                 ),
               ),
-            ),
+              ),
             ),
           ),
         ),
@@ -2922,95 +2922,95 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     required ColorScheme cs,
     required bool isDark,
   }) {
-    final projectName = _text(project['project_naam']).isEmpty
-        ? 'Naamloos project'
-        : _text(project['project_naam']);
-    final region = _text(project['werk_regio']).isEmpty
-        ? 'Geen regio'
-        : _text(project['werk_regio']);
-    final openTaskCount = _asInt(project['open_taken']);
-    final totalTaskCount = _asInt(project['totaal_taken']);
-    final neededOperators = _asInt(
+                      final projectName = _text(project['project_naam']).isEmpty
+                          ? 'Naamloos project'
+                          : _text(project['project_naam']);
+                      final region = _text(project['werk_regio']).isEmpty
+                          ? 'Geen regio'
+                          : _text(project['werk_regio']);
+                      final openTaskCount = _asInt(project['open_taken']);
+                      final totalTaskCount = _asInt(project['totaal_taken']);
+                      final neededOperators = _asInt(
       project['standaard_aantal_operators'] ?? project['benodigde_operators'],
-      fallback: 1,
-    );
+                        fallback: 1,
+                      );
 
-    return Padding(
+                      return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
           borderRadius: BorderRadius.circular(24),
           onTap: onTap,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
-            child: Container(
+                            child: Container(
               decoration: _smartPlannerPremiumCardDecoration(
                 selected: selected,
                 needsAttention: hasAssignedHours,
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                            Text(
-                              projectName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    projectName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w900,
+                                      fontWeight: FontWeight.w900,
                                 letterSpacing: -0.2,
                                 color: Colors.white,
-                              ),
-                            ),
+                                    ),
+                                  ),
                             const SizedBox(height: 6),
-                            Text(
-                              region,
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
+                                  Text(
+                                    region,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w700,
                                 fontSize: 13,
                                 color: Colors.white70,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Benodigde operators: $neededOperators',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Benodigde operators: $neededOperators',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
                                 color: Colors.white70,
-                              ),
-                            ),
+                                    ),
+                                  ),
                             const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
+                                  Container(
+                                padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
                                 vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                '$openTaskCount open taken van de $totalTaskCount',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
                                 ),
+                                    decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '$openTaskCount open taken van de $totalTaskCount',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
                         ),
-              ),
-            ),
-          ),
         ),
-      ),
-    );
-  }
+                  ),
+      );
+    }
 
   Widget _buildSmartPlannerTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
@@ -3054,12 +3054,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         child: _isLoadingSmartProjects
             ? const Center(child: CircularProgressIndicator())
             : _smartProjectsError != null
-                ? Center(
+            ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text(
+                child: Text(
                         'Projecten laden mislukt: $_smartProjectsError',
-                        textAlign: TextAlign.center,
+                  textAlign: TextAlign.center,
                         style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -3198,12 +3198,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 24),
                           child: Text(
                             'Geen projecten gevonden met deze filters.',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w700,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
                               color: cs.onSurface.withValues(alpha: 0.62),
-                            ),
-                          ),
-                        )
+                  ),
+                ),
+              )
                       else
                         ListView.builder(
                     shrinkWrap: true,
@@ -3245,55 +3245,55 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
         padding: const EdgeInsets.all(24),
         decoration: _smartPlannerPremiumPanelDecoration(isDark: isDark, cs: cs),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (showMultiOperatorWarning) ...[
-              Container(
-                width: double.infinity,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (showMultiOperatorWarning) ...[
+                    Container(
+                      width: double.infinity,
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(
-                    alpha: isDark ? 0.18 : 0.14,
-                  ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(
+                          alpha: isDark ? 0.18 : 0.14,
+                        ),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.orange.withValues(
-                      alpha: isDark ? 0.35 : 0.30,
-                    ),
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.warning_amber_rounded,
-                      color: Colors.orange.shade700,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Let op: Er is al een operator ingepland voor deze opdracht '
-                        '(Starttijd: ${_smartReedsIngeplandStart!}). '
-                        'Probeer de nieuwe operator op dezelfde tijd te laten starten.',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface.withValues(alpha: 0.86),
+                        border: Border.all(
+                          color: Colors.orange.withValues(
+                            alpha: isDark ? 0.35 : 0.30,
+                          ),
                         ),
                       ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange.shade700,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Let op: Er is al een operator ingepland voor deze opdracht '
+                              '(Starttijd: ${_smartReedsIngeplandStart!}). '
+                              'Probeer de nieuwe operator op dezelfde tijd te laten starten.',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurface.withValues(alpha: 0.86),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
-            ],
-            Text(
-              'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
-              style: GoogleFonts.inter(
+                  ],
+                  Text(
+                    'Plan reeks voor ${_text(_selectedProject?['project_naam']).isEmpty ? 'project' : _text(_selectedProject?['project_naam'])}',
+                    style: GoogleFonts.inter(
                 fontSize: 26,
-                fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w900,
                 letterSpacing: -0.4,
-              ),
-            ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -3510,7 +3510,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             _buildSmartOperatorsStepperSection(
                               isDark: isDark,
                               cs: cs,
-                            ),
+                              ),
                             const SizedBox(height: 12),
                             Container(
                               width: double.infinity,
@@ -3692,9 +3692,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                           index: index,
                         );
                       },
-                    ),
-          ],
-        ),
+                  ),
+                ],
+              ),
       );
     }
 
@@ -4092,7 +4092,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             index: index,
                           );
                         },
-                      ),
+                    ),
                   ],
                 ),
           ],
@@ -4122,12 +4122,12 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                     curve: Curves.easeInOut,
                     alignment: Alignment.topLeft,
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                         Expanded(
                           flex: _selectedProject == null ? 1 : 2,
-                          child: buildLeftColumn(),
-                        ),
+                            child: buildLeftColumn(),
+                          ),
                         if (_selectedProject != null) ...[
                           const SizedBox(width: 14),
                           Expanded(
@@ -4138,7 +4138,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               ),
                               project: _selectedProject!,
                               onInit: _initSmartDetailPanelFromProject,
-                              child: buildRightColumnDesktop(),
+                            child: buildRightColumnDesktop(),
                             ),
                           ),
                         ],
@@ -4665,27 +4665,27 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                             ),
                           )
                         else
-                          FilledButton.icon(
-                            onPressed: opdrachtId.isEmpty
-                                ? null
-                                : () => _opdrachtOpnieuwOpenen(item),
-                            icon: const Icon(Icons.undo_rounded, size: 20),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(52),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              backgroundColor: modalCs.error,
-                              foregroundColor: modalCs.onError,
+                        FilledButton.icon(
+                          onPressed: opdrachtId.isEmpty
+                              ? null
+                              : () => _opdrachtOpnieuwOpenen(item),
+                          icon: const Icon(Icons.undo_rounded, size: 20),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            label: Text(
-                              'Opdracht opnieuw openen',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 15,
-                              ),
+                            backgroundColor: modalCs.error,
+                            foregroundColor: modalCs.onError,
+                          ),
+                          label: Text(
+                            'Opdracht opnieuw openen',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
                             ),
                           ),
+                ),
               ],
             ),
                   ),
@@ -4719,91 +4719,91 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final safeOperators = _safeOperatorsVoorOpdracht(item);
     final urenPerPersoon = totaalUrenKaart / safeOperators;
 
-    return Padding(
+                                  return Padding(
       padding: const EdgeInsets.only(bottom: 12, left: 4, right: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: opdrachtId.isEmpty
               ? null
               : () => _openReedsGeplandeInfoModal(item),
-          child: Container(
+                                        child: Container(
             padding: const EdgeInsets.all(16),
             decoration: _manualPremiumTaskDecoration(),
-            child: Row(
+                                          child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+                                            children: [
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
                         bedrijf,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 15,
+                                                        fontWeight: FontWeight.w900,
                           color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text(
                         projectLabel,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w600,
+                                                      style: GoogleFonts.inter(
+                                                        fontWeight: FontWeight.w600,
                           color: Colors.white70,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    Wrap(
+                                                      spacing: 8,
+                                                      runSpacing: 8,
+                                                      children: [
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                          decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
+                                                            borderRadius: BorderRadius.circular(999),
+                                                          ),
+                                                          child: Text(
                               tijdString,
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w800,
+                                                            style: GoogleFonts.inter(
+                                                              fontWeight: FontWeight.w800,
                                 color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                          decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
+                                                            borderRadius: BorderRadius.circular(999),
+                                                          ),
+                                                          child: Text(
                               _manualRegion(item),
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
+                                                            style: GoogleFonts.inter(
+                                                              fontWeight: FontWeight.w700,
                                 color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        DateFormat('d MMMM yyyy', 'nl_NL').format(date),
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    Text(
+                                                      DateFormat('d MMMM yyyy', 'nl_NL').format(date),
+                                                      style: GoogleFonts.inter(
+                                                        fontWeight: FontWeight.w700,
                           color: Colors.white70,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
                       Text(
                         'Nodig: $safeOperators operators · '
                         'ca. ${formatHoursToText(urenPerPersoon)} per persoon',
@@ -4826,27 +4826,27 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                               'Uitvoerder: $operatorString',
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
+                                                      style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w600,
                                 color: Colors.white70,
                               ),
-                            ),
+                                                      ),
                           ),
                         ],
-                      ),
-                    ],
-                  ),
-                ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
                 const Icon(
-                  Icons.chevron_right_rounded,
+                                                Icons.chevron_right_rounded,
                   color: Colors.white70,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
   }
 
   String _formatTaakDatumTag(DateTime d) {
@@ -5575,8 +5575,8 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return SingleChildScrollView(
       child: Column(
         children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
@@ -5611,9 +5611,9 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         ? const Color(0xFF171722)
                         : Colors.white),
               ),
+              ),
             ),
           ),
-        ),
         AnimatedCrossFade(
           duration: const Duration(milliseconds: 200),
           crossFadeState: _showFilters
@@ -5622,13 +5622,13 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
           secondChild: const SizedBox.shrink(),
           firstChild: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: Container(
+                child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF12121A) : Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
+                    border: Border.all(
                   color: cs.onSurface.withValues(alpha: 0.08),
                 ),
                 boxShadow: [
@@ -5738,11 +5738,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                   ),
                 ],
               ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -6508,13 +6508,13 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
           decoration: cellDecoration,
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: Align(
-              alignment: Alignment.topRight,
-              child: Text(
-                '${day.day}',
-                style: GoogleFonts.inter(
-                  fontSize: inMonth ? 20 : 16,
-                  fontWeight: FontWeight.bold,
+        child: Align(
+          alignment: Alignment.topRight,
+          child: Text(
+            '${day.day}',
+            style: GoogleFonts.inter(
+              fontSize: inMonth ? 20 : 16,
+              fontWeight: FontWeight.bold,
                   color: isSelected
                       ? Colors.white
                       : cs.onSurface.withValues(alpha: inMonth ? 0.92 : 0.42),
@@ -6532,38 +6532,38 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
         decoration: cellDecoration,
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Align(
-                alignment: Alignment.topLeft,
-                child: Text(
-                  '${day.day}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontSize: inMonth ? 12 : 10.5,
-                    fontWeight: FontWeight.w800,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Align(
+            alignment: Alignment.topLeft,
+            child: Text(
+              '${day.day}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: inMonth ? 12 : 10.5,
+                fontWeight: FontWeight.w800,
                     color: isSelected
                         ? Colors.white.withValues(alpha: 0.96)
                         : cs.onSurface.withValues(alpha: inMonth ? 0.88 : 0.45),
-                  ),
-                ),
               ),
-              Row(
-                children: [
-                  Expanded(
-                    child: Tooltip(
-                      message: '$openCount openstaand',
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Tooltip(
+                  message: '$openCount openstaand',
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
                           color: isSelected
                               ? Colors.white.withValues(alpha: 0.12)
                               : (openCount > 0
-                                  ? Colors.red.withValues(alpha: 0.05)
+                          ? Colors.red.withValues(alpha: 0.05)
                                   : Colors.transparent),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
                             color: isSelected
                                 ? Colors.white.withValues(alpha: 0.38)
                                 : red.withValues(alpha: openCount > 0 ? 0.28 : 0.12),
@@ -6573,32 +6573,32 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
                             child: Text(
-                              '$openCount',
-                              style: GoogleFonts.inter(
+                          '$openCount',
+                          style: GoogleFonts.inter(
                                 color: isSelected ? Colors.white : red,
                                 fontSize: 11,
-                                fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w900,
                                 height: 1,
-                              ),
-                            ),
                           ),
                         ),
-                      ),
+                          ),
                     ),
                   ),
-                  const SizedBox(width: 3),
-                  Expanded(
-                    child: Tooltip(
-                      message: '$planCount ingepland',
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
+                ),
+              ),
+              const SizedBox(width: 3),
+              Expanded(
+                child: Tooltip(
+                  message: '$planCount ingepland',
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
                           color: isSelected
                               ? Colors.white.withValues(alpha: 0.12)
                               : (planCount > 0
-                                  ? Colors.blue.withValues(alpha: 0.05)
+                          ? Colors.blue.withValues(alpha: 0.05)
                                   : Colors.transparent),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
                             color: isSelected
                                 ? Colors.white.withValues(alpha: 0.38)
                                 : blue.withValues(alpha: planCount > 0 ? 0.28 : 0.12),
@@ -6608,22 +6608,22 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
                             child: Text(
-                              '$planCount',
-                              style: GoogleFonts.inter(
+                          '$planCount',
+                          style: GoogleFonts.inter(
                                 color: isSelected ? Colors.white : blue,
                                 fontSize: 11,
-                                fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w900,
                                 height: 1,
-                              ),
-                            ),
                           ),
                         ),
-                      ),
+                          ),
                     ),
                   ),
-                ],
+                ),
               ),
             ],
+          ),
+        ],
           ),
         ),
       ),
