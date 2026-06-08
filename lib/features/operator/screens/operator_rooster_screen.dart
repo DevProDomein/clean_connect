@@ -10,6 +10,7 @@ import '../../../core/widgets/app_drawer.dart';
 import '../../../shared/layouts/mobile_bottom_nav_layout.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 import '../../shared/services/werkbon_pdf_service.dart';
+import '../helpers/paklijst_programma_helper.dart';
 import '../services/operator_planning_repository.dart';
 import '../widgets/task_completion_modal.dart';
 class OperatorRoosterScreen extends StatefulWidget {
@@ -402,10 +403,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   }
 
   Future<void> _openWerkbonPdf(Map<String, dynamic> planningItem) async {
-    final opdrachtEmbed = planningItem['opdracht'];
-    final oId = planningItem['opdracht_id']?.toString() ??
-        (opdrachtEmbed is Map ? opdrachtEmbed['id']?.toString() : null) ??
-        '';
+    final oId = _opdrachtIdFromItem(planningItem);
 
     if (oId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -443,14 +441,8 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     return item['id']?.toString().trim() ?? '';
   }
 
-  String _opdrachtIdFromItem(Map<String, dynamic> item) {
-    final opdrachtEmbed = item['opdracht'];
-    final raw = item['opdracht_id']?.toString().trim() ??
-        (opdrachtEmbed is Map ? opdrachtEmbed['id']?.toString().trim() : null) ??
-        item['id']?.toString().trim() ??
-        '';
-    return raw;
-  }
+  String _opdrachtIdFromItem(Map<String, dynamic> item) =>
+      opdrachtIdUitItem(item);
 
   bool _hasPlanningToelichting(Map<String, dynamic> item) {
     final t = item['toelichting_planning']?.toString().trim() ?? '';
@@ -566,6 +558,82 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     });
 
     return slider;
+  }
+
+  Map<String, dynamic> _roosterMapUit(dynamic raw) {
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return const {};
+  }
+
+  ({String titel, String adres, String projectNaam}) _roosterDisplayTitelEnAdres(
+    Map<String, dynamic> taak,
+  ) {
+    String titel = 'Onbekende Klant';
+    String adres = 'Adres onbekend';
+
+    final opdrachtRaw = taak['opdrachten'] ?? taak['opdracht'] ?? taak;
+    final opdrachtMap = _roosterMapUit(opdrachtRaw);
+    final opdrachtNode = opdrachtMap.isNotEmpty
+        ? opdrachtMap
+        : (opdrachtRaw is Map
+            ? Map<String, dynamic>.from(opdrachtRaw)
+            : taak);
+
+    final projectNode = _roosterMapUit(
+      opdrachtNode['projecten'] ??
+          opdrachtNode['project'] ??
+          taak['projecten'] ??
+          taak['project'] ??
+          {},
+    );
+
+    final bNaam = opdrachtNode['bedrijfsnaam']?.toString().trim() ?? '';
+    final pNaam = projectNode['project_naam']?.toString().trim() ?? '';
+
+    if (bNaam.isNotEmpty && !bNaam.toLowerCase().contains('onbekend')) {
+      titel = bNaam;
+    } else if (pNaam.isNotEmpty) {
+      titel = pNaam;
+    } else {
+      final topNaam = taak['bedrijfsnaam']?.toString().trim() ?? '';
+      if (topNaam.isNotEmpty && !topNaam.toLowerCase().contains('onbekend')) {
+        titel = topNaam;
+      } else {
+        final topProject = taak['project_naam']?.toString().trim() ?? '';
+        if (topProject.isNotEmpty) titel = topProject;
+      }
+    }
+
+    final bAdres =
+        opdrachtNode['uitvoer_adres_volledig']?.toString().trim() ?? '';
+    final pAdres =
+        projectNode['uitvoer_adres_volledig']?.toString().trim() ?? '';
+
+    if (bAdres.isNotEmpty && !bAdres.toLowerCase().contains('onbekend')) {
+      adres = bAdres;
+    } else if (pAdres.isNotEmpty) {
+      adres = pAdres;
+    } else {
+      final topAdres = taak['uitvoer_adres_volledig']?.toString().trim() ?? '';
+      if (topAdres.isNotEmpty &&
+          !topAdres.toLowerCase().contains('onbekend')) {
+        adres = topAdres;
+      }
+    }
+
+    var projectNaam = taak['project_naam']?.toString().trim() ?? '';
+    if (projectNaam.isEmpty) {
+      projectNaam = pNaam;
+    }
+
+    return (
+      titel: titel.trim(),
+      adres: adres.trim(),
+      projectNaam: projectNaam,
+    );
   }
 
   String? _offerteIdUitOpdrachtEmbed(Map<String, dynamic> opdrachtData) {
@@ -802,12 +870,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
         ? planningItem
         : Map<String, dynamic>.from(planningItem as Map);
     final planningId = _planningIdFromItem(planningMap);
-    final opdrachtEmbed = planningMap['opdracht'];
-    final opdrachtId = planningMap['opdracht_id']?.toString() ??
-        (opdrachtEmbed is Map
-            ? opdrachtEmbed['id']?.toString()
-            : null) ??
-        '';
+    final opdrachtId = _opdrachtIdFromItem(planningMap);
     final toelichtingPlanning =
         planningMap['toelichting_planning']?.toString().trim() ?? '';
 
@@ -1153,7 +1216,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       final info = <String, _PaklijstMateriaal>{};
 
       for (final task in taken) {
-        final opdrachtId = task['opdracht_id']?.toString() ?? '';
+        final opdrachtId = _opdrachtIdFromItem(task);
         if (opdrachtId.isEmpty) continue;
 
         final result = await _laadPaklijstVoorOpdracht(opdrachtId);
@@ -1615,7 +1678,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   }
 
   Widget? _roosterPandThumbnail(Map<String, dynamic> taak) {
-    final opdrachtEmbed = taak['opdracht'];
+    final opdrachtEmbed = taak['opdrachten'] ?? taak['opdracht'];
     final projectData =
         taak['projecten'] ??
         (opdrachtEmbed is Map ? opdrachtEmbed['projecten'] : null);
@@ -1657,20 +1720,12 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     bool expandVertically = false,
     String? topChipLabel,
   }) {
-    final opdrachtEmbed = task['opdracht'];
-    final bedrijfsnaam = task['bedrijfsnaam']?.toString() ??
-        (opdrachtEmbed is Map
-            ? opdrachtEmbed['bedrijfsnaam']?.toString()
-            : null) ??
-        'Onbekende klant';
-    final adres = task['uitvoer_adres_volledig']?.toString() ??
-        (opdrachtEmbed is Map
-            ? opdrachtEmbed['uitvoer_adres_volledig']?.toString()
-            : null) ??
-        'Adres onbekend';
+    final display = _roosterDisplayTitelEnAdres(task);
+    final bedrijfsnaam = display.titel;
+    final adres = display.adres;
     final start = _safeTime(task['rooster_starttijd'] ?? task['starttijd']);
     final eind = _safeTime(task['rooster_eindtijd'] ?? task['eindtijd']);
-    final projectNaam = task['project_naam']?.toString().trim() ?? '';
+    final projectNaam = display.projectNaam;
     final thumbnail = _roosterPandThumbnail(task);
     final hasToelichting = _hasPlanningToelichting(task);
 

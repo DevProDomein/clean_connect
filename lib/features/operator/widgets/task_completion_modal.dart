@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../helpers/paklijst_programma_helper.dart';
 import '../helpers/werkprogramma_data_helper.dart';
 import '../services/operator_planning_repository.dart';
 
@@ -56,12 +57,7 @@ class _TaskCompletionModalState extends State<TaskCompletionModal> {
     return _text(widget.planningItem['id']);
   }
 
-  String _opdrachtId() {
-    final embed = widget.planningItem['opdracht'];
-    return _text(widget.planningItem['opdracht_id']).isNotEmpty
-        ? _text(widget.planningItem['opdracht_id'])
-        : (embed is Map ? _text(embed['id']) : '');
-  }
+  String _opdrachtId() => opdrachtIdUitItem(widget.planningItem);
 
   String _safeTime(dynamic v) {
     final t = _text(v);

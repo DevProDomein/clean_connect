@@ -788,27 +788,23 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
 
   /// Alle ingeplande operators via `opdracht_planning` → `gebruikers`; anders hoofdoperator.
   String _extractIngeplandWeergaveNaam(Map<String, dynamic> item) {
-    final planningen = item['opdracht_planning'];
     final namen = <String>[];
 
-    if (planningen is List) {
-      for (final raw in planningen) {
-        if (raw is! Map) continue;
-        final p = Map<String, dynamic>.from(raw);
-        final user = p['gebruikers'];
-        Map<String, dynamic>? userMap;
-        if (user is Map) {
-          userMap = Map<String, dynamic>.from(user);
-        } else if (user is List && user.isNotEmpty && user.first is Map) {
-          userMap = Map<String, dynamic>.from(user.first as Map);
-        }
-        if (userMap == null) continue;
-        final naam =
-            '${_text(userMap['voornaam'])} ${_text(userMap['achternaam'])}'
-                .trim();
-        if (naam.isNotEmpty && !namen.contains(naam)) {
-          namen.add(naam);
-        }
+    for (final raw in _manualPlannedRijenUitTask(item)) {
+      if (raw is! Map) continue;
+      final p = Map<String, dynamic>.from(raw);
+      final user = p['gebruikers'];
+      Map<String, dynamic>? userMap;
+      if (user is Map) {
+        userMap = Map<String, dynamic>.from(user);
+      } else if (user is List && user.isNotEmpty && user.first is Map) {
+        userMap = Map<String, dynamic>.from(user.first as Map);
+      }
+      if (userMap == null) continue;
+      final naam =
+          '${_text(userMap['voornaam'])} ${_text(userMap['achternaam'])}'.trim();
+      if (naam.isNotEmpty && !namen.contains(naam)) {
+        namen.add(naam);
       }
     }
 
@@ -1582,8 +1578,16 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
   }
 
   List<dynamic> _manualPlannedRijenUitTask(Map<String, dynamic> task) {
-    final planningen = task['opdracht_planning'];
-    if (planningen is List && planningen.isNotEmpty) return planningen;
+    final rawPlanning = task['opdracht_planning'] ??
+        task['opdracht_planning!opdracht_planning_opdracht_id_fkey'] ??
+        [];
+    if (rawPlanning is List && rawPlanning.isNotEmpty) {
+      return rawPlanning.where((p) {
+        if (p is! Map) return false;
+        final status = p['status']?.toString().toLowerCase() ?? '';
+        return status != 'geannuleerd' && status != 'no_show';
+      }).toList(growable: false);
+    }
 
     final planning = task['planning'];
     if (planning is List && planning.isNotEmpty) return planning;
@@ -4716,6 +4720,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     );
     final date = _toDate(item['geplande_datum']);
     final operatorString = _manualPlannedOperatorString(item);
+    final ingeplandAantal = _manualPlannedRijenUitTask(item).length;
     final totaalUrenKaart = _totaalUrenVoorOpdrachtKaart(item);
     final safeOperators = _safeOperatorsVoorOpdracht(item);
     final urenPerPersoon = totaalUrenKaart / safeOperators;
@@ -4828,7 +4833,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                                                     ),
                                                     const SizedBox(height: 2),
                       Text(
-                        'Nodig: $safeOperators operators · '
+                        '$ingeplandAantal/$safeOperators operators · '
                         'ca. ${formatHoursToText(urenPerPersoon)} per persoon',
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w700,

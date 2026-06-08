@@ -22,12 +22,15 @@ ${OpdrachtPlanningTable.eindtijd},
 ${OpdrachtPlanningTable.status},
 ${OpdrachtPlanningTable.urenStatus},
 ${OpdrachtPlanningTable.operatorId},
-opdracht:opdrachten!opdracht_planning_opdracht_id_fkey(
+opdrachten!opdracht_planning_opdracht_id_fkey(
   id,
   ${OpdrachtenTable.status},
   ${OpdrachtenTable.bedrijfsnaam},
   ${OpdrachtenTable.uitvoerAdresVolledig},
-  projecten(pand_foto_url)
+  projecten(
+    project_naam,
+    pand_foto_url
+  )
 )
 ''';
 
@@ -73,13 +76,30 @@ opdracht:opdrachten!opdracht_planning_opdracht_id_fkey(
         (row[OpdrachtPlanningTable.status] ?? '').toString().toLowerCase();
     if (planningStatus == OpdrachtPlanningStatus.geannuleerd) return true;
 
-    final opdracht = row['opdracht'];
+    final opdracht = row['opdrachten'] ?? row['opdracht'];
     if (opdracht is Map) {
       final opdrachtStatus =
           (opdracht[OpdrachtenTable.status] ?? '').toString().toLowerCase();
       if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd) return true;
     }
     return false;
+  }
+
+  static Map<String, dynamic>? _embeddedOpdrachtMap(Map<String, dynamic> map) {
+    final raw = map['opdrachten'] ?? map['opdracht'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return null;
+  }
+
+  static Map<String, dynamic>? _embeddedProjectMap(dynamic raw) {
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return null;
   }
 
   /// Zelfde shape als [app_operator_agenda] voor rooster/slider UI.
@@ -93,13 +113,19 @@ opdracht:opdrachten!opdracht_planning_opdracht_id_fkey(
     map['rooster_starttijd'] ??= map[OpdrachtPlanningTable.starttijd];
     map['rooster_eindtijd'] ??= map[OpdrachtPlanningTable.eindtijd];
 
-    final opdracht = map['opdracht'];
-    if (opdracht is Map) {
-      final o = Map<String, dynamic>.from(opdracht);
+    final o = _embeddedOpdrachtMap(map);
+    if (o != null) {
+      map['opdrachten'] = o;
       map['opdracht'] = o;
       map['bedrijfsnaam'] ??= o[OpdrachtenTable.bedrijfsnaam];
       map['uitvoer_adres_volledig'] ??= o[OpdrachtenTable.uitvoerAdresVolledig];
       map['opdracht_id'] ??= o[OpdrachtenTable.id];
+
+      final project = _embeddedProjectMap(o['projecten'] ?? o['project']);
+      if (project != null) {
+        map['projecten'] ??= project;
+        map['project_naam'] ??= project['project_naam'];
+      }
     }
 
     final status =

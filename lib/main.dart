@@ -18,7 +18,7 @@ import 'features/admin/screens/generator_dashboard_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/screens/set_password_screen.dart';
 import 'features/facilitator/facilitator_dashboard.dart';
-import 'features/klant/client_dashboard.dart';
+import 'features/klant/presentation/klant_scaffold.dart';
 import 'features/operator/operator_dashboard.dart';
 import 'features/auth/no_portals_assigned_screen.dart';
 import 'features/admin/screens/factuur_editor_screen.dart';
@@ -482,6 +482,27 @@ class _MyAppState extends State<MyApp> {
                   settings: settings,
                   builder: (_) => const MobileBottomNavLayout(initialKey: 'uren'),
                 );
+              case '/klant':
+              case '/klant/dashboard':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantScaffold(initialKey: 'dashboard'),
+                );
+              case '/klant/planning':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantScaffold(initialKey: 'planning'),
+                );
+              case '/klant/logboek':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantScaffold(initialKey: 'logboek'),
+                );
+              case '/klant/service':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantScaffold(initialKey: 'service'),
+                );
             }
             if (settings.name == '/set-password') {
               return MaterialPageRoute(
@@ -655,7 +676,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       return isDesktop ? const OperatorDashboard() : const MobileBottomNavLayout();
     }
     if (userProvider.hasPermission('portal_klant')) {
-      return const ClientDashboard();
+      return const KlantScaffold(initialKey: 'dashboard');
     }
     return const SizedBox.shrink();
   }
@@ -672,7 +693,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       case UserRole.operator:
         return isDesktop ? const OperatorDashboard() : const MobileBottomNavLayout();
       case UserRole.klant:
-        return const ClientDashboard();
+        return const KlantScaffold(initialKey: 'dashboard');
       case null:
         return const SizedBox.shrink();
     }

@@ -1,13 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Bepaalt opdracht-ID uit planning- of opdracht-object.
+/// Bepaalt opdracht-ID uit planning- of opdracht-object (nooit planning-rij `id`).
 String opdrachtIdUitItem(dynamic item) {
   if (item is! Map) return '';
   final map = Map<String, dynamic>.from(item);
-  final oId = map['opdracht_id']?.toString();
-  final itemId = map['id']?.toString();
-  return oId ?? itemId ?? '';
+
+  final opdrachtId = map['opdracht_id']?.toString().trim();
+  if (opdrachtId != null && opdrachtId.isNotEmpty) return opdrachtId;
+
+  final embed = map['opdrachten'] ?? map['opdracht'];
+  if (embed is Map) {
+    final embedId = embed['id']?.toString().trim();
+    if (embedId != null && embedId.isNotEmpty) return embedId;
+  } else if (embed is List && embed.isNotEmpty && embed.first is Map) {
+    final embedId = (embed.first as Map)['id']?.toString().trim();
+    if (embedId != null && embedId.isNotEmpty) return embedId;
+  }
+
+  // Alleen `id` als dit een opdracht-rij is, niet een opdracht_planning-rij.
+  if (!map.containsKey('operator_id')) {
+    final itemId = map['id']?.toString().trim();
+    if (itemId != null && itemId.isNotEmpty) return itemId;
+  }
+
+  return '';
 }
 
 /// Opdracht → Project → Offerte → Ruimtes & diensten (3 losse queries, geen join).

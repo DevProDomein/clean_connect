@@ -294,21 +294,19 @@ class AgendaTabState extends State<AgendaTab> {
 
       var resourceId = 'ongepland';
       var resourceName = 'Ongepland';
-      final planningen = taak['opdracht_planning'];
+      final actievePlanning =
+          _actievePlanningRijenUitTask(Map<String, dynamic>.from(taak));
 
-      if (planningen is List && planningen.isNotEmpty) {
-        final raw = planningen.first;
-        if (raw is Map) {
-          final planning = Map<String, dynamic>.from(raw);
-          final operatorId = _text(planning['operator_id']);
-          final naam = _operatorNaamUitPlanning(planning);
-          if (operatorId.isNotEmpty) {
-            resourceId = operatorId;
-            resourceName = naam.isEmpty ? 'Operator' : naam;
-          } else if (naam.isNotEmpty) {
-            resourceId = 'naam_$naam';
-            resourceName = naam;
-          }
+      if (actievePlanning.isNotEmpty) {
+        final planning = actievePlanning.first;
+        final operatorId = _text(planning['operator_id']);
+        final naam = _operatorNaamUitPlanning(planning);
+        if (operatorId.isNotEmpty) {
+          resourceId = operatorId;
+          resourceName = naam.isEmpty ? 'Operator' : naam;
+        } else if (naam.isNotEmpty) {
+          resourceId = 'naam_$naam';
+          resourceName = naam;
         }
       } else {
         final enkel = _text(taak['operator_naam']);
@@ -1477,12 +1475,6 @@ class AgendaTabState extends State<AgendaTab> {
         .toList(growable: false);
   }
 
-  Map<String, dynamic> _mapFrom(dynamic raw) {
-    if (raw is Map<String, dynamic>) return raw;
-    if (raw is Map) return Map<String, dynamic>.from(raw);
-    return {};
-  }
-
   Map<String, dynamic>? _firstMapFrom(dynamic raw) {
     if (raw is Map) return Map<String, dynamic>.from(raw);
     if (raw is List && raw.isNotEmpty && raw.first is Map) {
@@ -1491,14 +1483,40 @@ class AgendaTabState extends State<AgendaTab> {
     return null;
   }
 
+  List<Map<String, dynamic>> _actievePlanningRijenUitTask(
+    Map<String, dynamic> task,
+  ) {
+    final rawPlanning = task['opdracht_planning'] ??
+        task['opdracht_planning!opdracht_planning_opdracht_id_fkey'] ??
+        [];
+    if (rawPlanning is! List) return const [];
+
+    return rawPlanning
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((p) {
+          final status = p['status']?.toString().toLowerCase() ?? '';
+          return status != 'geannuleerd' && status != 'no_show';
+        })
+        .toList(growable: false);
+  }
+
+  int _ingeplandOperatorsAantalUitTask(Map<String, dynamic> task) =>
+      _actievePlanningRijenUitTask(task).length;
+
+  int _nodigOperatorsAantalUitTask(Map<String, dynamic> task) {
+    final raw =
+        task['benodigde_operators'] ?? task['voorkeur_aantal_operators'] ?? 1;
+    if (raw is int) return raw > 0 ? raw : 1;
+    final parsed = int.tryParse(raw?.toString() ?? '');
+    return (parsed != null && parsed > 0) ? parsed : 1;
+  }
+
   String _agendaOperatorNamenUitTask(Map<String, dynamic> task) {
     final namen = <String>[];
-    final planningen = task['opdracht_planning'];
-    if (planningen is List) {
-      for (final raw in planningen) {
-        final naam = _operatorNaamUitPlanning(_mapFrom(raw));
-        if (naam.isNotEmpty && !namen.contains(naam)) namen.add(naam);
-      }
+    for (final planning in _actievePlanningRijenUitTask(task)) {
+      final naam = _operatorNaamUitPlanning(planning);
+      if (naam.isNotEmpty && !namen.contains(naam)) namen.add(naam);
     }
     return namen.join(', ');
   }
@@ -1674,13 +1692,9 @@ class AgendaTabState extends State<AgendaTab> {
   }
 
   bool _taskHasOperator(Map<String, dynamic> task, String operator) {
-    final planningen = task['opdracht_planning'];
-    if (planningen is List) {
-      for (final raw in planningen) {
-        if (raw is! Map) continue;
-        final naam = _operatorNaamUitPlanning(Map<String, dynamic>.from(raw));
-        if (naam == operator) return true;
-      }
+    for (final planning in _actievePlanningRijenUitTask(task)) {
+      final naam = _operatorNaamUitPlanning(planning);
+      if (naam == operator) return true;
     }
 
     final namen = _text(task['operator_namen']);
@@ -1728,13 +1742,9 @@ class AgendaTabState extends State<AgendaTab> {
         final enkel = _text(task['operator_naam']);
         if (enkel.isNotEmpty) set.add(enkel);
 
-        final planningen = task['opdracht_planning'];
-        if (planningen is List) {
-          for (final raw in planningen) {
-            if (raw is! Map) continue;
-            final naam = _operatorNaamUitPlanning(Map<String, dynamic>.from(raw));
-            if (naam.isNotEmpty) set.add(naam);
-          }
+        for (final planning in _actievePlanningRijenUitTask(task)) {
+          final naam = _operatorNaamUitPlanning(planning);
+          if (naam.isNotEmpty) set.add(naam);
         }
       }
     }
@@ -2606,17 +2616,15 @@ class AgendaTabState extends State<AgendaTab> {
     final company = _text(item['bedrijfsnaam']).isEmpty
         ? 'Onbekend'
         : _text(item['bedrijfsnaam']);
-    final operatorNames = _text(item['operator_namen']).isEmpty
-        ? 'Onbekend'
-        : _text(item['operator_namen']);
+    final operatorNamenUitPlanning = _agendaOperatorNamenUitTask(item);
+    final operatorNames = operatorNamenUitPlanning.isEmpty
+        ? (_text(item['operator_namen']).isEmpty
+            ? 'Onbekend'
+            : _text(item['operator_namen']))
+        : operatorNamenUitPlanning;
     final region = _text(item['werk_regio']).isEmpty ? 'Onbekend' : _text(item['werk_regio']);
-    final plannedOperators = _text(item['geplande_operators_aantal']).isEmpty
-        ? '0'
-        : _text(item['geplande_operators_aantal']);
-    final neededOperatorsRaw = _text(item['benodigde_operators']).isNotEmpty
-        ? _text(item['benodigde_operators'])
-        : _text(item['voorkeur_aantal_operators']);
-    final neededOperators = neededOperatorsRaw.isEmpty ? '1' : neededOperatorsRaw;
+    final ingeplandAantal = _ingeplandOperatorsAantalUitTask(item);
+    final nodig = _nodigOperatorsAantalUitTask(item);
     final isRood = agendaKleur.toLowerCase() == 'rood';
 
     return InkWell(
@@ -2708,7 +2716,7 @@ class AgendaTabState extends State<AgendaTab> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '$plannedOperators/$neededOperators Operators',
+                  '$ingeplandAantal/$nodig operators',
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w900,
                     color: isRood ? Colors.red.shade200 : Colors.white,

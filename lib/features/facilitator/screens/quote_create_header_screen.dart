@@ -195,16 +195,28 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         _adresPostcode.text = _text(m['adres_postcode']);
         _adresStad.text = _text(m['adres_stad']);
 
-        final uitvoerStraat = _text(m['uitvoer_adres_straat_huisnr']);
-        final uitvoerPostcode = _text(m['uitvoer_adres_postcode']);
-        final uitvoerStad = _text(m['uitvoer_adres_stad']);
+        var uitvoerStraat = _text(m['uitvoer_adres_straat_huisnr']);
+        var uitvoerPostcode = _text(m['uitvoer_adres_postcode']);
+        var uitvoerStad = _text(m['uitvoer_adres_stad']);
+        final uitvoerVolledig = _text(m['uitvoer_adres_volledig']);
+        if (uitvoerStraat.isEmpty &&
+            uitvoerPostcode.isEmpty &&
+            uitvoerStad.isEmpty &&
+            uitvoerVolledig.isNotEmpty) {
+          uitvoerStraat = uitvoerVolledig;
+        }
         _heeftAfwijkendUitvoerAdres =
-            uitvoerStraat.isNotEmpty ||
-            uitvoerPostcode.isNotEmpty ||
-            uitvoerStad.isNotEmpty;
-        _uitvoerAdresStraat.text = uitvoerStraat;
-        _uitvoerAdresPostcode.text = uitvoerPostcode;
-        _uitvoerAdresStad.text = uitvoerStad;
+            (m['afwijkend_uitvoer_adres'] == true) ||
+            uitvoerStraat.trim().isNotEmpty;
+        if (_heeftAfwijkendUitvoerAdres) {
+          _uitvoerAdresStraat.text = uitvoerStraat;
+          _uitvoerAdresPostcode.text = uitvoerPostcode;
+          _uitvoerAdresStad.text = uitvoerStad;
+        } else {
+          _uitvoerAdresStraat.clear();
+          _uitvoerAdresPostcode.clear();
+          _uitvoerAdresStad.clear();
+        }
 
         _contactVoornaam.text = _text(m['contact_voornaam']);
         _contactAchternaam.text = _text(m['contact_achternaam']);
@@ -674,6 +686,10 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
           .replaceAll(' ', '_')
           .toLowerCase();
 
+      final uitvoerStraat = _uitvoerAdresStraat.text.trim();
+      final uitvoerPostcode = _uitvoerAdresPostcode.text.trim();
+      final uitvoerStad = _uitvoerAdresStad.text.trim();
+
       final payload = <String, dynamic>{
         'bedrijfsnaam_klant': _bedrijfsnaam.text.trim(),
         'kvk_nummer': _kvk.text.trim(),
@@ -681,15 +697,12 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
         'adres_straat_huisnr': _adresStraat.text.trim(),
         'adres_postcode': _adresPostcode.text.trim(),
         'adres_stad': _adresStad.text.trim(),
-        'uitvoer_adres_straat_huisnr': _heeftAfwijkendUitvoerAdres
-            ? _uitvoerAdresStraat.text.trim()
-            : null,
-        'uitvoer_adres_postcode': _heeftAfwijkendUitvoerAdres
-            ? _uitvoerAdresPostcode.text.trim()
-            : null,
-        'uitvoer_adres_stad': _heeftAfwijkendUitvoerAdres
-            ? _uitvoerAdresStad.text.trim()
-            : null,
+        'afwijkend_uitvoer_adres': _heeftAfwijkendUitvoerAdres,
+        'uitvoer_adres_straat_huisnr':
+            _heeftAfwijkendUitvoerAdres ? uitvoerStraat : null,
+        'uitvoer_adres_postcode':
+            _heeftAfwijkendUitvoerAdres ? uitvoerPostcode : null,
+        'uitvoer_adres_stad': _heeftAfwijkendUitvoerAdres ? uitvoerStad : null,
         'contact_voornaam': _contactVoornaam.text.trim(),
         'contact_achternaam': _contactAchternaam.text.trim(),
         'contact_email': _contactEmail.text.trim(),
@@ -997,9 +1010,14 @@ class _QuoteCreateHeaderScreenState extends State<QuoteCreateHeaderScreen> {
                                 value: _heeftAfwijkendUitvoerAdres,
                                 onChanged: _saving
                                     ? null
-                                    : (v) => setState(
-                                        () => _heeftAfwijkendUitvoerAdres = v,
-                                      ),
+                                    : (v) => setState(() {
+                                        _heeftAfwijkendUitvoerAdres = v;
+                                        if (!_heeftAfwijkendUitvoerAdres) {
+                                          _uitvoerAdresStraat.clear();
+                                          _uitvoerAdresPostcode.clear();
+                                          _uitvoerAdresStad.clear();
+                                        }
+                                      }),
                                 title: Text(
                                   'Afwijkend uitvoer adres?',
                                   style: GoogleFonts.inter(

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/models/user_role.dart';
 import '../../core/supabase_client.dart';
 import '../../core/translations.dart';
+import '../../providers/user_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -39,6 +42,20 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordCtrl.text,
       );
       if (!mounted) return;
+
+      final userProvider = context.read<UserProvider>();
+      await userProvider.loadForCurrentUser();
+      if (!mounted) return;
+
+      if (userProvider.role == UserRole.klant ||
+          userProvider.hasPermission('portal_klant')) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/klant/dashboard',
+          (route) => false,
+        );
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppTexts.get('login_success'))),
       );
