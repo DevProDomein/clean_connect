@@ -87,7 +87,9 @@ class _KlantDashboardScreenState extends State<KlantDashboardScreen> {
 
       if (!mounted) return;
 
-      final p = profiel is Map ? Map<String, dynamic>.from(profiel) : null;
+      final Map<String, dynamic>? p = profiel == null
+          ? null
+          : Map<String, dynamic>.from(profiel as Map);
       final bedrijf = _mapFrom(p?['bedrijven']);
       final provider = context.read<UserProvider>();
 
@@ -96,7 +98,7 @@ class _KlantDashboardScreenState extends State<KlantDashboardScreen> {
             ? _text(p?['voornaam'])
             : provider.displayFirstName;
         _bedrijfsnaam = _text(bedrijf?['bedrijfsnaam']);
-        _volgendeSchoonmaak = (taken as List).isNotEmpty && taken.first is Map
+        _volgendeSchoonmaak = (taken as List).isNotEmpty
             ? Map<String, dynamic>.from(taken.first as Map)
             : null;
         _loading = false;
