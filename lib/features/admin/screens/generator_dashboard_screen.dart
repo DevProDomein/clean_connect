@@ -5,7 +5,7 @@ import '../../../core/contracts/tickets_contract.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../facilitator/screens/hr_beheer_screen.dart';
-import '../../facilitator/screens/planbord_screen.dart';
+import '../../facilitator/screens/plannings_dashboard_screen.dart';
 import '../../facilitator/screens/project_overview_screen.dart';
 import '../../facilitator/screens/quote_create_header_screen.dart';
 import '../../facilitator/screens/quote_overview_screen.dart';

@@ -10,18 +10,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/supabase_client.dart';
-import '../../../core/widgets/app_drawer.dart';
 import '../../shared/services/werkbon_pdf_service.dart';
 import 'manual_plan_modal.dart';
 
-class PlanbordScreen extends StatefulWidget {
-  const PlanbordScreen({super.key});
+/// Houdt gedeelde planbord-state aan voor [HandmatigPlannenTab] en [SmartPlannerTab].
+class PlanbordTabsHost extends StatefulWidget {
+  const PlanbordTabsHost({super.key, required this.child});
+
+  final Widget child;
 
   @override
-  State<PlanbordScreen> createState() => _PlanbordScreenState();
+  PlanbordTabsHostState createState() => PlanbordTabsHostState();
 }
 
-class _PlanbordScreenState extends State<PlanbordScreen> {
+class PlanbordTabsHostState extends State<PlanbordTabsHost> {
   // Smart Planner state
   Map<String, dynamic>? _selectedProject;
   List<dynamic> _smartProjects = [];
@@ -71,9 +73,10 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   List<String> _manualFilterKlanten = [];
   List<String> _manualFilterProjecten = [];
   List<String> _manualFilterRegios = [];
+  List<String> _filterOperators = [];
   String _manualSearchTerm = '';
   String _calendarViewMode = 'Maand';
-  bool _showFilters = true;
+  bool _showFilters = false;
   Map<DateTime, List<Map<String, dynamic>>> _groupedOpenTaken = {};
   Map<DateTime, List<Map<String, dynamic>>> _groupedGeplandeTaken = {};
 
@@ -88,12 +91,6 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     _fetchSmartProjects();
     _fetchProjects();
     _loadTasks();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _showFilters = MediaQuery.of(context).size.width > 800;
-      });
-    });
   }
 
   @override
@@ -1717,7 +1714,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
   static const String _reedsGeplandeSelect =
       '*,projecten(project_naam),uitvoerder_info:gebruikers!huidige_operator_id(id,voornaam,achternaam),'
       'planning:opdracht_planning!huidige_planning_id(starttijd,eindtijd),'
-      'opdracht_planning(starttijd,eindtijd,operator_id,gebruikers:gebruikers!operator_id(voornaam,achternaam))';
+      'opdracht_planning!opdracht_planning_opdracht_id_fkey(starttijd,eindtijd,operator_id,gebruikers:gebruikers!opdracht_planning_operator_id_fkey(voornaam,achternaam))';
 
   /// Zelfde select zonder [opdracht_planning]-embed (fallback bij PGRST201).
   static const String _reedsGeplandeSelectBasis =
@@ -1736,7 +1733,11 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return (response as List)
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
-        .where((row) => _text(row['huidige_planning_id']).isNotEmpty)
+        .where((row) {
+          if (_text(row['huidige_planning_id']).isEmpty) return false;
+          final status = _text(row['status']).toLowerCase();
+          return status != 'geannuleerd';
+        })
         .toList(growable: false);
   }
 
@@ -5043,6 +5044,71 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return set.toList()..sort();
   }
 
+  String _manualOperatorNaamUitPlanning(Map<String, dynamic> planning) {
+    final user = planning['gebruikers'];
+    Map<String, dynamic>? userMap;
+    if (user is Map) {
+      userMap = Map<String, dynamic>.from(user);
+    } else if (user is List && user.isNotEmpty && user.first is Map) {
+      userMap = Map<String, dynamic>.from(user.first as Map);
+    }
+    if (userMap == null) return '';
+    return '${_text(userMap['voornaam'])} ${_text(userMap['achternaam'])}'
+        .trim();
+  }
+
+  List<String> _collectManualOperatorOptions(
+    List<Map<String, dynamic>> plannedTasks,
+  ) {
+    final set = <String>{};
+    for (final task in plannedTasks) {
+      final planningen = task['opdracht_planning'];
+      if (planningen is List) {
+        for (final raw in planningen) {
+          if (raw is! Map) continue;
+          final naam = _manualOperatorNaamUitPlanning(
+            Map<String, dynamic>.from(raw),
+          );
+          if (naam.isNotEmpty) set.add(naam);
+        }
+      }
+
+      final uitvoerder = task['uitvoerder_info'];
+      if (uitvoerder is Map) {
+        final naam =
+            '${_text(uitvoerder['voornaam'])} ${_text(uitvoerder['achternaam'])}'
+                .trim();
+        if (naam.isNotEmpty) set.add(naam);
+      }
+    }
+    return set.toList()..sort();
+  }
+
+  bool _plannedTaskMatchesOperators(Map<String, dynamic> task) {
+    if (_filterOperators.isEmpty) return true;
+
+    final planningen = task['opdracht_planning'];
+    if (planningen is List) {
+      for (final raw in planningen) {
+        if (raw is! Map) continue;
+        final naam = _manualOperatorNaamUitPlanning(
+          Map<String, dynamic>.from(raw),
+        );
+        if (_filterOperators.contains(naam)) return true;
+      }
+    }
+
+    final uitvoerder = task['uitvoerder_info'];
+    if (uitvoerder is Map) {
+      final naam =
+          '${_text(uitvoerder['voornaam'])} ${_text(uitvoerder['achternaam'])}'
+              .trim();
+      if (_filterOperators.contains(naam)) return true;
+    }
+
+    return false;
+  }
+
   List<String> _collectManualRegioOptions(
     List<Map<String, dynamic>> tasks,
   ) {
@@ -5538,6 +5604,31 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     return '${selected.length} geselecteerd';
   }
 
+  Widget _buildPremiumViewButton(String title, String viewValue) {
+    final isSelected = _calendarViewMode == viewValue;
+    return InkWell(
+      onTap: () => setState(() => _calendarViewMode = viewValue),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.shade900 : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? Colors.blue.shade900 : Colors.grey.shade300,
+          ),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.blue.shade900,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildManualPlanningTab(bool isDark) {
     final cs = Theme.of(context).colorScheme;
     final isMobile = MediaQuery.of(context).size.width < 800;
@@ -5549,6 +5640,7 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     final klantOptions = _collectManualKlantOptions(allTasksForFilters);
     final projectOptions = _collectManualProjectOptions(allTasksForFilters);
     final regioOptions = _collectManualRegioOptions(allTasksForFilters);
+    final operatorOptions = _collectManualOperatorOptions(_reedsGeplandeTaken);
 
     final searchTerm = _manualSearchTerm.trim().toLowerCase();
 
@@ -5585,64 +5677,128 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
 
     final weergaveLijst =
         weergaveLijstRaw.where(matchesManualFilters).toList(growable: false);
-    final filteredPlannedTaken =
+    var filteredPlannedTaken =
         _reedsGeplandeTaken.where(matchesManualFilters).toList(growable: false);
+    if (_filterOperators.isNotEmpty) {
+      filteredPlannedTaken = filteredPlannedTaken
+          .where(_plannedTaskMatchesOperators)
+          .toList(growable: false);
+    }
     final openLeegBericht = _openTakenLeegBericht();
 
     final activeFilterCount = _manualFilterKlanten.length +
         _manualFilterProjecten.length +
         _manualFilterRegios.length +
+        _filterOperators.length +
         (searchTerm.isNotEmpty ? 1 : 0);
 
     return SingleChildScrollView(
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: () => setState(() => _showFilters = !_showFilters),
-              icon: Icon(
-                Icons.filter_list_rounded,
-                size: 20,
-                color: _showFilters ? cs.primary : cs.onSurface.withValues(alpha: 0.75),
-              ),
-              label: Text(
-                _showFilters ? 'Filters verbergen' : 'Filters',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w900,
-                  color: _showFilters
-                      ? cs.primary
-                      : cs.onSurface.withValues(alpha: 0.85),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.filter_list),
+                  label: Text(_showFilters ? 'Filters verbergen' : 'Filters'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    side: BorderSide(color: Colors.grey.shade400),
+                    backgroundColor: _showFilters
+                        ? cs.primary.withValues(alpha: 0.08)
+                        : null,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _showFilters = !_showFilters;
+                    });
+                  },
                 ),
-              ),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildPremiumViewButton('Maand', 'Maand'),
+                    const SizedBox(width: 8),
+                    _buildPremiumViewButton('Week', 'Week'),
+                    const SizedBox(width: 8),
+                    _buildPremiumViewButton('Dag', 'Dag'),
+                  ],
                 ),
-                side: BorderSide(
-                  color: _showFilters
-                      ? cs.primary.withValues(alpha: 0.45)
-                      : cs.onSurface.withValues(alpha: 0.12),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                height: 44,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        cs.primary.withValues(alpha: isDark ? 0.95 : 1.0),
+                        isDark
+                            ? const Color(0xFF0F172A)
+                            : cs.primary.withValues(alpha: 0.85),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: _isLoading ? null : _openExtraOpdrachtModal,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 14 : 18,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.add_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            if (!isMobile) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                'Extra Opdracht',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                backgroundColor: _showFilters
-                    ? cs.primary.withValues(alpha: 0.08)
-                    : (isDark
-                        ? const Color(0xFF171722)
-                        : Colors.white),
-              ),
               ),
             ),
           ),
-        AnimatedCrossFade(
-          duration: const Duration(milliseconds: 200),
-          crossFadeState: _showFilters
-              ? CrossFadeState.showFirst
-              : CrossFadeState.showSecond,
-          secondChild: const SizedBox.shrink(),
-          firstChild: Padding(
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            clipBehavior: Clip.hardEdge,
+            child: _showFilters
+                ? Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                 child: Container(
               width: double.infinity,
@@ -5676,313 +5832,134 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
                         ),
                       ),
                     ),
-                  TextField(
-                    onChanged: (val) =>
-                        setState(() => _manualSearchTerm = val),
-                    decoration: InputDecoration(
-                      hintText: 'Zoek op klant, project of regio',
-                      hintStyle: GoogleFonts.inter(
-                        color: cs.onSurface.withValues(alpha: 0.45),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          onChanged: (val) =>
+                              setState(() => _manualSearchTerm = val),
+                          decoration: InputDecoration(
+                            hintText: 'Zoek op klant, project of regio',
+                            hintStyle: GoogleFonts.inter(
+                              color: cs.onSurface.withValues(alpha: 0.45),
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: cs.primary.withValues(alpha: 0.9),
+                            ),
+                            filled: true,
+                            fillColor: isDark
+                                ? const Color(0xFF1B1B23)
+                                : const Color(0xFFF5F5F7),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                          ),
+                        ),
                       ),
-                      prefixIcon: Icon(
-                        Icons.search_rounded,
-                        color: cs.primary.withValues(alpha: 0.9),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildManualFilterButton(
+                          label: 'Regio',
+                          selectedCount: _manualFilterRegios.length,
+                          selectedPreview:
+                              _manualFilterPreview(_manualFilterRegios),
+                          cs: cs,
+                          isDark: isDark,
+                          onTap: () => _showPremiumMultiFilterModal(
+                            title: 'Selecteer regio',
+                            items: regioOptions,
+                            currentSelection: _manualFilterRegios,
+                            onApply: (sel) {
+                              setState(() => _manualFilterRegios = sel);
+                              _loadTasks();
+                            },
+                          ),
+                        ),
                       ),
-                      filled: true,
-                      fillColor: isDark
-                          ? const Color(0xFF1B1B23)
-                          : const Color(0xFFF5F5F7),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 14,
-                      ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  _buildManualFilterButton(
-                    label: 'Klant',
-                    selectedCount: _manualFilterKlanten.length,
-                    selectedPreview: _manualFilterPreview(_manualFilterKlanten),
-                    cs: cs,
-                    isDark: isDark,
-                    fullWidth: true,
-                    onTap: () => _showPremiumMultiFilterModal(
-                      title: 'Selecteer klant',
-                      items: klantOptions,
-                      currentSelection: _manualFilterKlanten,
-                      onApply: (sel) {
-                        setState(() => _manualFilterKlanten = sel);
-                        _loadTasks();
-                      },
-                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildManualFilterButton(
+                          label: 'Klant',
+                          selectedCount: _manualFilterKlanten.length,
+                          selectedPreview:
+                              _manualFilterPreview(_manualFilterKlanten),
+                          cs: cs,
+                          isDark: isDark,
+                          onTap: () => _showPremiumMultiFilterModal(
+                            title: 'Selecteer klant',
+                            items: klantOptions,
+                            currentSelection: _manualFilterKlanten,
+                            onApply: (sel) {
+                              setState(() => _manualFilterKlanten = sel);
+                              _loadTasks();
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildManualFilterButton(
+                          label: 'Project',
+                          selectedCount: _manualFilterProjecten.length,
+                          selectedPreview:
+                              _manualFilterPreview(_manualFilterProjecten),
+                          cs: cs,
+                          isDark: isDark,
+                          onTap: () => _showPremiumMultiFilterModal(
+                            title: 'Selecteer project',
+                            items: projectOptions,
+                            currentSelection: _manualFilterProjecten,
+                            onApply: (sel) {
+                              setState(() => _manualFilterProjecten = sel);
+                              _loadTasks();
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  _buildManualFilterButton(
-                    label: 'Project',
-                    selectedCount: _manualFilterProjecten.length,
-                    selectedPreview:
-                        _manualFilterPreview(_manualFilterProjecten),
-                    cs: cs,
-                    isDark: isDark,
-                    fullWidth: true,
-                    onTap: () => _showPremiumMultiFilterModal(
-                      title: 'Selecteer project',
-                      items: projectOptions,
-                      currentSelection: _manualFilterProjecten,
-                      onApply: (sel) {
-                        setState(() => _manualFilterProjecten = sel);
-                        _loadTasks();
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildManualFilterButton(
-                    label: 'Regio',
-                    selectedCount: _manualFilterRegios.length,
-                    selectedPreview: _manualFilterPreview(_manualFilterRegios),
-                    cs: cs,
-                    isDark: isDark,
-                    fullWidth: true,
-                    onTap: () => _showPremiumMultiFilterModal(
-                      title: 'Selecteer regio',
-                      items: regioOptions,
-                      currentSelection: _manualFilterRegios,
-                      onApply: (sel) {
-                        setState(() => _manualFilterRegios = sel);
-                        _loadTasks();
-                      },
-                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildManualFilterButton(
+                          label: 'Operator',
+                          selectedCount: _filterOperators.length,
+                          selectedPreview:
+                              _manualFilterPreview(_filterOperators),
+                          cs: cs,
+                          isDark: isDark,
+                          onTap: () => _showPremiumMultiFilterModal(
+                            title: 'Selecteer operator',
+                            items: operatorOptions,
+                            currentSelection: _filterOperators,
+                            onApply: (sel) {
+                              setState(() => _filterOperators = sel);
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(child: SizedBox.shrink()),
+                    ],
                   ),
                 ],
               ),
                   ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? cs.onSurface.withValues(alpha: 0.10)
-                  : cs.onSurface.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => setState(() => _calendarViewMode = 'Maand'),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _calendarViewMode == 'Maand'
-                            ? Colors.white
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: _calendarViewMode == 'Maand'
-                            ? [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.calendar_view_month_rounded,
-                            size: 18,
-                            color: _calendarViewMode == 'Maand'
-                                ? cs.primary
-                                : cs.onSurface.withValues(alpha: 0.65),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Maand',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                              color: _calendarViewMode == 'Maand'
-                                  ? cs.primary
-                                  : cs.onSurface.withValues(alpha: 0.65),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => setState(() => _calendarViewMode = 'Week'),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _calendarViewMode == 'Week'
-                            ? Colors.white
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: _calendarViewMode == 'Week'
-                            ? [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.view_week_rounded,
-                            size: 18,
-                            color: _calendarViewMode == 'Week'
-                                ? cs.primary
-                                : cs.onSurface.withValues(alpha: 0.65),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Week',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                              color: _calendarViewMode == 'Week'
-                                  ? cs.primary
-                                  : cs.onSurface.withValues(alpha: 0.65),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => setState(() => _calendarViewMode = 'Dag'),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _calendarViewMode == 'Dag'
-                            ? Colors.white
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: _calendarViewMode == 'Dag'
-                            ? [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.view_day_rounded,
-                            size: 18,
-                            color: _calendarViewMode == 'Dag'
-                                ? cs.primary
-                                : cs.onSurface.withValues(alpha: 0.65),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Dag',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                              color: _calendarViewMode == 'Dag'
-                                  ? cs.primary
-                                  : cs.onSurface.withValues(alpha: 0.65),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                height: 52,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        cs.primary.withValues(alpha: isDark ? 0.95 : 1.0),
-                        isDark
-                            ? const Color(0xFF0F172A)
-                            : cs.primary.withValues(alpha: 0.85),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: _isLoading ? null : _openExtraOpdrachtModal,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isMobile ? 14 : 18,
-                          vertical: 14,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.add_rounded,
-                              size: 18,
-                              color: Colors.white,
-                            ),
-                            if (!isMobile) ...[
-                              const SizedBox(width: 10),
-                              Text(
-                                'Extra Opdracht',
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+                )
+                : const SizedBox(width: double.infinity, height: 0),
           ),
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Container(
@@ -6166,86 +6143,71 @@ class _PlanbordScreenState extends State<PlanbordScreen> {
     );
   }
 
+  bool get isRefreshing =>
+      _isLoading ||
+      _isLoadingProjects ||
+      _isLoadingSmartProjects ||
+      _isCalculating;
+
+  Future<void> refreshAll() async {
+    await _fetchSmartProjects();
+    await _fetchProjects();
+    await _loadTasks();
+  }
+
+  Widget buildManualTab(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SelectionArea(child: _buildManualPlanningTab(isDark));
+  }
+
+  Widget buildSmartTab(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SelectionArea(child: _buildSmartPlannerTab(isDark));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cs = Theme.of(context).colorScheme;
-    final bg = isDark ? const Color(0xFF0A0912) : const Color(0xFFF5F5F7);
-
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: bg,
-        drawer: const AppDrawer(),
-        appBar: AppBar(
-          backgroundColor: bg,
-          elevation: 0,
-          title: Text(
-            'Planbord & Projecten',
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.2,
-            ),
-          ),
-          actions: [
-            IconButton(
-              tooltip: 'Vernieuwen',
-              onPressed:
-                  (_isLoading ||
-                      _isLoadingProjects ||
-                      _isLoadingSmartProjects ||
-                      _isCalculating)
-                  ? null
-                  : () async {
-                      await _fetchSmartProjects();
-                      await _fetchProjects();
-                      await _loadTasks();
-                    },
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-          ],
-        ),
-        body: SelectionArea(
-          child: Column(
-            children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                padding: const EdgeInsets.all(6),
-                child: TabBar(
-                  indicator: BoxDecoration(
-                    color: cs.primary,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
-                  labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
-                  tabs: const [
-                    Tab(text: 'Smart Planner'),
-                    Tab(text: 'Handmatig Plannen'),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildSmartPlannerTab(isDark),
-                  _buildManualPlanningTab(isDark),
-                ],
-              ),
-            ),
-            ],
-          ),
-        ),
-      ),
+    return PlanbordScope(
+      state: this,
+      child: widget.child,
     );
+  }
+}
+
+class PlanbordScope extends InheritedWidget {
+  const PlanbordScope({
+    super.key,
+    required this.state,
+    required super.child,
+  });
+
+  final PlanbordTabsHostState state;
+
+  static PlanbordTabsHostState of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<PlanbordScope>();
+    assert(scope != null, 'PlanbordScope not found in widget tree');
+    return scope!.state;
+  }
+
+  @override
+  bool updateShouldNotify(PlanbordScope oldWidget) => true;
+}
+
+class HandmatigPlannenTab extends StatelessWidget {
+  const HandmatigPlannenTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return PlanbordScope.of(context).buildManualTab(context);
+  }
+}
+
+class SmartPlannerTab extends StatelessWidget {
+  const SmartPlannerTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return PlanbordScope.of(context).buildSmartTab(context);
   }
 }
 

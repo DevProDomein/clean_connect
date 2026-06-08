@@ -46,10 +46,13 @@ class WerkbonPdfService {
 
     final planningen = await supabase
         .from('opdracht_planning')
-        .select('*, operator:gebruikers(voornaam, achternaam)')
+        .select(
+          '*, operator:gebruikers!opdracht_planning_operator_id_fkey(voornaam, achternaam)',
+        )
         .eq('opdracht_id', opdrachtId);
 
-    final bool isAfgerond = opdracht['status']?.toString() == 'afgerond';
+    final status = opdracht['status']?.toString().toLowerCase() ?? '';
+    final bool isAfgerond = status == 'afgerond' || status == 'voltooid';
     final String opdrachtDatum = opdracht['geplande_datum']?.toString() ?? '';
     final String startTijd = opdracht['tijdslot_start']?.toString() ?? '--:--';
     final String eindTijd = opdracht['tijdslot_eind']?.toString() ?? '--:--';
@@ -453,42 +456,98 @@ class WerkbonPdfService {
           }
 
           elements.add(pw.SizedBox(height: 30));
-          if (isAfgerond) {
-            final datumDisplay = opdrachtDatum.length >= 10
-                ? opdrachtDatum.substring(0, 10)
-                : opdrachtDatum;
-            final afrondTijd = DateFormat('HH:mm').format(DateTime.now());
 
+          String operatorNaam = 'Onbekend';
+
+          if (planningen.isNotEmpty) {
+            final p = _mapFrom(planningen.first);
+            final user = p['operator'] ?? p['gebruikers'];
+            if (user != null) {
+              final userMap = _mapFrom(user);
+              operatorNaam =
+                  '${userMap['voornaam'] ?? ''} ${userMap['achternaam'] ?? ''}'
+                      .trim();
+            }
+          }
+          if (operatorNaam == 'Onbekend' &&
+              operatorString.isNotEmpty &&
+              operatorString != 'Nog niet toegewezen') {
+            operatorNaam = operatorString.split(',').first.trim();
+          }
+
+          String aftekenTijd = '';
+          String aftekenDatumStr = '';
+          var isOudeRegistratie = false;
+
+          if (opdracht['afgerond_op'] != null &&
+              opdracht['afgerond_op'].toString().isNotEmpty) {
+            final afgerondDt =
+                DateTime.parse(opdracht['afgerond_op'].toString()).toLocal();
+            aftekenTijd = DateFormat('HH:mm').format(afgerondDt);
+            aftekenDatumStr = DateFormat('dd-MM-yyyy').format(afgerondDt);
+          } else {
+            isOudeRegistratie = true;
+            aftekenTijd = 'Onbekend';
+            final geplandeDatum = opdracht['geplande_datum'];
+            if (geplandeDatum != null &&
+                geplandeDatum.toString().isNotEmpty) {
+              try {
+                aftekenDatumStr = DateFormat('dd-MM-yyyy').format(
+                  DateTime.parse(geplandeDatum.toString()),
+                );
+              } catch (_) {
+                aftekenDatumStr = 'Onbekend';
+              }
+            } else {
+              aftekenDatumStr = 'Onbekend';
+            }
+          }
+
+          if (isAfgerond) {
             elements.add(
               pw.Container(
                 width: double.infinity,
                 padding: const pw.EdgeInsets.all(16),
                 decoration: pw.BoxDecoration(
                   color: PdfColors.grey100,
-                  border: pw.Border.all(color: PdfColors.grey400),
+                  border: pw.Border.all(color: PdfColors.green600, width: 2),
                   borderRadius: pw.BorderRadius.circular(8),
                 ),
                 child: pw.Column(
-                  mainAxisAlignment: pw.MainAxisAlignment.center,
-                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      'Digitaal afgerond en ingediend',
+                      'Digitaal Afgetekend',
                       style: pw.TextStyle(
                         font: _fontBold,
-                        fontSize: 11,
+                        fontSize: 16,
                         color: PdfColors.green800,
                       ),
                     ),
+                    pw.SizedBox(height: 12),
+                    pw.Text(
+                      'Geautoriseerd door operator: $operatorNaam',
+                      style: pw.TextStyle(font: _fontBold, fontSize: 12),
+                    ),
+                    if (isOudeRegistratie)
+                      pw.Text(
+                        'Tijdstip van afronding: $aftekenDatumStr (Exacte tijd onbekend, oude registratie)',
+                        style: pw.TextStyle(font: _fontReg, fontSize: 12),
+                      )
+                    else
+                      pw.Text(
+                        'Tijdstip van afronding: $aftekenDatumStr om $aftekenTijd',
+                        style: pw.TextStyle(font: _fontReg, fontSize: 12),
+                      ),
                     pw.SizedBox(height: 8),
                     pw.Text(
-                      'Door: $operatorString',
-                      style: pw.TextStyle(font: _fontReg, fontSize: 10),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Text(
-                      'Op: $datumDisplay om $afrondTijd',
-                      style: pw.TextStyle(font: _fontReg, fontSize: 10),
+                      'Geen fysieke handtekening vereist. Deze werkbon is geverifieerd en digitaal vastgelegd via het CleanConnect platform.',
+                      style: pw.TextStyle(
+                        font: _fontReg,
+                        fontSize: 10,
+                        color: PdfColors.grey700,
+                        fontStyle: pw.FontStyle.italic,
+                      ),
                     ),
                   ],
                 ),
@@ -497,61 +556,20 @@ class WerkbonPdfService {
           } else {
             elements.add(
               pw.Container(
-                padding: const pw.EdgeInsets.all(16),
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(12),
                 decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey400),
-                  borderRadius: pw.BorderRadius.circular(4),
+                  color: PdfColors.orange100,
+                  border: pw.Border.all(color: PdfColors.orange300, width: 1),
+                  borderRadius: pw.BorderRadius.circular(8),
                 ),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-                  children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          'Uitvoerder(s)',
-                          style: pw.TextStyle(font: _fontBold, fontSize: 10),
-                        ),
-                        pw.SizedBox(height: 30),
-                        pw.Text(
-                          '......................................................',
-                          style: const pw.TextStyle(color: PdfColors.grey400),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Naam / Handtekening',
-                          style: pw.TextStyle(
-                            font: _fontReg,
-                            fontSize: 8,
-                            color: PdfColors.grey700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          'Opdrachtgever (Klant)',
-                          style: pw.TextStyle(font: _fontBold, fontSize: 10),
-                        ),
-                        pw.SizedBox(height: 30),
-                        pw.Text(
-                          '......................................................',
-                          style: const pw.TextStyle(color: PdfColors.grey400),
-                        ),
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          'Naam / Handtekening',
-                          style: pw.TextStyle(
-                            font: _fontReg,
-                            fontSize: 8,
-                            color: PdfColors.grey700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: pw.Text(
+                  'Let op: Deze werkbon is een preview. De opdracht is nog niet afgerond en digitaal afgetekend.',
+                  style: pw.TextStyle(
+                    font: _fontReg,
+                    fontSize: 12,
+                    color: PdfColors.orange900,
+                  ),
                 ),
               ),
             );

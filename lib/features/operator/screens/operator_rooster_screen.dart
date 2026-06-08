@@ -115,6 +115,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
       void addRawRow(dynamic row) {
         if (row is! Map) return;
         final task = Map<String, dynamic>.from(row);
+        if (_isRoosterItemGeannuleerd(task)) return;
         final pid = _planningIdFromItem(task);
         if (pid.isNotEmpty) {
           if (!seenPlanningIds.add(pid)) return;
@@ -464,6 +465,19 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     final pers = item['mijn_persoonlijke_status']?.toString().trim().toLowerCase();
     if (pers == 'voltooid') return OpdrachtPlanningStatus.afgerond;
     return pers ?? 'ingepland';
+  }
+
+  bool _isRoosterItemGeannuleerd(Map<String, dynamic> task) {
+    if (_rawTaskStatus(task) == OpdrachtPlanningStatus.geannuleerd) {
+      return true;
+    }
+    final opdracht = task['opdracht'];
+    if (opdracht is Map) {
+      final opdrachtStatus =
+          (opdracht['status'] ?? '').toString().trim().toLowerCase();
+      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd) return true;
+    }
+    return false;
   }
 
   String _rawTaskStatus(Map<String, dynamic> task) {

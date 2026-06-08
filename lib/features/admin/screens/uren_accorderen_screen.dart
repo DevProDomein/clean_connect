@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/models/user_role.dart';
+import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/utils/payroll_calculation.dart';
 import '../../../core/widgets/app_drawer.dart';
@@ -997,11 +998,13 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                 final dur = _workDurationMinutes(pickStart, pickEnd);
                 final urenDec = dur.inMinutes / 60.0;
 
+                final nowIso = DateTime.now().toUtc().toIso8601String();
                 final update = <String, dynamic>{
                   'werkelijke_starttijd': _timeToDb(pickStart),
                   'werkelijke_eindtijd': _timeToDb(pickEnd),
                   'gewerkte_uren_decimaal': urenDec,
-                  'uren_status': 'geaccordeerd',
+                  OpdrachtPlanningTable.urenStatus: 'geaccordeerd',
+                  OpdrachtPlanningTable.urenGoedgekeurdOp: nowIso,
                 };
 
                 if (timesChangedFromOperatorSubmission) {
@@ -1023,6 +1026,17 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
                   throw Exception(
                     'Database weigert de update. Check RLS of een foutief ID: $planningId',
                   );
+                }
+
+                final opdrachtId = _text(row['opdracht_id']);
+                if (opdrachtId.isNotEmpty) {
+                  await AppSupabase.client
+                      .from(OpdrachtenTable.name)
+                      .update({
+                        OpdrachtenTable.status: OpdrachtStatus.voltooid,
+                        OpdrachtenTable.voltooidOp: nowIso,
+                      })
+                      .eq(OpdrachtenTable.id, opdrachtId);
                 }
 
                 if (timesChangedFromOperatorSubmission) {

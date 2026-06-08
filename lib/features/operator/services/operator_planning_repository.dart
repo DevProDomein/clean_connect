@@ -57,13 +57,29 @@ opdracht:opdrachten!opdracht_planning_opdracht_id_fkey(
         .from(OpdrachtPlanningTable.name)
         .select(_roosterPlanningSelect)
         .eq(OpdrachtPlanningTable.operatorId, operatorId)
+        .neq(OpdrachtPlanningTable.status, OpdrachtPlanningStatus.geannuleerd)
         .or(orFilter)
         .order(OpdrachtPlanningTable.geplandeDatum, ascending: true)
         .order(OpdrachtPlanningTable.starttijd, ascending: true);
 
     return (res as List)
+        .where((e) => e is Map && !_isRoosterRowGeannuleerd(e))
         .map((e) => normaliseRoosterPlanningRow(e as Map))
         .toList(growable: false);
+  }
+
+  static bool _isRoosterRowGeannuleerd(Map row) {
+    final planningStatus =
+        (row[OpdrachtPlanningTable.status] ?? '').toString().toLowerCase();
+    if (planningStatus == OpdrachtPlanningStatus.geannuleerd) return true;
+
+    final opdracht = row['opdracht'];
+    if (opdracht is Map) {
+      final opdrachtStatus =
+          (opdracht[OpdrachtenTable.status] ?? '').toString().toLowerCase();
+      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd) return true;
+    }
+    return false;
   }
 
   /// Zelfde shape als [app_operator_agenda] voor rooster/slider UI.
@@ -124,7 +140,11 @@ opdracht:opdrachten!opdracht_planning_opdracht_id_fkey(
 
     await _client
         .from(OpdrachtenTable.name)
-        .update({OpdrachtenTable.status: OpdrachtStatus.afgerond})
+        .update({
+          OpdrachtenTable.status: OpdrachtStatus.afgerond,
+          OpdrachtenTable.afgerondOp:
+              DateTime.now().toUtc().toIso8601String(),
+        })
         .eq(OpdrachtenTable.id, opdrachtId);
 
     unawaited(

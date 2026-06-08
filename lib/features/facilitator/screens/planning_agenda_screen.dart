@@ -8,18 +8,17 @@ import 'package:syncfusion_flutter_calendar/calendar.dart' hide WeekDays;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/supabase_client.dart';
-import '../../../core/widgets/app_drawer.dart';
 import '../../shared/agenda_personalia_helpers.dart';
 import '../../shared/widgets/agenda_item_add_modal.dart';
 
-class PlanningAgendaScreen extends StatefulWidget {
-  const PlanningAgendaScreen({super.key});
+class AgendaTab extends StatefulWidget {
+  const AgendaTab({super.key});
 
   @override
-  State<PlanningAgendaScreen> createState() => _PlanningAgendaScreenState();
+  State<AgendaTab> createState() => AgendaTabState();
 }
 
-class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
+class AgendaTabState extends State<AgendaTab> {
   static const _maandNamen = [
     'Januari',
     'Februari',
@@ -47,6 +46,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   Map<DateTime, List<dynamic>> _groupedTasks = {};
 
   bool _isLoading = true;
+  bool get isLoading => _isLoading;
   Object? _loadError;
 
   List<Map<String, dynamic>> _inboxUitnodigingen = [];
@@ -70,6 +70,8 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     _currentWeekDate = _selectedDay ?? DateTime.now();
     _loadAgenda();
   }
+
+  Future<void> reloadAgenda() => _loadAgenda();
 
   @override
   void dispose() {
@@ -129,10 +131,9 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   }
 
   String _opdrachtIdFromTask(Map<String, dynamic> task) {
-    final candidate = _text(task['opdracht_id']).isNotEmpty
-        ? _text(task['opdracht_id'])
-        : _text(task['id']);
-    return candidate;
+    final id = _text(task['id']);
+    if (id.isNotEmpty) return id;
+    return _text(task['opdracht_id']);
   }
 
   bool _isTaskAfgerond(Map<String, dynamic> task) {
@@ -140,9 +141,22 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     return status == 'afgerond' || status == 'voltooid';
   }
 
+  bool _isTaskGeannuleerd(Map<String, dynamic> task) {
+    return _text(task['status']).toLowerCase() == 'geannuleerd';
+  }
+
+  bool _isTaskInVerleden(Map<String, dynamic> task) {
+    final d = _parseDate(task['geplande_datum']);
+    final nu = DateTime.now();
+    final vandaag = DateTime(nu.year, nu.month, nu.day);
+    return DateTime(d.year, d.month, d.day).isBefore(vandaag);
+  }
+
   bool _isVerplaatsbaarTask(Map<String, dynamic> task) {
     if (task['_persoonlijk_agenda'] == true) return false;
+    if (_isTaskGeannuleerd(task)) return false;
     if (_isTaskAfgerond(task)) return false;
+    if (_isTaskInVerleden(task)) return false;
     return _opdrachtIdFromTask(task).isNotEmpty;
   }
 
@@ -162,12 +176,22 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     return appointment.startTime.isBefore(vandaag);
   }
 
-  Future<bool> _guardDragAgainstVerleden(Appointment appointment) async {
-    if (!_isAppointmentStartInVerleden(appointment)) return true;
+  bool _isGeannuleerdAppointment(Appointment app) {
+    final task = _taskForAppointment(app);
+    return task != null && _isTaskGeannuleerd(task);
+  }
+
+  Future<bool> _guardDragAgainstLocked(Appointment appointment) async {
+    final task = _taskForAppointment(appointment);
+    final isAfgerond = task != null && _isTaskAfgerond(task);
+    final isGeannuleerd = task != null && _isTaskGeannuleerd(task);
+    final isVerleden = _isAppointmentStartInVerleden(appointment);
+    if (!isVerleden && !isAfgerond && !isGeannuleerd) return true;
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Taken in het verleden kunnen niet worden verplaatst.'),
+          content: Text('Deze opdracht is vergrendeld.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -214,14 +238,17 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final task = _taskForAppointment(appointment);
     if (task == null) return;
     if (!_isVerplaatsbaarTask(task)) {
-      if (_isTaskAfgerond(task) && mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Afgeronde opdrachten kunnen niet worden verplaatst.'),
+            content: Text(
+              'Deze opdracht is vergrendeld en kan niet worden verplaatst.',
+            ),
+            backgroundColor: Colors.orange,
           ),
         );
-        await _loadAgenda();
       }
+      await _loadAgenda();
       return;
     }
 
@@ -323,11 +350,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         end = start.add(const Duration(hours: 1));
       }
 
-      final project = _text(taak['project_naam']);
-      final company = _text(taak['bedrijfsnaam']);
-      final title = project.isNotEmpty
-          ? project
-          : (company.isNotEmpty ? company : 'Opdracht');
+      final title = _agendaTitelVoorTask(taak);
 
       appointments.add(
         Appointment(
@@ -369,18 +392,28 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final raw = event.event;
     final task = raw is Map ? Map<String, dynamic>.from(raw as Map) : null;
     final isAfgerond = task != null && _isTaskAfgerond(task);
-    final accent = isAfgerond ? Colors.grey.shade600 : event.color;
+    final isVerleden = task != null && _isTaskInVerleden(task);
+    final isGeannuleerd = task != null && _isTaskGeannuleerd(task);
+    final isVergrendeld = isAfgerond || isVerleden;
+    final accent = isVergrendeld ? Colors.grey.shade600 : event.color;
+    final bgOpacity = isGeannuleerd ? 0.1 : 0.15;
+    final textDarkColor =
+        isGeannuleerd ? Colors.grey.shade500 : Colors.blue.shade900;
+    final titleDecoration =
+        isGeannuleerd ? TextDecoration.lineThrough : TextDecoration.none;
     final startStr =
         '${event.startTime!.hour.toString().padLeft(2, '0')}:${event.startTime!.minute.toString().padLeft(2, '0')}';
     final eindStr =
         '${event.endTime!.hour.toString().padLeft(2, '0')}:${event.endTime!.minute.toString().padLeft(2, '0')}';
 
-    return Container(
+    return Opacity(
+      opacity: isGeannuleerd ? 0.3 : 1.0,
+      child: Container(
       margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.15),
+        color: accent.withValues(alpha: bgOpacity),
         borderRadius: BorderRadius.circular(4),
         border: Border(left: BorderSide(color: accent, width: 3)),
       ),
@@ -391,7 +424,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         children: [
           Row(
             children: [
-              if (isAfgerond) ...[
+              if (isVergrendeld) ...[
                 Icon(Icons.lock, size: 10, color: Colors.grey.shade700),
                 const SizedBox(width: 4),
               ],
@@ -401,9 +434,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    color: Colors.blue.shade900,
+                    color: textDarkColor,
                     fontWeight: FontWeight.w700,
                     fontSize: 10,
+                    decoration: titleDecoration,
                   ),
                 ),
               ),
@@ -414,13 +448,15 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
-              color: Colors.blue.shade900,
+              color: textDarkColor,
               fontWeight: FontWeight.w500,
               fontSize: 9,
+              decoration: titleDecoration,
             ),
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -447,7 +483,17 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final isTimeline = _calendarController.view == CalendarView.timelineDay;
     final isMonth = _calendarController.view == CalendarView.month;
     final isAfgerond = _isAfgerondAppointment(app);
-    final tileColor = isAfgerond ? Colors.grey.shade600 : app.color;
+    final isVerleden = _isAppointmentStartInVerleden(app);
+    final isGeannuleerd = _isGeannuleerdAppointment(app);
+    final isVergrendeld = isAfgerond || isVerleden;
+    final tileColor = isVergrendeld ? Colors.grey.shade600 : app.color;
+    final bgOpacityMonthWeek = isGeannuleerd ? 0.1 : 0.15;
+    final bgColor = isGeannuleerd ? app.color.withValues(alpha: 0.1) : tileColor;
+    final textColor = isGeannuleerd ? Colors.grey.shade600 : Colors.white;
+    final textDarkColor =
+        isGeannuleerd ? Colors.grey.shade500 : Colors.blue.shade900;
+    final titleDecoration =
+        isGeannuleerd ? TextDecoration.lineThrough : TextDecoration.none;
 
     final startStr =
         '${app.startTime.hour.toString().padLeft(2, '0')}:${app.startTime.minute.toString().padLeft(2, '0')}';
@@ -455,12 +501,14 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         '${app.endTime.hour.toString().padLeft(2, '0')}:${app.endTime.minute.toString().padLeft(2, '0')}';
 
     if (isMonth || !isTimeline) {
-      return Container(
+      return Opacity(
+        opacity: isGeannuleerd ? 0.3 : 1.0,
+        child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: tileColor.withValues(alpha: 0.15),
+          color: app.color.withValues(alpha: bgOpacityMonthWeek),
           borderRadius: BorderRadius.circular(4),
           border: Border(left: BorderSide(color: tileColor, width: 3)),
         ),
@@ -472,17 +520,21 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
             children: [
               Row(
                 children: [
-                  if (isAfgerond) ...[
+                  if (isVergrendeld) ...[
                     Icon(Icons.lock, size: 10, color: Colors.grey.shade700),
+                    const SizedBox(width: 4),
+                  ] else if (isGeannuleerd) ...[
+                    Icon(Icons.block, size: 10, color: Colors.grey.shade500),
                     const SizedBox(width: 4),
                   ],
                   Expanded(
                     child: Text(
                       app.subject,
                       style: TextStyle(
-                        color: Colors.blue.shade900,
+                        color: textDarkColor,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
+                        decoration: titleDecoration,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -494,8 +546,9 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                 Text(
                   '$startStr - $eindStr',
                   style: TextStyle(
-                    color: Colors.blue.shade900,
+                    color: textDarkColor,
                     fontSize: 9,
+                    decoration: titleDecoration,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -503,25 +556,30 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
             ],
           ),
         ),
+      ),
       );
     }
 
-    return Container(
+    return Opacity(
+      opacity: isGeannuleerd ? 0.3 : 1.0,
+      child: Container(
       width: calendarAppointmentDetails.bounds.width,
       height: calendarAppointmentDetails.bounds.height,
       margin: const EdgeInsets.only(right: 2, top: 2, bottom: 2),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
-        color: tileColor,
+        color: bgColor,
         borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: isGeannuleerd
+            ? const <BoxShadow>[]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -532,25 +590,29 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
               Expanded(
                 child: Text(
                   app.subject,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: textColor,
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
+                    decoration: titleDecoration,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (isAfgerond)
-                const Icon(Icons.lock, size: 12, color: Colors.white),
+              if (isVergrendeld)
+                Icon(Icons.lock, size: 12, color: textColor)
+              else if (isGeannuleerd)
+                Icon(Icons.block, size: 12, color: textColor),
             ],
           ),
           const SizedBox(height: 2),
           Text(
             '$startStr - $eindStr',
-            style: const TextStyle(
-              color: Colors.white70,
+            style: TextStyle(
+              color: isGeannuleerd ? Colors.grey.shade500 : Colors.white70,
               fontSize: 10,
+              decoration: titleDecoration,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -582,6 +644,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
           ],
         ],
       ),
+    ),
     );
   }
 
@@ -721,7 +784,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                 final rawNieuweStart = details.droppingTime;
                 if (appointment == null || rawNieuweStart == null) return;
 
-                if (!await _guardDragAgainstVerleden(appointment)) return;
+                if (!await _guardDragAgainstLocked(appointment)) return;
 
                 final nieuweStart = _roundTo5Mins(rawNieuweStart);
                 final duur =
@@ -738,7 +801,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                   (AppointmentResizeEndDetails details) async {
                 final appointment = details.appointment as Appointment?;
                 if (appointment == null) return;
-                if (!await _guardDragAgainstVerleden(appointment)) return;
+                if (!await _guardDragAgainstLocked(appointment)) return;
                 await _handleSyncfusionAppointmentChange(
                   appointment,
                   appointment.startTime,
@@ -835,6 +898,23 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     Map<String, dynamic> task,
     DateTime targetDate,
   ) async {
+    if (_isTaskGeannuleerd(task) ||
+        _isTaskInVerleden(task) ||
+        _isTaskAfgerond(task)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Deze opdracht is vergrendeld en kan niet worden verplaatst.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      _syncEventController();
+      if (mounted) setState(() {});
+      return;
+    }
     if (!_isVerplaatsbaarTask(task)) return;
 
     final opdrachtId = _opdrachtIdFromTask(task);
@@ -910,6 +990,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   }
 
   Color _bepaalStatusKleur(Map<String, dynamic> task) {
+    if (_isTaskGeannuleerd(task)) return Colors.grey.shade600;
     if (_isTaskAfgerond(task)) return Colors.grey.shade600;
     final agendaKleur = _text(task['agenda_kleur']).toLowerCase();
     switch (agendaKleur) {
@@ -933,11 +1014,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final date = _normalizeDate(_parseDate(task['geplande_datum']));
     final start = _eventDateTime(date, task['starttijd'], defaultHour: 9);
     final end = _eventDateTime(date, task['eindtijd'], defaultHour: 10);
-    final project = _text(task['project_naam']);
-    final company = _text(task['bedrijfsnaam']);
-    final title = project.isNotEmpty
-        ? project
-        : (company.isNotEmpty ? company : 'Opdracht');
+    final title = _agendaTitelVoorTask(task);
 
     return CalendarEventData<Map<String, dynamic>>(
       date: date,
@@ -1373,6 +1450,107 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     );
   }
 
+  Future<List<Map<String, dynamic>>> _fetchAgendaOpdrachten() async {
+    final response = await AppSupabase.client
+        .from('opdrachten')
+        .select('''
+          *,
+          projecten (
+            project_naam,
+            pand_foto_url
+          ),
+          opdracht_planning!opdracht_planning_opdracht_id_fkey (
+            *,
+            gebruikers!opdracht_planning_operator_id_fkey (
+              id,
+              voornaam,
+              achternaam
+            )
+          )
+        ''')
+        .order('geplande_datum', ascending: true);
+
+    return (response as List)
+        .whereType<Map>()
+        .map((raw) => _normaliseOpdrachtVoorAgenda(Map<String, dynamic>.from(raw)))
+        .where((task) => _text(task['geplande_datum']).isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic> _mapFrom(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return {};
+  }
+
+  Map<String, dynamic>? _firstMapFrom(dynamic raw) {
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return null;
+  }
+
+  String _agendaOperatorNamenUitTask(Map<String, dynamic> task) {
+    final namen = <String>[];
+    final planningen = task['opdracht_planning'];
+    if (planningen is List) {
+      for (final raw in planningen) {
+        final naam = _operatorNaamUitPlanning(_mapFrom(raw));
+        if (naam.isNotEmpty && !namen.contains(naam)) namen.add(naam);
+      }
+    }
+    return namen.join(', ');
+  }
+
+  Map<String, dynamic> _normaliseOpdrachtVoorAgenda(Map<String, dynamic> raw) {
+    final task = Map<String, dynamic>.from(raw);
+
+    final project = _firstMapFrom(task['projecten']);
+    task['project_naam'] = _agendaProjectNaam(task);
+    if (project != null && _text(task['werk_regio']).isEmpty) {
+      task['werk_regio'] = _text(project['werk_regio']);
+    }
+
+    final planning = _firstMapFrom(task['planning']);
+    final eerstePlanning = _firstMapFrom(task['opdracht_planning']);
+
+    task['starttijd'] = _text(
+      task['starttijd'],
+    ).isNotEmpty
+        ? task['starttijd']
+        : (eerstePlanning?['starttijd'] ??
+            planning?['starttijd'] ??
+            task['tijdslot_start']);
+    task['eindtijd'] = _text(task['eindtijd']).isNotEmpty
+        ? task['eindtijd']
+        : (eerstePlanning?['eindtijd'] ??
+            planning?['eindtijd'] ??
+            task['tijdslot_eind']);
+
+    final operatorNamen = _agendaOperatorNamenUitTask(task);
+    if (operatorNamen.isNotEmpty) {
+      task['operator_namen'] = operatorNamen;
+      if (_text(task['operator_naam']).isEmpty) {
+        task['operator_naam'] = operatorNamen.split(',').first.trim();
+      }
+    }
+
+    final status = _text(task['status']).toLowerCase();
+    task['planning_status'] = _text(task['planning_status']).isEmpty
+        ? _text(task['status'])
+        : task['planning_status'];
+    if (_text(task['agenda_kleur']).isEmpty) {
+      task['agenda_kleur'] = switch (status) {
+        'geannuleerd' => 'grijs',
+        'afgerond' || 'voltooid' => 'groen',
+        _ => 'blauw',
+      };
+    }
+
+    return task;
+  }
+
   Future<void> _loadAgenda() async {
     setState(() {
       _isLoading = true;
@@ -1382,15 +1560,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id ?? '';
 
-      final response = await AppSupabase.client
-          .from('app_facilitator_agenda')
-          .select()
-          .order('geplande_datum', ascending: true);
+      final opdrachten = await _fetchAgendaOpdrachten();
 
       final grouped = <DateTime, List<dynamic>>{};
-      for (final raw in (response as List)) {
-        if (raw is! Map) continue;
-        final task = Map<String, dynamic>.from(raw);
+      for (final task in opdrachten) {
         final day = _normalizeDate(_parseDate(task['geplande_datum']));
         grouped.putIfAbsent(day, () => <dynamic>[]).add(task);
       }
@@ -1442,7 +1615,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     if (raw is! Map) return false;
     final task = Map<String, dynamic>.from(raw);
     final klant = _text(task['bedrijfsnaam']);
-    final project = _text(task['project_naam']);
+    final project = _agendaProjectNaam(task);
     final regio = _text(task['werk_regio']);
 
     if (_filterKlant != null &&
@@ -1577,7 +1750,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         final value = field == 'bedrijfsnaam'
             ? _text(task['bedrijfsnaam'])
             : field == 'project_naam'
-            ? _text(task['project_naam'])
+            ? _agendaProjectNaam(task)
             : _text(task['werk_regio']);
         if (value.isNotEmpty) set.add(value);
       }
@@ -1907,10 +2080,10 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
               children: [
                 Align(
                   alignment: Alignment.topRight,
-                  child: Text(
-                    '${date.day}',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
+              child: Text(
+                '${date.day}',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
                       fontWeight: FontWeight.w800,
                       color: textColor,
                     ),
@@ -1951,13 +2124,19 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   ) {
     final raw = event.event;
     final task = raw is Map ? Map<String, dynamic>.from(raw as Map) : null;
+    final isGeannuleerd = task != null && _isTaskGeannuleerd(task);
+    final bgOpacity = isGeannuleerd ? 0.1 : 0.15;
+    final textDarkColor =
+        isGeannuleerd ? Colors.grey.shade500 : Colors.blue.shade900;
+    final titleDecoration =
+        isGeannuleerd ? TextDecoration.lineThrough : TextDecoration.none;
     final chip = GestureDetector(
       onTap: () => _onCalendarEventTap(event, date),
       child: Container(
         margin: const EdgeInsets.only(bottom: 2),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: event.color.withValues(alpha: 0.15),
+          color: event.color.withValues(alpha: bgOpacity),
           borderRadius: BorderRadius.circular(4),
           border: Border(left: BorderSide(color: event.color, width: 3)),
         ),
@@ -1968,14 +2147,17 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
           style: GoogleFonts.inter(
             fontSize: 9,
             fontWeight: FontWeight.w700,
-            color: Colors.blue.shade900,
+            color: textDarkColor,
             height: 1.1,
+            decoration: titleDecoration,
           ),
         ),
       ),
     );
 
-    if (task == null || !_isVerplaatsbaarTask(task)) return chip;
+    if (task == null || !_isVerplaatsbaarTask(task)) {
+      return Opacity(opacity: isGeannuleerd ? 0.3 : 1.0, child: chip);
+    }
 
     return LongPressDraggable<Map<String, dynamic>>(
       data: task,
@@ -2420,9 +2602,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
     final end = _formatTime(item['eindtijd']);
     final plannedDate = _parseDate(item['geplande_datum']);
     final plannedDateLabel = _fmtAgendaDate(plannedDate);
-    final project = _text(item['project_naam']).isEmpty
-        ? 'Onbekend'
-        : _text(item['project_naam']);
+    final project = _agendaTitelVoorTask(item);
     final company = _text(item['bedrijfsnaam']).isEmpty
         ? 'Onbekend'
         : _text(item['bedrijfsnaam']);
@@ -2543,7 +2723,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
   }
 
   Future<void> _openAgendaDetailModal(Map<String, dynamic> task) async {
-    await showModalBottomSheet<void>(
+    final refreshed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -2555,6 +2735,7 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
         ),
       ),
     );
+    if (refreshed == true && mounted) await _loadAgenda();
   }
 
   Future<void> _openPersoonlijkAlleenLezen(Map<String, dynamic> task) async {
@@ -2755,34 +2936,11 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
       excludeDay: _selectedDay,
     );
 
-    return Scaffold(
-      backgroundColor: bg,
-      drawer: const AppDrawer(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _isLoading
-            ? null
-            : () async {
-                final ok = await AgendaItemAddModal.show(context);
-                if (ok == true && mounted) await _loadAgenda();
-              },
-        child: const Icon(Icons.add),
-      ),
-      appBar: AppBar(
-        backgroundColor: bg,
-        elevation: 0,
-        title: Text(
-          'Agenda Control Room',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.3),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Vernieuwen',
-            onPressed: _isLoading ? null : _loadAgenda,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: CalendarControllerProvider<Map<String, dynamic>>(
+    return ColoredBox(
+      color: bg,
+      child: Stack(
+      children: [
+        CalendarControllerProvider<Map<String, dynamic>>(
         controller: _eventController,
         child: SelectionArea(
         child: SingleChildScrollView(
@@ -2858,11 +3016,26 @@ class _PlanningAgendaScreenState extends State<PlanningAgendaScreen> {
                     ),
                   ),
                 SizedBox(height: isMobile ? 96 : 24),
-                                      ],
-                                    ),
-                                  ),
+            ],
+          ),
         ),
       ),
+    ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            onPressed: _isLoading
+                ? null
+                : () async {
+                    final ok = await AgendaItemAddModal.show(context);
+                    if (ok == true && mounted) await _loadAgenda();
+                  },
+            child: const Icon(Icons.add),
+          ),
+        ),
+      ],
+    ),
     );
   }
 }
@@ -2875,6 +3048,31 @@ class OpdrachtDataSource extends CalendarDataSource {
     appointments = source;
     resources = resourceList;
   }
+}
+
+String _agendaTrim(dynamic value) => (value ?? '').toString().trim();
+
+Map<String, dynamic>? _agendaFirstMapFrom(dynamic raw) {
+  if (raw is Map) return Map<String, dynamic>.from(raw);
+  if (raw is List && raw.isNotEmpty && raw.first is Map) {
+    return Map<String, dynamic>.from(raw.first as Map);
+  }
+  return null;
+}
+
+String _agendaProjectNaam(Map<String, dynamic> task) {
+  final projectData = _agendaFirstMapFrom(task['projecten']);
+  final nested = _agendaTrim(projectData?['project_naam']);
+  if (nested.isNotEmpty) return nested;
+  return _agendaTrim(task['project_naam']);
+}
+
+String _agendaTitelVoorTask(Map<String, dynamic> task) {
+  final projectNaam = _agendaProjectNaam(task);
+  if (projectNaam.isNotEmpty) return projectNaam;
+  final bedrijf = _agendaTrim(task['bedrijfsnaam']);
+  if (bedrijf.isNotEmpty) return bedrijf;
+  return 'Opdracht';
 }
 
 class AgendaDetailModal extends StatefulWidget {
@@ -2951,6 +3149,10 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
     return status == 'afgerond' || status == 'voltooid';
   }
 
+  bool _isTaskGeannuleerd(Map<String, dynamic> task) {
+    return _text(task['status']).toLowerCase() == 'geannuleerd';
+  }
+
   bool get _isVerleden {
     final d = _parseDate(widget.task['geplande_datum']);
     if (d == null) return false;
@@ -2959,10 +3161,13 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
     return DateTime(d.year, d.month, d.day).isBefore(startOfToday);
   }
 
+  bool get _isLocked =>
+      _isVerleden || _isTaskAfgerond(widget.task) || _isTaskGeannuleerd(widget.task);
+
   bool get _canVerplaatsen =>
       widget.onVerplaatsVeilig != null &&
       widget.task['_persoonlijk_agenda'] != true &&
-      !_isTaskAfgerond(widget.task) &&
+      !_isLocked &&
       _opdrachtIdFromTask(widget.task).isNotEmpty;
 
   bool get _planningChanged {
@@ -2996,10 +3201,9 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
   String _geplandeOperator = 'Onbekend';
 
   String _opdrachtIdFromTask(Map<String, dynamic> task) {
-    final candidate = _text(task['opdracht_id']).isNotEmpty
-        ? _text(task['opdracht_id'])
-        : _text(task['id']);
-    return candidate;
+    final id = _text(task['id']);
+    if (id.isNotEmpty) return id;
+    return _text(task['opdracht_id']);
   }
 
   Future<void> _loadToelichtingPlanning() async {
@@ -3120,32 +3324,42 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
     required String label,
     required String value,
     required IconData icon,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
+    bool enabled = true,
   }) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final iconColor = enabled
+        ? cs.primary
+        : cs.onSurface.withValues(alpha: 0.35);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1A2030) : const Color(0xFFF4F6FA),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: cs.primary.withValues(alpha: 0.22)),
+            border: Border.all(
+              color: enabled
+                  ? cs.primary.withValues(alpha: 0.22)
+                  : cs.onSurface.withValues(alpha: 0.12),
+            ),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 20, color: cs.primary),
+              Icon(icon, size: 20, color: iconColor),
               const SizedBox(width: 10),
               Expanded(
                 child: RichText(
                   text: TextSpan(
                     style: GoogleFonts.inter(
-                      color: cs.onSurface,
+                      color: enabled
+                          ? cs.onSurface
+                          : cs.onSurface.withValues(alpha: 0.55),
                       fontSize: 13.5,
                       fontWeight: FontWeight.w700,
                     ),
@@ -3165,7 +3379,9 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
               Icon(
                 Icons.edit_outlined,
                 size: 18,
-                color: cs.onSurface.withValues(alpha: 0.45),
+                color: enabled
+                    ? cs.onSurface.withValues(alpha: 0.45)
+                    : cs.onSurface.withValues(alpha: 0.25),
               ),
             ],
           ),
@@ -3175,7 +3391,7 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
   }
 
   Future<void> _saveToelichtingPlanning() async {
-    if (_savingToelichting || _isVerleden) return;
+    if (_savingToelichting || _isLocked) return;
     final opdrachtId = _opdrachtIdFromTask(widget.task);
     if (opdrachtId.isEmpty) return;
 
@@ -3290,9 +3506,15 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final project = _text(widget.task['project_naam']).isEmpty
-        ? 'Onbekend project'
-        : _text(widget.task['project_naam']);
+    final project = _agendaTitelVoorTask(widget.task);
+    final status =
+        _text(widget.task['status']).isEmpty
+            ? 'ONBEKEND'
+            : _text(widget.task['status']).toUpperCase();
+    final werkbonUrl = _text(widget.task['werkbon_pdf_url']);
+    final isAfgerond = _isTaskAfgerond(widget.task);
+    final isGeannuleerd = _isTaskGeannuleerd(widget.task);
+    final isLocked = _isVerleden || isAfgerond || isGeannuleerd;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.92,
@@ -3323,6 +3545,140 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
                   ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Status: $status',
+                      style: TextStyle(
+                        color: Colors.blue.shade900,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  if (isLocked) ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      isGeannuleerd ? Icons.block : Icons.lock,
+                      color: isGeannuleerd ? Colors.grey : Colors.red,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isGeannuleerd ? 'Geannuleerd' : 'Vergrendeld',
+                      style: TextStyle(
+                        color: isGeannuleerd
+                            ? Colors.grey.shade700
+                            : Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  if (!isAfgerond && !isGeannuleerd)
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade600,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Opdracht annuleren?'),
+                            content: const Text(
+                              'Weet je zeker dat je deze opdracht wilt annuleren? '
+                              'Hij verdwijnt uit het rooster van de operator en het planbord.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('Terug'),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                ),
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('Ja, annuleer'),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirm != true || !context.mounted) return;
+
+                        final opdrachtId = _opdrachtIdFromTask(widget.task);
+                        if (opdrachtId.isEmpty) return;
+
+                        try {
+                          try {
+                            await AppSupabase.client
+                                .from('opdracht_planning')
+                                .update({'status': 'geannuleerd'})
+                                .eq('opdracht_id', opdrachtId);
+                          } catch (planningError) {
+                            debugPrint(
+                              'Let op: opdracht_planning kon niet geannuleerd worden: '
+                              '$planningError',
+                            );
+                          }
+
+                          await AppSupabase.client
+                              .from('opdrachten')
+                              .update({'status': 'geannuleerd'})
+                              .eq('id', opdrachtId);
+
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Opdracht definitief geannuleerd.'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                          Navigator.pop(context, true);
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Fout bij annuleren: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      child: const Text(
+                        'Annuleren',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -3414,14 +3770,14 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
                   ),
                 ],
               ] else ...[
-                _block(context, 'Geplande datum', _geplandeDatumHuman ?? '—'),
-                const SizedBox(height: 8),
-                _block(context, 'Tijd', '$_geplandeStart – $_geplandeEind'),
+              _block(context, 'Geplande datum', _geplandeDatumHuman ?? '—'),
+              const SizedBox(height: 8),
+              _block(context, 'Tijd', '$_geplandeStart – $_geplandeEind'),
               ],
               const SizedBox(height: 8),
               _block(context, 'Operator', _geplandeOperator),
 
-              if (!_isVerleden)
+              if (!_isLocked)
                 Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -3518,8 +3874,8 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
               else if (_toelichting != null && _toelichting!.isNotEmpty)
                 _block(context, 'Opmerking (alleen-lezen)', _toelichting!),
 
-              if (_text(widget.task['werkbon_pdf_url']).isNotEmpty) ...[
-                const SizedBox(height: 16),
+              if (werkbonUrl.isNotEmpty) ...[
+                const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -3531,13 +3887,12 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue.shade800,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.all(16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     onPressed: () async {
-                      final werkbonUrl = _text(widget.task['werkbon_pdf_url']);
                       final url = Uri.parse(werkbonUrl);
                       if (await canLaunchUrl(url)) {
                         await launchUrl(
@@ -3552,6 +3907,32 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
                         );
                       }
                     },
+                  ),
+                ),
+              ] else if (isLocked) ...[
+                const SizedBox(height: 24),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Geen werkbon beschikbaar.',
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

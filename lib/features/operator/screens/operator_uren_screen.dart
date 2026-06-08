@@ -108,14 +108,16 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
             'werkelijke_starttijd, werkelijke_eindtijd, gewerkte_uren_decimaal, '
             'bruto_loonkosten, uren_status, status, bedrijfsnaam, '
             'opdracht:opdrachten!opdracht_planning_opdracht_id_fkey('
-            'uitvoer_adres_volledig, bedrijfsnaam, projecten(project_naam))',
+            'status, uitvoer_adres_volledig, bedrijfsnaam, projecten(project_naam))',
           )
           .eq('operator_id', uid)
+          .neq('status', OpdrachtPlanningStatus.geannuleerd)
           .order('geplande_datum', ascending: false)
           .limit(200);
 
       final shifts = (shiftsResponse as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
+          .where(_isUrenShiftZichtbaar)
           .toList();
 
       Map<String, dynamic>? gebruikerPayrollRow;
@@ -298,6 +300,20 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
     if (d == 0 && v == null) return '0';
     if (d == d.roundToDouble()) return d.toInt().toString();
     return NumberFormat.decimalPattern('nl_NL').format(d);
+  }
+
+  bool _isUrenShiftZichtbaar(Map<String, dynamic> shift) {
+    final planningStatus =
+        (shift['status'] ?? '').toString().trim().toLowerCase();
+    if (planningStatus == OpdrachtPlanningStatus.geannuleerd) return false;
+
+    final opdracht = shift['opdracht'];
+    if (opdracht is Map) {
+      final opdrachtStatus =
+          (opdracht['status'] ?? '').toString().trim().toLowerCase();
+      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd) return false;
+    }
+    return true;
   }
 
   double _asDouble(dynamic v) {

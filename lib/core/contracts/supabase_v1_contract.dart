@@ -86,6 +86,7 @@ abstract final class OpdrachtPlanningTable {
   static const String status = 'status';
   static const String urenStatus = 'uren_status';
   static const String paklijstAkkoord = 'paklijst_akkoord';
+  static const String urenGoedgekeurdOp = 'uren_goedgekeurd_op';
 }
 
 /// Waarden voor [OpdrachtPlanningTable.status] en [OpdrachtenTable.status].
@@ -107,10 +108,13 @@ abstract final class OpdrachtenTable {
   static const String uitvoerAdresVolledig = 'uitvoer_adres_volledig';
   static const String werkbonPdfUrl = 'werkbon_pdf_url';
   static const String toelichtingPlanning = 'toelichting_planning';
+  static const String afgerondOp = 'afgerond_op';
+  static const String voltooidOp = 'voltooid_op';
 }
 
 abstract final class OpdrachtStatus {
   static const String open = 'open';
   static const String ingepland = 'ingepland';
   static const String afgerond = 'afgerond';
+  static const String voltooid = 'voltooid';
 }

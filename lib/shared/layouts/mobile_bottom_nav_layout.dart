@@ -8,8 +8,7 @@ import '../../providers/user_provider.dart';
 import '../../core/models/user_role.dart';
 import '../../features/facilitator/screens/facilitator_dashboard_screen.dart';
 import '../../features/facilitator/screens/agenda_screen.dart';
-import '../../features/facilitator/screens/planbord_screen.dart';
-import '../../features/facilitator/screens/planning_agenda_screen.dart';
+import '../../features/facilitator/screens/plannings_dashboard_screen.dart';
 import '../../features/facilitator/screens/dks_dashboard_screen.dart';
 import '../../features/facilitator/screens/project_overview_screen.dart';
 import '../../features/facilitator/screens/contract_management_screen.dart';
@@ -171,9 +170,9 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
         );
       case 'planbord':
         return (
-          label: 'Planbord',
+          label: 'Planning',
           icon: Icons.calendar_month_outlined,
-          screen: const PlanbordScreen(),
+          screen: const PlanningsDashboardScreen(),
         );
       case 'crm':
         return (
@@ -213,9 +212,9 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
         );
       case 'planning-agenda':
         return (
-          label: 'Agenda',
+          label: 'Planning',
           icon: Icons.event_available_outlined,
-          screen: const PlanningAgendaScreen(),
+          screen: const PlanningsDashboardScreen(initialTab: 0),
         );
       case 'dks':
         return (

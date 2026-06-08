@@ -34,8 +34,7 @@ import '../../features/facilitator/screens/project_overview_screen.dart';
 import '../../features/facilitator/screens/relations_crm_screen.dart'
     as facilitator_crm;
 import '../../features/facilitator/screens/dks_dashboard_screen.dart';
-import '../../features/facilitator/screens/planbord_screen.dart';
-import '../../features/facilitator/screens/planning_agenda_screen.dart';
+import '../../features/facilitator/screens/plannings_dashboard_screen.dart';
 import '../../features/facilitator/screens/quote_overview_screen.dart';
 import '../../features/facilitator/screens/agenda_screen.dart';
 import '../../features/facilitator/screens/sales_centre_screen.dart';
@@ -556,18 +555,10 @@ class AppDrawerContent extends StatelessWidget {
                       navTile(
                         name: '/facilitator/planning',
                         icon: Icons.calendar_month_outlined,
-                        title: 'Planbord (Toewijzen)',
+                        title: 'Planning & Projecten',
                         screen: isDesktop
-                            ? const PlanbordScreen()
+                            ? const PlanningsDashboardScreen()
                             : const MobileBottomNavLayout(initialKey: 'planbord'),
-                      ),
-                      navTile(
-                        name: '/facilitator/planning-agenda',
-                        icon: Icons.event_available_outlined,
-                        title: 'Planning (Agenda)',
-                        screen: isDesktop
-                            ? const PlanningAgendaScreen()
-                            : const PlanningAgendaScreen(),
                       ),
                       navTile(
                         name: '/facilitator/dks',

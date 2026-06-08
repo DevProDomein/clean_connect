@@ -12,7 +12,7 @@ import '../../../core/widgets/app_drawer.dart';
 import '../../admin/screens/relation_detail_screen.dart';
 import 'dks_dashboard_screen.dart';
 import 'dks_project_dossier_screen.dart';
-import 'planbord_screen.dart';
+import 'plannings_dashboard_screen.dart';
 import 'project_overview_screen.dart';
 import 'quote_create_header_screen.dart';
 import 'quote_overview_screen.dart';
