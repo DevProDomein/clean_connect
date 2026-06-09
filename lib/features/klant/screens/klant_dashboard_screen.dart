@@ -70,7 +70,9 @@ class _KlantDashboardScreenState extends State<KlantDashboardScreen> {
 
       final profiel = await AppSupabase.client
           .from('gebruikers')
-          .select('voornaam, achternaam, bedrijven(bedrijfsnaam)')
+          .select(
+            'voornaam, achternaam, bedrijven!gebruikers_bedrijf_id_fkey(bedrijfsnaam)',
+          )
           .eq('id', userId)
           .maybeSingle();
 
@@ -90,7 +92,9 @@ class _KlantDashboardScreenState extends State<KlantDashboardScreen> {
       final Map<String, dynamic>? p = profiel == null
           ? null
           : Map<String, dynamic>.from(profiel as Map);
-      final bedrijf = _mapFrom(p?['bedrijven']);
+      final bedrijf = _mapFrom(
+        p?['bedrijven'] ?? p?['bedrijven!gebruikers_bedrijf_id_fkey'],
+      );
       final provider = context.read<UserProvider>();
 
       setState(() {

@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../core/widgets/network_image_fallback.dart';
-import '../../admin/screens/relation_detail_screen.dart';
+import 'crm/bedrijf_detail_screen.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 
 /// Facilitator-scoped Relatiebeheer (CRM) screen.
@@ -296,7 +296,7 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
     Navigator.of(context)
         .push<void>(
           MaterialPageRoute<void>(
-            builder: (_) => const RelationDetailScreen(
+            builder: (_) => const BedrijfDetailScreen(
               bedrijfId: null,
               createAsKlant: true,
             ),
@@ -567,7 +567,7 @@ class _RelationsCrmScreenState extends State<RelationsCrmScreen> {
                         settings: const RouteSettings(
                             name: '/facilitator/relations/detail'),
                         builder: (_) =>
-                            RelationDetailScreen(bedrijfId: bedrijfId),
+                            BedrijfDetailScreen(bedrijfId: bedrijfId),
                       ),
                     );
                     if (!mounted) return;

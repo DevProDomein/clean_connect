@@ -79,12 +79,13 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
   String? _logoUrl;
 
   Map<String, dynamic>? _stats;
-  List<Map<String, dynamic>> _contacten = [];
+  List<Map<String, dynamic>> _contactpersonen = [];
   List<Map<String, dynamic>> _btwCodes = [];
 
   late TabController _tabController;
 
   bool _isLoading = true;
+  bool _isLoadingContacts = true;
   bool _isSaving = false;
   Object? _loadError;
 
@@ -114,6 +115,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     _tabController = TabController(length: 2, vsync: this, initialIndex: idx);
     _id = widget.bedrijfId;
     _loadAll();
+    _loadContactpersonen();
   }
 
   @override
@@ -205,7 +207,6 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     try {
       Map<String, dynamic>? bedrijf;
       Map<String, dynamic>? stats;
-      List<Map<String, dynamic>> contacten = const [];
 
       if ((_id ?? '').isNotEmpty) {
         final bedrijfRes = await AppSupabase.client
@@ -232,15 +233,6 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
           stats = null;
         }
 
-        final dynamic contactRes = await AppSupabase.client
-            .from('contactpersonen')
-            .select()
-            .eq('bedrijf_id', _id!)
-            .order('id', ascending: true);
-        contacten = (contactRes as List)
-            .whereType<Map>()
-            .map((r) => Map<String, dynamic>.from(r))
-            .toList();
       }
 
       final dynamic btwRes = await AppSupabase.client
@@ -259,7 +251,6 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
       if (!mounted) return;
       setState(() {
         _stats = stats;
-        _contacten = contacten;
         _btwCodes = btwCodes;
       });
     } catch (e) {
@@ -274,26 +265,36 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     }
   }
 
-  /// Alleen contactpersonen verversen (sneller dan volledige [_loadAll]).
-  Future<void> _reloadContacten() async {
+  Future<void> _loadContactpersonen() async {
     final bid = _id;
-    if (bid == null || bid.isEmpty) return;
+    if (bid == null || bid.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _contactpersonen = [];
+          _isLoadingContacts = false;
+        });
+      }
+      return;
+    }
+
+    setState(() => _isLoadingContacts = true);
     try {
-      final dynamic contactRes = await AppSupabase.client
+      final data = await AppSupabase.client
           .from('contactpersonen')
-          .select()
+          .select('*')
           .eq('bedrijf_id', bid)
-          .order('id', ascending: true);
-      final list = (contactRes as List)
-          .whereType<Map>()
-          .map((r) => Map<String, dynamic>.from(r))
-          .toList();
+          .order('achternaam');
       if (!mounted) return;
-      setState(() => _contacten = list);
-    } catch (e, st) {
-      debugPrint('_reloadContacten: $e\n$st');
-      if (!mounted) return;
-      _showError('Kon contacten niet vernieuwen: $e');
+      setState(() {
+        _contactpersonen = (data as List)
+            .whereType<Map>()
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('Fout bij laden contactpersonen: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingContacts = false);
     }
   }
 
@@ -392,6 +393,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
 
       if (!mounted) return;
       await _loadAll(silent: true);
+      await _loadContactpersonen();
       if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -1177,7 +1179,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
               Expanded(child: _sectionTitle('Contactpersonen')),
               FilledButton.icon(
                 onPressed:
-                    (_id ?? '').isEmpty ? null : _openAddContactDialog,
+                    (_id ?? '').isEmpty ? null : _openAddContactModal,
                 icon: const Icon(Icons.add_rounded, size: 18),
                 label: Text(
                   'Toevoegen',
@@ -1204,7 +1206,12 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
             message:
                 'Sla de relatie op om contactpersonen toe te voegen.',
           )
-        else if (_contacten.isEmpty)
+        else if (_isLoadingContacts)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_contactpersonen.isEmpty)
           _buildInfoBox(
             icon: Icons.person_add_alt_1_rounded,
             title: 'Geen contactpersonen',
@@ -1212,7 +1219,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
                 'Voeg een contactpersoon toe om communicatie vast te leggen.',
           )
         else
-          ..._contacten.map(_buildContactCard),
+          ..._contactpersonen.map(_buildContactCard),
         const SizedBox(height: 28),
         SizedBox(
           width: double.infinity,
@@ -1443,7 +1450,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
           .from('contactpersonen')
           .delete()
           .eq('id', contactId);
-      await _reloadContacten();
+      await _loadContactpersonen();
       if (!mounted) return;
       _showSuccess('Contactpersoon verwijderd.');
     } catch (e) {
@@ -1452,7 +1459,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     }
   }
 
-  Future<void> _openAddContactDialog() async {
+  Future<void> _openAddContactModal() async {
     if ((_id ?? '').isEmpty) return;
     final bedrijfId = _id!;
 
@@ -1473,7 +1480,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
 
     if (!mounted) return;
     if (success == true) {
-      await _reloadContacten();
+      await _loadContactpersonen();
       if (!mounted) return;
       messenger?.showSnackBar(
         const SnackBar(
@@ -1506,7 +1513,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
 
     if (!mounted) return;
     if (success == true) {
-      await _reloadContacten();
+      await _loadContactpersonen();
       if (!mounted) return;
       messenger?.showSnackBar(
         const SnackBar(

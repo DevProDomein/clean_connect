@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/models/user_role.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../providers/user_provider.dart';
-import '../../admin/screens/relation_detail_screen.dart';
+import 'crm/bedrijf_detail_screen.dart';
 
 class CrmOverviewScreen extends StatefulWidget {
   const CrmOverviewScreen({super.key});
@@ -178,7 +178,7 @@ class _CrmOverviewScreenState extends State<CrmOverviewScreen> {
               : () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => RelationDetailScreen(bedrijfId: bedrijfId),
+                      builder: (_) => BedrijfDetailScreen(bedrijfId: bedrijfId),
                     ),
                   );
                 },

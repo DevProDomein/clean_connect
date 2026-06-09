@@ -138,28 +138,31 @@ class _AddContactModalState extends State<AddContactModal> {
               Row(
                 children: [
                   Expanded(
-                    child: _buildField('Voornaam', _firstNameController),
+                    child: _buildModernTextField(
+                      'Voornaam',
+                      _firstNameController,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _buildField('Achternaam', _lastNameController),
+                    child: _buildModernTextField(
+                      'Achternaam',
+                      _lastNameController,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              _buildField(
+              _buildModernTextField('Functie', _functionController),
+              _buildModernTextField(
                 'E-mailadres',
                 _emailController,
                 keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 12),
-              _buildField(
-                'Telefoon',
+              _buildModernTextField(
+                'Telefoonnummer',
                 _phoneController,
                 keyboardType: TextInputType.phone,
               ),
-              const SizedBox(height: 12),
-              _buildField('Functie', _functionController),
               const SizedBox(height: 16),
               CupertinoFormRow(
                 prefix: const Text('Is facturatie contact?'),
@@ -201,22 +204,51 @@ class _AddContactModalState extends State<AddContactModal> {
     );
   }
 
-  Widget _buildField(
+  Widget _buildModernTextField(
     String label,
     TextEditingController controller, {
     TextInputType? keyboardType,
   }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.grey.shade100,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF0F172A),
+            ),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.grey.shade100,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

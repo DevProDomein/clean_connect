@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/models/user_role.dart';
-import '../../../core/services/invitation_service.dart';
 import '../../../core/services/user_management_service.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
@@ -20,13 +19,27 @@ class UserManagementScreen extends StatefulWidget {
   State<UserManagementScreen> createState() => _UserManagementScreenState();
 }
 
-class _UserManagementScreenState extends State<UserManagementScreen> {
+class _UserManagementScreenState extends State<UserManagementScreen>
+    with SingleTickerProviderStateMixin {
   Future<List<UserSummary>>? _future;
+  late final TabController _mainTabController;
+  final GlobalKey<_MedewerkersPanelState> _medewerkersPanelKey =
+      GlobalKey<_MedewerkersPanelState>();
 
   @override
   void initState() {
     super.initState();
+    _mainTabController = TabController(length: 2, vsync: this)
+      ..addListener(() {
+        if (!_mainTabController.indexIsChanging) setState(() {});
+      });
     _future = UserManagementService().fetchAllUsers();
+  }
+
+  @override
+  void dispose() {
+    _mainTabController.dispose();
+    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -162,45 +175,48 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       );
     }
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF2F2F7),
-        drawer: const AppDrawer(),
-        appBar: AppBar(
-          title: Text(
-            'Gebruikersbeheer',
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w900,
-              fontSize: 20,
-              letterSpacing: -0.4,
-            ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF2F2F7),
+      drawer: const AppDrawer(),
+      appBar: AppBar(
+        title: Text(
+          'Gebruikersbeheer',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w900,
+            fontSize: 20,
+            letterSpacing: -0.4,
           ),
-          actions: [
-            IconButton(
-              tooltip: 'Vernieuwen',
-              onPressed: _reload,
-              icon: const Icon(Icons.refresh),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Vernieuwen',
+            onPressed: _reload,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.blue.shade900,
+        tooltip: 'Nieuwe gebruiker uitnodigen',
+        onPressed: () async {
+          final did = await showDialog<bool>(
+            context: context,
+            builder: (_) => const SelectionArea(
+              child: _InviteUserDialog(),
             ),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          tooltip: 'Nieuwe gebruiker uitnodigen',
-          onPressed: () async {
-            final did = await showDialog<bool>(
-              context: context,
-              builder: (_) => const SelectionArea(
-                child: _InviteUserDialog(),
-              ),
-            );
-            if (did == true) {
-              await up.loadForCurrentUser();
-              await _reload();
-            }
-          },
-          child: const Icon(Icons.add),
-        ),
-        body: SelectionArea(
+          );
+          if (did == true) {
+            await up.loadForCurrentUser();
+            await _reload();
+          }
+        },
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      bottomNavigationBar: _mainTabController.index == 0
+          ? _medewerkersPanelKey.currentState?.buildBottomPaginationBar()
+          : null,
+      body: SelectionArea(
           child: FutureBuilder<List<UserSummary>>(
             future: _future,
             builder: (context, snapshot) {
@@ -230,76 +246,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 10, 24, 12),
-                    child: _TopTabs(),
+                    child: _TopTabs(controller: _mainTabController),
                   ),
                   Expanded(
                     child: TabBarView(
+                      controller: _mainTabController,
                       children: [
-                        // Tab 1: Medewerkers (existing list + modal)
-                        DefaultTabController(
-                          length: 5,
-                          child: Column(
-                            children: [
-                              Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(24, 10, 24, 10),
-                                child: _FilterTabs(),
-                              ),
-                              Expanded(
-                                child: TabBarView(
-                                  children: [
-                                    _UserList(
-                                      users: users,
-                                      filter: (u) => true,
-                                      isGenerator: up.isGenerator,
-                                      onTap: _openDeepDive,
-                                      onShowRoleDialog: _showChangeRoleDialog,
-                                    ),
-                                    _UserList(
-                                      users: users,
-                                      filter: (u) =>
-                                          u.roleString.trim().toLowerCase() ==
-                                          'klant',
-                                      isGenerator: up.isGenerator,
-                                      onTap: _openDeepDive,
-                                      onShowRoleDialog: _showChangeRoleDialog,
-                                    ),
-                                    _UserList(
-                                      users: users,
-                                      filter: (u) =>
-                                          u.roleString.trim().toLowerCase() ==
-                                          'operator',
-                                      isGenerator: up.isGenerator,
-                                      onTap: _openDeepDive,
-                                      onShowRoleDialog: _showChangeRoleDialog,
-                                    ),
-                                    _UserList(
-                                      users: users,
-                                      filter: (u) =>
-                                          u.roleString.trim().toLowerCase() ==
-                                          'facilitator',
-                                      isGenerator: up.isGenerator,
-                                      onTap: _openDeepDive,
-                                      onShowRoleDialog: _showChangeRoleDialog,
-                                    ),
-                                    _UserList(
-                                      users: users,
-                                      filter: (u) {
-                                        final r =
-                                            u.roleString.trim().toLowerCase();
-                                        return r == 'administrator' ||
-                                            r == 'beheerder' ||
-                                            r == 'generator';
-                                      },
-                                      isGenerator: up.isGenerator,
-                                      onTap: _openDeepDive,
-                                      onShowRoleDialog: _showChangeRoleDialog,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                        _MedewerkersPanel(
+                          key: _medewerkersPanelKey,
+                          users: users,
+                          isGenerator: up.isGenerator,
+                          onTap: _openDeepDive,
+                          onShowRoleDialog: _showChangeRoleDialog,
+                          onPaginationChanged: () => setState(() {}),
                         ),
 
                         // Tab 2: Systeemrechten Overzicht (read-only dictionary)
@@ -312,43 +271,52 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
             },
           ),
         ),
-      ),
     );
   }
 }
 
 class _TopTabs extends StatelessWidget {
+  const _TopTabs({required this.controller});
+
+  final TabController controller;
+
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Container(
+      height: 48,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: cs.onSurface.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(12),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: TabBar(
-        // More breathing room: bigger tabs + bigger active pill.
-        labelPadding: const EdgeInsets.symmetric(horizontal: 24),
-        indicatorPadding: EdgeInsets.zero,
-        splashBorderRadius: BorderRadius.circular(24),
+        controller: controller,
+        indicatorSize: TabBarIndicatorSize.tab,
         dividerColor: Colors.transparent,
+        indicatorPadding: const EdgeInsets.all(4),
+        splashBorderRadius: BorderRadius.circular(8),
+        overlayColor: WidgetStateProperty.all(Colors.transparent),
         indicator: BoxDecoration(
-          color: cs.surface,
-          borderRadius: BorderRadius.circular(18),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 20,
-              offset: const Offset(0, 5),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
           ],
-          border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
         ),
-        labelColor: cs.onSurface,
-        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.60),
-        labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900),
+        labelColor: Colors.blue.shade900,
+        unselectedLabelColor: Colors.grey.shade600,
+        labelStyle: GoogleFonts.inter(
+          fontWeight: FontWeight.w800,
+          fontSize: 14,
+        ),
+        unselectedLabelStyle: GoogleFonts.inter(
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        ),
         tabs: const [
           Tab(text: 'Medewerkers'),
           Tab(text: 'Systeemrechten Overzicht'),
@@ -596,14 +564,33 @@ class _InviteUserDialog extends StatefulWidget {
 
 class _InviteUserDialogState extends State<_InviteUserDialog> {
   final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _voornaamController = TextEditingController();
+  final _achternaamController = TextEditingController();
+  final _telefoonController = TextEditingController();
 
-  String _email = '';
-  String _firstName = '';
-  String _lastName = '';
-
-  String? _role;
+  String? _selectedRol;
+  String? _selectedBedrijfId;
   bool _grantAdmin = false;
   bool _submitting = false;
+
+  List<Map<String, dynamic>> _suggestiesLijst = [];
+  Map<String, dynamic>? _geselecteerdeSuggestie;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSuggesties();
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _voornaamController.dispose();
+    _achternaamController.dispose();
+    _telefoonController.dispose();
+    super.dispose();
+  }
 
   List<String> _roleOptions(UserProvider inviter) {
     final isFacilitator = inviter.role == UserRole.facilitator;
@@ -616,146 +603,808 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
 
     if (isFacilitator) return const ['klant'];
 
-    // Default: no invite capability.
     return const [];
+  }
+
+  List<String> _beschikbareRollen(UserProvider inviter) {
+    final all = _roleOptions(inviter);
+    if (_geselecteerdeSuggestie != null) return all;
+    return all.where((r) => r != 'klant').toList();
+  }
+
+  void _syncSelectedRolWithOptions(List<String> options) {
+    if (_geselecteerdeSuggestie == null && _selectedRol == 'klant') {
+      _selectedRol = options.contains('operator')
+          ? 'operator'
+          : (options.isNotEmpty ? options.first : null);
+    }
+    if (_selectedRol != null && !options.contains(_selectedRol)) {
+      _selectedRol = options.isNotEmpty ? options.first : null;
+    }
+    _selectedRol ??= options.isNotEmpty ? options.first : null;
+  }
+
+  void _clearGeselecteerdeSuggestie(UserProvider inviter) {
+    setState(() {
+      _geselecteerdeSuggestie = null;
+      _selectedBedrijfId = null;
+      if (_selectedRol == 'klant') {
+        _selectedRol = 'operator';
+      }
+      _syncSelectedRolWithOptions(_beschikbareRollen(inviter));
+    });
+  }
+
+  String _rolFromGebruikerMap(Map<String, dynamic> g) {
+    final raw = g['gebruikersrol'] ?? g['rol'];
+    return raw?.toString().trim().toLowerCase() ?? '';
+  }
+
+  String _suggestieRolSectieTitel(String displayRol) {
+    switch (displayRol.toLowerCase()) {
+      case 'klant':
+        return 'Klanten / Opdrachtgevers';
+      case 'operator':
+        return 'Operators';
+      case 'facilitator':
+        return 'Facilitators';
+      case 'generator':
+        return 'Generators';
+      default:
+        return displayRol;
+    }
+  }
+
+  Map<String, dynamic>? _bedrijfMapFrom(dynamic raw) {
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return null;
+  }
+
+  dynamic _bedrijfEmbedFromGebruiker(Map<String, dynamic> gebruiker) {
+    return gebruiker['bedrijven'] ??
+        gebruiker['bedrijven!gebruikers_bedrijf_id_fkey'];
+  }
+
+  String _bedrijfsnaamFromContact(Map<String, dynamic> contact) {
+    final bedrijf = _bedrijfMapFrom(_bedrijfEmbedFromGebruiker(contact));
+    final naam = (bedrijf?['bedrijfsnaam'] ?? '').toString().trim();
+    return naam.isEmpty ? 'Onbekend bedrijf' : naam;
+  }
+
+  String? _bedrijfIdFromContact(Map<String, dynamic> contact) {
+    final bedrijf = _bedrijfMapFrom(_bedrijfEmbedFromGebruiker(contact));
+    final fromEmbed = (bedrijf?['id'] ?? '').toString().trim();
+    if (fromEmbed.isNotEmpty) return fromEmbed;
+    final direct = (contact['bedrijf_id'] ?? '').toString().trim();
+    return direct.isEmpty ? null : direct;
+  }
+
+  List<({String id, String naam})> _bedrijfOptiesUitSuggesties() {
+    final map = <String, String>{};
+    for (final gebruiker in _suggestiesLijst) {
+      final id = _bedrijfIdFromContact(gebruiker);
+      if (id == null || id.isEmpty) continue;
+      map[id] = _bedrijfsnaamFromContact(gebruiker);
+    }
+    return map.entries
+        .map((e) => (id: e.key, naam: e.value))
+        .toList()
+      ..sort((a, b) => a.naam.compareTo(b.naam));
+  }
+
+  Future<void> _loadSuggesties() async {
+    try {
+      final data = await AppSupabase.client
+          .from('gebruikers')
+          .select(
+            '*, bedrijven!gebruikers_bedrijf_id_fkey(bedrijfsnaam, id)',
+          )
+          .eq('heeft_app_account', false)
+          .order('achternaam');
+
+      if (mounted) {
+        setState(
+          () => _suggestiesLijst = List<Map<String, dynamic>>.from(data),
+        );
+      }
+    } catch (e) {
+      debugPrint('Fout bij ophalen suggesties: $e');
+    }
+  }
+
+  InputDecoration _inviteInputDecoration({
+    Color? fillColor,
+    String? hintText,
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      filled: true,
+      fillColor: fillColor ?? Colors.grey.shade50,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.blue.shade400, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFDC2626)),
+      ),
+    );
+  }
+
+  Widget _buildModernField({
+    required String label,
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+    bool enabled = true,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.blueGrey.shade800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          validator: validator,
+          enabled: enabled,
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: _inviteInputDecoration(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRolDropdown(List<String> options) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Rol',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.blueGrey.shade800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          key: ValueKey('rol-$_selectedRol-${_geselecteerdeSuggestie?['id']}'),
+          initialValue: _selectedRol,
+          decoration: _inviteInputDecoration(),
+          items: options
+              .map(
+                (r) => DropdownMenuItem(
+                  value: r,
+                  child: Text(
+                    r[0].toUpperCase() + r.substring(1),
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: options.isEmpty
+              ? null
+              : (v) {
+                  setState(() {
+                    _selectedRol = v;
+                    if (v != 'facilitator') _grantAdmin = false;
+                    if (v != 'klant') _selectedBedrijfId = null;
+                  });
+                },
+          validator: (v) =>
+              (v ?? '').trim().isEmpty ? 'Selecteer een rol.' : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBedrijfDropdown() {
+    final opties = _bedrijfOptiesUitSuggesties();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Gekoppeld bedrijf',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.blueGrey.shade800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          key: ValueKey(_selectedBedrijfId ?? ''),
+          initialValue: _selectedBedrijfId,
+          decoration: _inviteInputDecoration(),
+          hint: Text(
+            'Selecteer bedrijf',
+            style: GoogleFonts.inter(color: Colors.blueGrey.shade500),
+          ),
+          items: opties
+              .map(
+                (b) => DropdownMenuItem(
+                  value: b.id,
+                  child: Text(
+                    b.naam,
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (v) => setState(() => _selectedBedrijfId = v),
+        ),
+      ],
+    );
+  }
+
+  Widget _twoCol({
+    required bool isWide,
+    required Widget left,
+    required Widget right,
+  }) {
+    if (!isWide) {
+      return Column(
+        children: [
+          left,
+          const SizedBox(height: 16),
+          right,
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: left),
+        const SizedBox(width: 16),
+        Expanded(child: right),
+      ],
+    );
+  }
+
+  Future<void> _submitInvite(UserProvider inviter) async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final email = _emailController.text.trim();
+    final voornaam = _voornaamController.text.trim();
+    final achternaam = _achternaamController.text.trim();
+    final telefoon = _telefoonController.text.trim();
+
+    if (email.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('E-mailadres is verplicht!'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (_selectedRol == null || _selectedRol!.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selecteer een rol!'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      if (_geselecteerdeSuggestie != null) {
+        final existingId = _geselecteerdeSuggestie!['id'];
+
+        await AppSupabase.client.from(GebruikersTable.name).update({
+          'rol': _selectedRol,
+          GebruikersTable.gebruikersrol: _selectedRol,
+          'stuur_uitnodiging': true,
+        }).eq(GebruikersTable.id, existingId);
+      } else {
+        await AppSupabase.client.from(GebruikersTable.name).insert({
+          GebruikersTable.voornaam: voornaam,
+          GebruikersTable.achternaam: achternaam,
+          GebruikersTable.email: email,
+          'emailadres': email,
+          'telefoon': telefoon,
+          'rol': _selectedRol,
+          GebruikersTable.gebruikersrol: _selectedRol,
+          'heeft_app_account': false,
+          'stuur_uitnodiging': true,
+        });
+      }
+
+      var mailGelukt = false;
+      try {
+        debugPrint('Edge Function aanroepen voor email: $email');
+        final response = await AppSupabase.client.functions.invoke(
+          'invite_user',
+          body: {
+            'email': email,
+            'role': _selectedRol,
+            'fullName': '$voornaam $achternaam'.trim(),
+          },
+        );
+        debugPrint('Edge Function succesvol: ${response.data}');
+        mailGelukt = true;
+      } catch (funcError) {
+        debugPrint('EDGE FUNCTION FOUT: $funcError');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Dossier opgeslagen, maar mail versturen faalde: $funcError',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+
+      if (!mounted) return;
+      if (mailGelukt) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Uitnodiging succesvol verstuurd!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      Navigator.of(context).pop(true);
+    } catch (dbError) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fout bij opslaan in database: $dbError'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _openSuggestiesModal() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          height: MediaQuery.of(sheetContext).size.height * 0.7,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+          ),
+          child: Column(
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 12),
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Kies een klaarstaande gebruiker',
+                    style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+              ),
+              const Divider(),
+              Expanded(
+                child: _suggestiesLijst.isEmpty
+                    ? Center(
+                        child: Text(
+                          'Geen klaarstaande gebruikers gevonden.',
+                          style: GoogleFonts.inter(color: Colors.blueGrey),
+                        ),
+                      )
+                    : Builder(
+                        builder: (context) {
+                          final grouped = <String, List<Map<String, dynamic>>>{};
+                          for (final g in _suggestiesLijst) {
+                            final rolRaw = _rolFromGebruikerMap(g);
+                            final normalized =
+                                rolRaw.isEmpty ? 'klant' : rolRaw;
+                            final displayRol = normalized[0].toUpperCase() +
+                                normalized.substring(1);
+                            grouped.putIfAbsent(displayRol, () => []).add(g);
+                          }
+
+                          final sortedKeys = grouped.keys.toList()..sort();
+
+                          return ListView(
+                            children: sortedKeys.map((displayRol) {
+                              final users = grouped[displayRol]!;
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 24,
+                                      top: 24,
+                                      bottom: 8,
+                                    ),
+                                    child: Text(
+                                      _suggestieRolSectieTitel(displayRol),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.blue.shade900,
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
+                                  ),
+                                  ...users.map((g) {
+                                    final bedrijfMap = _bedrijfMapFrom(
+                                      _bedrijfEmbedFromGebruiker(g),
+                                    );
+                                    final bedrijf = bedrijfMap?['bedrijfsnaam'] ??
+                                        'Geen bedrijf gekoppeld';
+                                    final naam =
+                                        '${g['voornaam'] ?? ''} ${g['achternaam'] ?? ''}'
+                                            .trim();
+                                    final emailRaw =
+                                        g['emailadres'] ?? g['email'];
+                                    final email = emailRaw?.toString() ?? '';
+
+                                    return ListTile(
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 24,
+                                        vertical: 4,
+                                      ),
+                                      leading: CircleAvatar(
+                                        backgroundColor: Colors.blue.shade50,
+                                        child: Icon(
+                                          Icons.person,
+                                          color: Colors.blue.shade800,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        naam.isEmpty ? '(geen naam)' : naam,
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      subtitle: Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.business,
+                                                  size: 14,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    bedrijf.toString(),
+                                                    style: GoogleFonts.inter(
+                                                      color:
+                                                          Colors.grey.shade700,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.email,
+                                                  size: 14,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    email.isEmpty
+                                                        ? 'Geen e-mail'
+                                                        : email,
+                                                    style: GoogleFonts.inter(
+                                                      color:
+                                                          Colors.grey.shade700,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      onTap: () {
+                                        setState(() {
+                                          _geselecteerdeSuggestie = g;
+                                          _voornaamController.text =
+                                              g['voornaam']?.toString() ?? '';
+                                          _achternaamController.text =
+                                              g['achternaam']?.toString() ?? '';
+                                          _emailController.text = email;
+                                          _telefoonController.text =
+                                              g['telefoon']?.toString() ?? '';
+                                          final rol = _rolFromGebruikerMap(g);
+                                          if (rol.isNotEmpty) {
+                                            _selectedRol = rol;
+                                          }
+                                          _selectedBedrijfId =
+                                              _bedrijfIdFromContact(g);
+                                        });
+                                        Navigator.pop(sheetContext);
+                                      },
+                                    );
+                                  }),
+                                  const Divider(height: 32),
+                                ],
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final inviter = context.watch<UserProvider>();
-    final options = _roleOptions(inviter);
+    final options = _beschikbareRollen(inviter);
+    final isWide = MediaQuery.of(context).size.width > 600;
 
-    _role ??= options.isNotEmpty ? options.first : null;
-    if (_role != 'facilitator') _grantAdmin = false;
+    _syncSelectedRolWithOptions(options);
+    if (_selectedRol != 'facilitator') _grantAdmin = false;
 
-    return AlertDialog(
-      title: const Text('Nieuwe medewerker'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                decoration: const InputDecoration(
-                  labelText: 'E-mailadres',
-                ),
-                keyboardType: TextInputType.emailAddress,
-                onChanged: (v) => _email = v,
-                validator: (v) {
-                  final s = (v ?? '').trim();
-                  if (s.isEmpty) return 'Vul een e-mailadres in.';
-                  if (!s.contains('@')) return 'Ongeldig e-mailadres.';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              Row(
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: isWide ? 720 : 520),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: TextFormField(
-                      decoration: const InputDecoration(labelText: 'Voornaam'),
-                      onChanged: (v) => _firstName = v,
-                      validator: (v) =>
-                          (v ?? '').trim().isEmpty ? 'Vul een voornaam in.' : null,
+                  if (_suggestiesLijst.isNotEmpty) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.person_search),
+                        label: Text(
+                          _geselecteerdeSuggestie == null
+                              ? 'Kies uit klaarstaande gebruikers'
+                              : 'Andere klaarstaande gebruiker kiezen',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          foregroundColor: Colors.blue.shade800,
+                          side: BorderSide(color: Colors.blue.shade200, width: 2),
+                          backgroundColor: Colors.blue.shade50,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _submitting ? null : _openSuggestiesModal,
+                      ),
+                    ),
+                    if (_geselecteerdeSuggestie != null)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _submitting
+                              ? null
+                              : () => _clearGeselecteerdeSuggestie(inviter),
+                          child: Text(
+                            'Selectie wissen (handmatig invullen)',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                  ],
+
+                  // 2. Titel & intro
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Gebruiker uitnodigen',
+                          style: GoogleFonts.inter(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _submitting
+                            ? null
+                            : () => Navigator.of(context).pop(false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Nodig een operator, facilitator of klant uit voor CleanConnect.',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.blueGrey.shade600,
+                      height: 1.4,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      decoration: const InputDecoration(labelText: 'Achternaam'),
-                      onChanged: (v) => _lastName = v,
+                  const SizedBox(height: 20),
+
+                  // 3. Invoervelden
+                  _twoCol(
+                    isWide: isWide,
+                    left: _buildModernField(
+                      label: 'Voornaam',
+                      controller: _voornaamController,
+                      validator: (v) => (v ?? '').trim().isEmpty
+                          ? 'Vul een voornaam in.'
+                          : null,
+                    ),
+                    right: _buildModernField(
+                      label: 'Achternaam',
+                      controller: _achternaamController,
                       validator: (v) => (v ?? '').trim().isEmpty
                           ? 'Vul een achternaam in.'
                           : null,
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  _twoCol(
+                    isWide: isWide,
+                    left: _buildModernField(
+                      label: 'E-mailadres',
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) {
+                        final s = (v ?? '').trim();
+                        if (s.isEmpty) return 'Vul een e-mailadres in.';
+                        if (!s.contains('@')) return 'Ongeldig e-mailadres.';
+                        return null;
+                      },
+                    ),
+                    right: _buildModernField(
+                      label: 'Telefoonnummer',
+                      controller: _telefoonController,
+                      keyboardType: TextInputType.phone,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _twoCol(
+                    isWide: isWide,
+                    left: _buildRolDropdown(options),
+                    right: _selectedRol == 'klant' &&
+                            inviter.isGenerator &&
+                            _bedrijfOptiesUitSuggesties().isNotEmpty
+                        ? _buildBedrijfDropdown()
+                        : const SizedBox.shrink(),
+                  ),
+                  if (inviter.isGenerator && _selectedRol == 'facilitator') ...[
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _grantAdmin,
+                      onChanged: (v) => setState(() => _grantAdmin = v),
+                      title: Text(
+                        'Admin status verlenen',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+
+                  // 4. Actieknoppen
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _submitting
+                              ? null
+                              : () => Navigator.of(context).pop(false),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Annuleren'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: FilledButton(
+                          onPressed:
+                              _submitting ? null : () => _submitInvite(inviter),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            _submitting
+                                ? 'Bezig…'
+                                : 'Uitnodiging versturen',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-              const SizedBox(height: 12),
-              InputDecorator(
-                decoration: const InputDecoration(labelText: 'Rol'),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    items: options
-                        .map((r) => DropdownMenuItem(value: r, child: Text(r)))
-                        .toList(),
-                    value: _role,
-                    onChanged: options.isEmpty
-                        ? null
-                        : (v) {
-                            setState(() => _role = v);
-                          },
-                  ),
-                ),
-              ),
-              if (inviter.isGenerator && _role == 'facilitator') ...[
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _grantAdmin,
-                  onChanged: (v) => setState(() => _grantAdmin = v),
-                  title: const Text('Admin status verlenen'),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _submitting ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Annuleren'),
-        ),
-        FilledButton(
-          onPressed: _submitting
-              ? null
-              : () async {
-                  if (!_formKey.currentState!.validate()) return;
-                  if (_role == null) return;
-
-                  setState(() => _submitting = true);
-                  try {
-                    await InvitationService().inviteUser(
-                      email: _email,
-                      firstName: _firstName,
-                      lastName: _lastName,
-                      role: _role!,
-                      grantAdminStatus: _grantAdmin,
-                    );
-                    if (!context.mounted) return;
-                    Navigator.of(context).pop(true);
-                  } on StateError catch (e) {
-                    if (!context.mounted) return;
-                    await showDialog<void>(
-                      context: context,
-                      builder: (context) => SelectionArea(
-                        child: AlertDialog(
-                          title: const Text('Instelling vereist'),
-                          content: Text(e.message),
-                          actions: [
-                            FilledButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Sluiten'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  } catch (e) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Uitnodigen mislukt: $e')),
-                    );
-                  } finally {
-                    if (mounted) setState(() => _submitting = false);
-                  }
-                },
-          child: Text(_submitting ? 'Bezig…' : 'Uitnodiging versturen'),
-        ),
-      ],
     );
   }
 }
@@ -929,61 +1578,282 @@ class _PermissionOverlayState extends State<_PermissionOverlay> {
   }
 }
 
-class _FilterTabs extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? cs.surface.withValues(alpha: 0.65) : Colors.white;
+class _MedewerkersPanel extends StatefulWidget {
+  const _MedewerkersPanel({
+    super.key,
+    required this.users,
+    required this.isGenerator,
+    required this.onTap,
+    required this.onShowRoleDialog,
+    this.onPaginationChanged,
+  });
 
+  final List<UserSummary> users;
+  final bool isGenerator;
+  final void Function(UserSummary user) onTap;
+  final Future<void> Function(UserSummary user) onShowRoleDialog;
+  final VoidCallback? onPaginationChanged;
+
+  @override
+  State<_MedewerkersPanel> createState() => _MedewerkersPanelState();
+}
+
+class _MedewerkersPanelState extends State<_MedewerkersPanel> {
+  static const _tabs = [
+    'Alle',
+    'Operators',
+    'Klanten',
+    'Facilitators',
+    'Beheer',
+  ];
+
+  String _geselecteerdeTab = 'Alle';
+  int _itemsPerPage = 8;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notifyPaginationChanged();
+    });
+  }
+
+  bool _matchesTab(UserSummary user, String tab) {
+    final r = user.roleString.trim().toLowerCase();
+    switch (tab) {
+      case 'Operators':
+        return r == 'operator';
+      case 'Klanten':
+        return r == 'klant';
+      case 'Facilitators':
+        return r == 'facilitator';
+      case 'Beheer':
+        return r == 'administrator' || r == 'beheerder' || r == 'generator';
+      default:
+        return true;
+    }
+  }
+
+  List<UserSummary> get _gefilterdeGebruikers =>
+      widget.users.where((u) => _matchesTab(u, _geselecteerdeTab)).toList();
+
+  int get _totalPages {
+    if (_gefilterdeGebruikers.isEmpty) return 1;
+    return (_gefilterdeGebruikers.length / _itemsPerPage).ceil();
+  }
+
+  List<UserSummary> get _paginatedUsers {
+    final start = _currentPage * _itemsPerPage;
+    if (start >= _gefilterdeGebruikers.length) return [];
+    final end = (start + _itemsPerPage) > _gefilterdeGebruikers.length
+        ? _gefilterdeGebruikers.length
+        : (start + _itemsPerPage);
+    return _gefilterdeGebruikers.sublist(start, end);
+  }
+
+  void _notifyPaginationChanged() {
+    widget.onPaginationChanged?.call();
+  }
+
+  Widget _buildSegmentedControl() {
     return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 5),
-          ),
-        ],
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(12),
       ),
-      // More container padding so the pill never looks cramped.
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: TabBar(
-        isScrollable: true,
-        // Bigger tabs = bigger active pill.
-        labelPadding: const EdgeInsets.symmetric(horizontal: 18),
-        indicatorPadding: EdgeInsets.zero,
-        splashBorderRadius: BorderRadius.circular(24),
-        dividerColor: Colors.transparent,
-        labelColor: Colors.white,
-        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.70),
-        labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w900, letterSpacing: -0.2),
-        unselectedLabelStyle:
-            GoogleFonts.inter(fontWeight: FontWeight.w800, letterSpacing: -0.2),
-        indicator: BoxDecoration(
-          color: cs.primary,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: cs.primary.withValues(alpha: 0.18),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+      child: Row(
+        children: _tabs.map((tab) {
+          final isSelected = _geselecteerdeTab == tab;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _geselecteerdeTab = tab;
+                  _currentPage = 0;
+                });
+                _notifyPaginationChanged();
+              },
+              child: Container(
+                margin: const EdgeInsets.all(4),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: isSelected
+                    ? BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      )
+                    : null,
+                alignment: Alignment.center,
+                child: Text(
+                  tab,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontWeight:
+                        isSelected ? FontWeight.w900 : FontWeight.w600,
+                    fontSize: 13,
+                    color: isSelected
+                        ? Colors.blue.shade900
+                        : Colors.grey.shade600,
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
-        tabs: const [
-          Tab(text: 'Alle'),
-          Tab(text: 'Klanten'),
-          Tab(text: 'Operators'),
-          Tab(text: 'Facilitators'),
-          Tab(text: 'Beheer'),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
+
+  Widget buildBottomPaginationBar() {
+    final totalPages = _totalPages;
+    return Container(
+      color: Colors.white,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Colors.grey.shade200)),
+          ),
+          child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Toon:',
+                style: GoogleFonts.inter(
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<int>(
+                value: _itemsPerPage,
+                underline: const SizedBox(),
+                icon: const Icon(Icons.keyboard_arrow_down, size: 16),
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w800,
+                  color: Colors.blue.shade900,
+                  fontSize: 14,
+                ),
+                items: [8, 16, 32]
+                    .map(
+                      (value) => DropdownMenuItem<int>(
+                        value: value,
+                        child: Text(value.toString()),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _itemsPerPage = newValue;
+                      _currentPage = 0;
+                    });
+                    _notifyPaginationChanged();
+                  }
+                },
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Text(
+                'Pagina ${_currentPage + 1} van $totalPages',
+                style: GoogleFonts.inter(
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                color: _currentPage > 0
+                    ? Colors.blue.shade900
+                    : Colors.grey.shade300,
+                onPressed: _currentPage > 0
+                    ? () {
+                        setState(() => _currentPage--);
+                        _notifyPaginationChanged();
+                      }
+                    : null,
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                color: _currentPage < totalPages - 1
+                    ? Colors.blue.shade900
+                    : Colors.grey.shade300,
+                onPressed: _currentPage < totalPages - 1
+                    ? () {
+                        setState(() => _currentPage++);
+                        _notifyPaginationChanged();
+                      }
+                    : null,
+              ),
+            ],
+          ),
+        ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _buildSegmentedControl(),
+        Expanded(
+          child: _UserList(
+            users: _paginatedUsers,
+            isGenerator: widget.isGenerator,
+            onTap: widget.onTap,
+            onShowRoleDialog: widget.onShowRoleDialog,
+            emptyMessage: _gefilterdeGebruikers.isEmpty
+                ? 'Geen gebruikers in deze categorie.'
+                : null,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Color _getRoleColor(String? rol) {
+  switch (rol?.toLowerCase()) {
+    case 'operator':
+      return Colors.blue;
+    case 'klant':
+      return Colors.green;
+    case 'facilitator':
+      return Colors.orange;
+    case 'generator':
+      return Colors.purple;
+    case 'admin':
+    case 'administrator':
+    case 'beheerder':
+      return Colors.red;
+    default:
+      return Colors.grey;
+  }
+}
+
+Color _roleIconColor(Color rolColor) {
+  if (rolColor is MaterialColor) return rolColor.shade700;
+  return rolColor;
 }
 
 class _KpiRow extends StatelessWidget {
@@ -991,142 +1861,137 @@ class _KpiRow extends StatelessWidget {
 
   final List<UserSummary> users;
 
-  int get _total => users.length;
+  int _countRole(String role) =>
+      users.where((u) => u.roleString.trim().toLowerCase() == role).length;
 
-  int get _operators =>
-      users.where((u) => u.roleString.trim().toLowerCase() == 'operator').length;
+  int get _beheer => users.where((u) {
+        final r = u.roleString.trim().toLowerCase();
+        return r == 'administrator' || r == 'beheerder' || r == 'generator';
+      }).length;
 
-  int get _beheer {
-    return users.where((u) {
-      final r = u.roleString.trim().toLowerCase();
-      return r == 'administrator' ||
-          r == 'beheerder' ||
-          r == 'generator';
-    }).length;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final total = _total;
-    double pct(int part) => total <= 0 ? 0 : (part / total).clamp(0, 1);
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
+  Widget _buildAnalyticsCard(
+    String titel,
+    int aantal,
+    IconData icon,
+    Color kleur, {
+    double? width,
+  }) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _StatCard(
-            label: 'Totaal Gebruikers',
-            value: total.toString(),
-            icon: Icons.groups_2,
-            progress: 1,
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: kleur.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: kleur, size: 24),
           ),
-          const SizedBox(width: 14),
-          _StatCard(
-            label: 'Operators',
-            value: _operators.toString(),
-            icon: Icons.badge,
-            progress: pct(_operators),
+          const SizedBox(height: 16),
+          Text(
+            aantal.toString(),
+            style: GoogleFonts.inter(
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF0F172A),
+            ),
           ),
-          const SizedBox(width: 14),
-          _StatCard(
-            label: 'Beheerders',
-            value: _beheer.toString(),
-            icon: Icons.admin_panel_settings,
-            progress: pct(_beheer),
+          Text(
+            titel,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
     );
   }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.progress,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final double progress;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? cs.surface.withValues(alpha: 0.92) : Colors.white;
-
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 5),
-          ),
-        ],
-        border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+    final cardData = <({String titel, int aantal, IconData icon, Color kleur})>[
+      (
+        titel: 'Totaal',
+        aantal: users.length,
+        icon: Icons.groups_2_rounded,
+        kleur: Colors.blue.shade700,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      (
+        titel: 'Operators',
+        aantal: _countRole('operator'),
+        icon: Icons.badge_outlined,
+        kleur: const Color(0xFF2563EB),
+      ),
+      (
+        titel: 'Klanten',
+        aantal: _countRole('klant'),
+        icon: Icons.business_center_outlined,
+        kleur: const Color(0xFF16A34A),
+      ),
+      (
+        titel: 'Facilitators',
+        aantal: _countRole('facilitator'),
+        icon: Icons.support_agent_outlined,
+        kleur: const Color(0xFF7C3AED),
+      ),
+      (
+        titel: 'Beheer',
+        aantal: _beheer,
+        icon: Icons.admin_panel_settings_outlined,
+        kleur: const Color(0xFFEA580C),
+      ),
+    ];
+
+    final isWide = MediaQuery.of(context).size.width > 900;
+
+    if (isWide) {
+      return Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: cs.primary),
+          for (var i = 0; i < cardData.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(
+              child: _buildAnalyticsCard(
+                cardData[i].titel,
+                cardData[i].aantal,
+                cardData[i].icon,
+                cardData[i].kleur,
               ),
-              const Spacer(),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 34,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.8,
-              color: cs.onSurface,
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.2,
-              color: cs.onSurface.withValues(alpha: 0.70),
+          ],
+        ],
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < cardData.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            _buildAnalyticsCard(
+              cardData[i].titel,
+              cardData[i].aantal,
+              cardData[i].icon,
+              cardData[i].kleur,
+              width: 160,
             ),
-          ),
-          const SizedBox(height: 14),
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: progress.clamp(0, 1)),
-            duration: const Duration(milliseconds: 700),
-            curve: Curves.easeOutCubic,
-            builder: (context, v, _) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  value: v,
-                  minHeight: 7,
-                  backgroundColor: cs.onSurface.withValues(alpha: 0.08),
-                  valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
-                ),
-              );
-            },
-          ),
+          ],
         ],
       ),
     );
@@ -1136,41 +2001,41 @@ class _StatCard extends StatelessWidget {
 class _UserList extends StatelessWidget {
   const _UserList({
     required this.users,
-    required this.filter,
     required this.isGenerator,
     required this.onTap,
     required this.onShowRoleDialog,
+    this.emptyMessage,
   });
 
   final List<UserSummary> users;
-  final bool Function(UserSummary) filter;
   final bool isGenerator;
   final void Function(UserSummary user) onTap;
   final Future<void> Function(UserSummary user) onShowRoleDialog;
+  final String? emptyMessage;
 
   @override
   Widget build(BuildContext context) {
-    final filtered = users.where(filter).toList();
-    if (filtered.isEmpty) {
+    if (users.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(24),
         child: Center(
           child: Text(
-            'Geen gebruikers in deze categorie.',
-            style: Theme.of(context).textTheme.titleMedium,
+            emptyMessage ?? 'Geen gebruikers gevonden.',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.blueGrey.shade600,
+            ),
           ),
         ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 0),
-      itemCount: filtered.length + 1,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      itemCount: users.length,
       itemBuilder: (context, index) {
-        if (index == filtered.length) {
-          return const SizedBox(height: 120);
-        }
-        final u = filtered[index];
+        final u = users[index];
         return _UserCard(
           user: u,
           isGenerator: isGenerator,
@@ -1199,19 +2064,7 @@ class _UserCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final rol = user.roleString.trim().toLowerCase();
     final displayRol = rol.isEmpty ? 'onbekend' : rol;
-
-    Color rolKleur = Colors.grey;
-    if (displayRol == 'operator') rolKleur = Colors.blue;
-    if (displayRol == 'generator' || displayRol == 'facilitator') {
-      rolKleur = Colors.purple;
-    }
-    if (displayRol == 'klant') rolKleur = Colors.green;
-
-    var initial = '?';
-    final nameParts = user.name.trim().split(RegExp(r'\s+'));
-    if (nameParts.isNotEmpty && nameParts.first.isNotEmpty) {
-      initial = nameParts.first.substring(0, 1).toUpperCase();
-    }
+    final rolColor = _getRoleColor(displayRol == 'onbekend' ? null : displayRol);
 
     final emailLabel =
         user.email.trim().isEmpty ? 'Geen e-mail' : user.email.trim();
@@ -1223,29 +2076,23 @@ class _UserCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         leading: CircleAvatar(
-          radius: 24,
-          backgroundColor: rolKleur.withValues(alpha: 0.1),
-          child: Text(
-            initial,
-            style: TextStyle(
-              color: rolKleur,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
+          radius: 26,
+          backgroundColor: rolColor.withValues(alpha: 0.15),
+          child: Icon(Icons.person, color: _roleIconColor(rolColor)),
         ),
         title: Text(
           user.name.trim().isEmpty ? '(geen naam)' : user.name.trim(),
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1259,7 +2106,7 @@ class _UserCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: rolKleur.withValues(alpha: 0.1),
+                color: rolColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
@@ -1267,7 +2114,7 @@ class _UserCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: rolKleur,
+                  color: rolColor,
                 ),
               ),
             ),
@@ -1292,14 +2139,14 @@ class _UserCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: rolKleur.withValues(alpha: 0.1),
+                    color: rolColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     'Acties',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: rolKleur,
+                      color: rolColor,
                       fontSize: 12,
                     ),
                   ),
