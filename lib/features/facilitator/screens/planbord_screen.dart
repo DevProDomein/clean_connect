@@ -5164,8 +5164,8 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                   topRight: Radius.circular(24),
                 ),
               ),
-              child: Column(
-                children: [
+      child: Column(
+        children: [
                   Center(
                     child: Container(
                       margin: const EdgeInsets.only(top: 12, bottom: 8),
@@ -5177,7 +5177,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                       ),
                     ),
                   ),
-                  Padding(
+          Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 8,
@@ -5235,16 +5235,16 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                             : Colors.grey.shade100,
                         contentPadding: const EdgeInsets.symmetric(vertical: 0),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(16),
                           borderSide: BorderSide.none,
-                        ),
-                      ),
+                ),
+              ),
                     ),
                   ),
                   Expanded(
                     child: filteredItems.isEmpty
                         ? Center(
-                            child: Text(
+              child: Text(
                               'Geen resultaten gevonden',
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w600,
@@ -5339,13 +5339,13 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                 ),
               ),
               child: Column(
-                children: [
+            children: [
                   Center(
-                    child: Container(
+                child: Container(
                       margin: const EdgeInsets.only(top: 12, bottom: 8),
                       width: 40,
                       height: 5,
-                      decoration: BoxDecoration(
+                  decoration: BoxDecoration(
                         color: Colors.grey.shade300,
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -5394,7 +5394,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                       onChanged: (value) =>
                           setModalState(() => searchQuery = value),
                       style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                      decoration: InputDecoration(
+                    decoration: InputDecoration(
                         hintText: 'Zoeken...',
                         hintStyle: GoogleFonts.inter(
                           color: Colors.grey.shade500,
@@ -5402,23 +5402,23 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                         prefixIcon: const Icon(
                           Icons.search,
                           color: Colors.grey,
-                        ),
-                        filled: true,
-                        fillColor: isDark
-                            ? const Color(0xFF1B1B23)
+                      ),
+                      filled: true,
+                      fillColor: isDark
+                          ? const Color(0xFF1B1B23)
                             : Colors.grey.shade100,
                         contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                        border: OutlineInputBorder(
+                      border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
+                        borderSide: BorderSide.none,
                       ),
+                    ),
                     ),
                   ),
                   Expanded(
                     child: filteredItems.isEmpty
                         ? Center(
-                            child: Text(
+                        child: Text(
                               'Geen resultaten gevonden',
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w600,
@@ -5485,17 +5485,17 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        child: Text(
+                              child: Text(
                           'Gereed',
-                          style: GoogleFonts.inter(
+                                style: GoogleFonts.inter(
                             fontWeight: FontWeight.w900,
                             fontSize: 16,
                           ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                                ),
+                              ),
+                            ),
+                          ),
+                    ],
               ),
             );
           },
@@ -5700,7 +5700,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     return SingleChildScrollView(
       child: Column(
         children: [
-          Padding(
+              Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -5738,13 +5738,13 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                   ],
                 ),
               ],
-            ),
-          ),
-          Padding(
+                ),
+              ),
+              Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Align(
+                child: Align(
               alignment: Alignment.centerRight,
-              child: SizedBox(
+                  child: SizedBox(
                 height: 44,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -5775,14 +5775,14 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                           children: [
                             const Icon(
                               Icons.add_rounded,
-                              size: 18,
+                            size: 18,
                               color: Colors.white,
                             ),
                             if (!isMobile) ...[
                               const SizedBox(width: 8),
                               Text(
                                 'Extra Opdracht',
-                                style: GoogleFonts.inter(
+                            style: GoogleFonts.inter(
                                   fontWeight: FontWeight.w900,
                                   color: Colors.white,
                                 ),
@@ -5830,8 +5830,8 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Text(
                         '$activeFilterCount actieve filter${activeFilterCount == 1 ? '' : 's'}',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w800,
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
                           fontSize: 12,
                           color: cs.primary,
                         ),
@@ -5929,11 +5929,11 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                               setState(() => _manualFilterProjecten = sel);
                               _loadTasks();
                             },
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
+                ),
+              ),
+            ],
+          ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -5964,7 +5964,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                   ),
                 )
                 : const SizedBox(width: double.infinity, height: 0),
-          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Container(
@@ -6150,14 +6150,14 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
 
   bool get isRefreshing =>
       _isLoading ||
-      _isLoadingProjects ||
-      _isLoadingSmartProjects ||
+                      _isLoadingProjects ||
+                      _isLoadingSmartProjects ||
       _isCalculating;
 
   Future<void> refreshAll() async {
-    await _fetchSmartProjects();
-    await _fetchProjects();
-    await _loadTasks();
+                      await _fetchSmartProjects();
+                      await _fetchProjects();
+                      await _loadTasks();
   }
 
   Widget buildManualTab(BuildContext context) {

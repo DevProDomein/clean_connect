@@ -176,47 +176,47 @@ class _UserManagementScreenState extends State<UserManagementScreen>
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
-      drawer: const AppDrawer(),
-      appBar: AppBar(
-        title: Text(
-          'Gebruikersbeheer',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w900,
-            fontSize: 20,
-            letterSpacing: -0.4,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Vernieuwen',
-            onPressed: _reload,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.blue.shade900,
-        tooltip: 'Nieuwe gebruiker uitnodigen',
-        onPressed: () async {
-          final did = await showDialog<bool>(
-            context: context,
-            builder: (_) => const SelectionArea(
-              child: _InviteUserDialog(),
+        backgroundColor: const Color(0xFFF2F2F7),
+        drawer: const AppDrawer(),
+        appBar: AppBar(
+          title: Text(
+            'Gebruikersbeheer',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w900,
+              fontSize: 20,
+              letterSpacing: -0.4,
             ),
-          );
-          if (did == true) {
-            await up.loadForCurrentUser();
-            await _reload();
-          }
-        },
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Vernieuwen',
+              onPressed: _reload,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.blue.shade900,
+          tooltip: 'Nieuwe gebruiker uitnodigen',
+          onPressed: () async {
+            final did = await showDialog<bool>(
+              context: context,
+              builder: (_) => const SelectionArea(
+                child: _InviteUserDialog(),
+              ),
+            );
+            if (did == true) {
+              await up.loadForCurrentUser();
+              await _reload();
+            }
+          },
         child: const Icon(Icons.add, color: Colors.white),
-      ),
+        ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: _mainTabController.index == 0
           ? _medewerkersPanelKey.currentState?.buildBottomPaginationBar()
           : null,
-      body: SelectionArea(
+        body: SelectionArea(
           child: FutureBuilder<List<UserSummary>>(
             future: _future,
             builder: (context, snapshot) {
@@ -254,10 +254,10 @@ class _UserManagementScreenState extends State<UserManagementScreen>
                       children: [
                         _MedewerkersPanel(
                           key: _medewerkersPanelKey,
-                          users: users,
-                          isGenerator: up.isGenerator,
-                          onTap: _openDeepDive,
-                          onShowRoleDialog: _showChangeRoleDialog,
+                                      users: users,
+                                      isGenerator: up.isGenerator,
+                                      onTap: _openDeepDive,
+                                      onShowRoleDialog: _showChangeRoleDialog,
                           onPaginationChanged: () => setState(() {}),
                         ),
 
@@ -269,8 +269,8 @@ class _UserManagementScreenState extends State<UserManagementScreen>
                 ],
               );
             },
-          ),
         ),
+      ),
     );
   }
 }
@@ -660,7 +660,7 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
     if (raw is List && raw.isNotEmpty && raw.first is Map) {
       return Map<String, dynamic>.from(raw.first as Map);
     }
-    return null;
+                  return null;
   }
 
   dynamic _bedrijfEmbedFromGebruiker(Map<String, dynamic> gebruiker) {
@@ -752,7 +752,7 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+                children: [
         Text(
           label,
           style: GoogleFonts.inter(
@@ -794,7 +794,7 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
           key: ValueKey('rol-$_selectedRol-${_geselecteerdeSuggestie?['id']}'),
           initialValue: _selectedRol,
           decoration: _inviteInputDecoration(),
-          items: options
+                    items: options
               .map(
                 (r) => DropdownMenuItem(
                   value: r,
@@ -804,10 +804,10 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
                   ),
                 ),
               )
-              .toList(),
-          onChanged: options.isEmpty
-              ? null
-              : (v) {
+                        .toList(),
+                    onChanged: options.isEmpty
+                        ? null
+                        : (v) {
                   setState(() {
                     _selectedRol = v;
                     if (v != 'facilitator') _grantAdmin = false;
@@ -885,7 +885,7 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
   }
 
   Future<void> _submitInvite(UserProvider inviter) async {
-    if (!_formKey.currentState!.validate()) return;
+                  if (!_formKey.currentState!.validate()) return;
 
     final email = _emailController.text.trim();
     final voornaam = _voornaamController.text.trim();
@@ -918,70 +918,41 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
 
     setState(() => _submitting = true);
     try {
-      if (_geselecteerdeSuggestie != null) {
-        final existingId = _geselecteerdeSuggestie!['id'];
-
-        await AppSupabase.client.from(GebruikersTable.name).update({
-          'rol': _selectedRol,
-          GebruikersTable.gebruikersrol: _selectedRol,
-          'stuur_uitnodiging': true,
-        }).eq(GebruikersTable.id, existingId);
-      } else {
-        await AppSupabase.client.from(GebruikersTable.name).insert({
-          GebruikersTable.voornaam: voornaam,
-          GebruikersTable.achternaam: achternaam,
-          GebruikersTable.email: email,
-          'emailadres': email,
-          'telefoon': telefoon,
-          'rol': _selectedRol,
-          GebruikersTable.gebruikersrol: _selectedRol,
-          'heeft_app_account': false,
-          'stuur_uitnodiging': true,
-        });
-      }
-
-      var mailGelukt = false;
-      try {
-        debugPrint('Edge Function aanroepen voor email: $email');
-        final response = await AppSupabase.client.functions.invoke(
-          'invite_user',
-          body: {
-            'email': email,
-            'role': _selectedRol,
-            'fullName': '$voornaam $achternaam'.trim(),
-          },
-        );
-        debugPrint('Edge Function succesvol: ${response.data}');
-        mailGelukt = true;
-      } catch (funcError) {
-        debugPrint('EDGE FUNCTION FOUT: $funcError');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Dossier opgeslagen, maar mail versturen faalde: $funcError',
-              ),
-              backgroundColor: Colors.orange,
-            ),
-          );
+      final body = <String, dynamic>{
+        'email': email,
+        'role': _selectedRol,
+        'fullName': '$voornaam $achternaam'.trim(),
+        if (telefoon.isNotEmpty) 'telefoon': telefoon,
+      };
+      final suggestie = _geselecteerdeSuggestie;
+      if (suggestie != null) {
+        final existingId = suggestie['id']?.toString();
+        if (existingId != null && existingId.isNotEmpty) {
+          body['gebruiker_id'] = existingId;
         }
       }
 
+      debugPrint('Edge Function aanroepen voor email: $email');
+      final response = await AppSupabase.client.functions.invoke(
+        'invite_user',
+        body: body,
+      );
+      debugPrint('Edge Function succesvol: ${response.data}');
+
       if (!mounted) return;
-      if (mailGelukt) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Uitnodiging succesvol verstuurd!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Uitnodiging succesvol verstuurd!'),
+          backgroundColor: Colors.green,
+        ),
+      );
       Navigator.of(context).pop(true);
-    } catch (dbError) {
+    } catch (e) {
+      debugPrint('EDGE FUNCTION FOUT: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Fout bij opslaan in database: $dbError'),
+          content: Text('Uitnodiging mislukt: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1683,8 +1654,8 @@ class _MedewerkersPanelState extends State<_MedewerkersPanel> {
                     ? BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
-                        boxShadow: [
-                          BoxShadow(
+        boxShadow: [
+          BoxShadow(
                             color: Colors.black.withValues(alpha: 0.05),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
@@ -1765,9 +1736,9 @@ class _MedewerkersPanelState extends State<_MedewerkersPanel> {
                     _notifyPaginationChanged();
                   }
                 },
-              ),
-            ],
-          ),
+            ),
+          ],
+        ),
           Row(
             children: [
               Text(
@@ -1814,7 +1785,7 @@ class _MedewerkersPanelState extends State<_MedewerkersPanel> {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: [
+        children: [
         _buildSegmentedControl(),
         Expanded(
           child: _UserList(
@@ -1892,15 +1863,15 @@ class _KpiRow extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
+            children: [
+              Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
+                decoration: BoxDecoration(
               color: kleur.withValues(alpha: 0.1),
               shape: BoxShape.circle,
-            ),
+                ),
             child: Icon(icon, color: kleur, size: 24),
-          ),
+              ),
           const SizedBox(height: 16),
           Text(
             aantal.toString(),

@@ -1,6 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 
+import '../../../core/supabase_client.dart';
+import '../../../core/web_reload.dart';
+import '../../../providers/user_provider.dart';
 import '../screens/klant_dashboard_screen.dart';
 import '../screens/klant_logboek_screen.dart';
 import '../screens/klant_planning_screen.dart';
@@ -68,6 +73,93 @@ class _KlantScaffoldState extends State<KlantScaffold> {
     setState(() => _index = i);
   }
 
+  void _drawerNavTo(String tabKey) {
+    Navigator.pop(context);
+    _goToTab(tabKey);
+  }
+
+  Future<void> _logout() async {
+    Navigator.pop(context);
+    try {
+      await AppSupabase.client.auth.signOut();
+      if (!mounted) return;
+      context.read<UserProvider>().clear();
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/login',
+        (route) => false,
+      );
+      if (kIsWeb) forceWebReload();
+    } catch (e) {
+      debugPrint('Fout bij uitloggen: $e');
+    }
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(top: 60, bottom: 24, left: 24, right: 24),
+            decoration: BoxDecoration(color: Colors.blue.shade900),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.business, size: 30, color: Color(0xFF0F172A)),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Mijn Account',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: Icon(Icons.dashboard_outlined, color: Colors.blue.shade900),
+            title: const Text('Dashboard', style: TextStyle(fontWeight: FontWeight.w600)),
+            onTap: () => _drawerNavTo('dashboard'),
+          ),
+          ListTile(
+            leading: Icon(Icons.calendar_month_outlined, color: Colors.blue.shade900),
+            title: const Text('Planning', style: TextStyle(fontWeight: FontWeight.w600)),
+            onTap: () => _drawerNavTo('planning'),
+          ),
+          ListTile(
+            leading: Icon(Icons.folder_outlined, color: Colors.blue.shade900),
+            title: const Text('Logboek', style: TextStyle(fontWeight: FontWeight.w600)),
+            onTap: () => _drawerNavTo('logboek'),
+          ),
+          ListTile(
+            leading: Icon(Icons.support_agent_outlined, color: Colors.blue.shade900),
+            title: const Text('Service', style: TextStyle(fontWeight: FontWeight.w600)),
+            onTap: () => _drawerNavTo('service'),
+          ),
+          const Spacer(),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.redAccent),
+            title: const Text(
+              'Uitloggen',
+              style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+            ),
+            onTap: _logout,
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return KlantNavScope(
@@ -77,14 +169,18 @@ class _KlantScaffoldState extends State<KlantScaffold> {
         appBar: AppBar(
           elevation: 0,
           scrolledUnderElevation: 0,
-          backgroundColor: Colors.grey.shade50,
-          foregroundColor: const Color(0xFF0D1B3E),
+          backgroundColor: Colors.white,
+          iconTheme: IconThemeData(color: Colors.blue.shade900),
           title: Text(
             _titles[_index],
-            style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w800,
+              color: Colors.blue.shade900,
+            ),
           ),
           centerTitle: false,
         ),
+        drawer: _buildDrawer(),
         body: IndexedStack(
           index: _index,
           children: const [

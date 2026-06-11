@@ -19,7 +19,6 @@ class _KlantPlanningScreenState extends State<KlantPlanningScreen> {
   final EventController<Map<String, dynamic>> _eventController =
       EventController<Map<String, dynamic>>();
 
-  List<Map<String, dynamic>> _tasks = [];
   bool _isLoading = true;
   Object? _loadError;
 
@@ -80,12 +79,19 @@ class _KlantPlanningScreenState extends State<KlantPlanningScreen> {
     return DateTime(date.year, date.month, date.day, hour, minute);
   }
 
-  String _taskTitle(Map<String, dynamic> task) {
-    final project = task['projecten'];
-    if (project is Map) {
-      final naam = _text(project['project_naam']);
-      if (naam.isNotEmpty) return naam;
+  Map<String, dynamic>? _projectFromTask(Map<String, dynamic> task) {
+    final raw = task['projecten'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
     }
+    return null;
+  }
+
+  String _taskTitle(Map<String, dynamic> task) {
+    final project = _projectFromTask(task);
+    final naam = _text(project?['project_naam']);
+    if (naam.isNotEmpty) return naam;
     final bedrijf = _text(task['bedrijfsnaam']);
     return bedrijf.isEmpty ? 'Schoonmaak' : bedrijf;
   }
@@ -135,14 +141,6 @@ class _KlantPlanningScreenState extends State<KlantPlanningScreen> {
     );
   }
 
-  void _syncEventController() {
-    _eventController.clear();
-    for (final task in _tasks) {
-      if (_text(task['geplande_datum']).isEmpty) continue;
-      _eventController.add(_eventFromTask(task));
-    }
-  }
-
   Future<void> _loadTasks() async {
     setState(() {
       _isLoading = true;
@@ -150,21 +148,47 @@ class _KlantPlanningScreenState extends State<KlantPlanningScreen> {
     });
 
     try {
+      debugPrint('=== START LADEN KLANT PLANNING ===');
+
       final data = await AppSupabase.client
           .from('opdrachten')
-          .select('*, projecten(*)')
+          .select('''
+            *,
+            projecten (
+              project_naam,
+              uitvoer_adres_volledig
+            )
+          ''')
           .order('geplande_datum', ascending: true);
 
+      final rows = (data as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+
+      debugPrint('Aantal opdrachten gevonden in database: ${rows.length}');
+
+      _eventController.clear();
+
+      var mapped = 0;
+      for (final taak in rows) {
+        if (taak['geplande_datum'] == null) continue;
+
+        try {
+          _eventController.add(_eventFromTask(taak));
+          mapped++;
+        } catch (parseError) {
+          debugPrint('Fout bij parsen klant taak: $parseError');
+        }
+      }
+
+      debugPrint('Kalender events aangemaakt: $mapped');
+
       if (!mounted) return;
-      setState(() {
-        _tasks = (data as List)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-        _isLoading = false;
-      });
-      _syncEventController();
-    } catch (e) {
+      setState(() => _isLoading = false);
+    } catch (e, stack) {
+      debugPrint('Fatale fout bij ophalen klant agenda: $e');
+      debugPrint('$stack');
       if (!mounted) return;
       setState(() {
         _loadError = e;
@@ -514,41 +538,6 @@ class _KlantOpdrachtAanvraagSheetState extends State<_KlantOpdrachtAanvraagSheet
 
   String _text(dynamic v) => (v ?? '').toString().trim();
 
-  InputDecoration _fieldDecoration({String? hint}) {
-    return InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: Colors.grey.shade100,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.blue.shade400, width: 2),
-      ),
-    );
-  }
-
-  Widget _fieldLabel(String label) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Colors.blueGrey.shade800,
-        ),
-      ),
-    );
-  }
-
   Future<void> _loadProjecten() async {
     try {
       final data = await AppSupabase.client
@@ -571,11 +560,6 @@ class _KlantOpdrachtAanvraagSheetState extends State<_KlantOpdrachtAanvraagSheet
       debugPrint('Fout bij laden projecten: $e');
       if (mounted) setState(() => _loadingProjecten = false);
     }
-  }
-
-  String _projectLabel(Map<String, dynamic> project) {
-    final naam = _text(project['project_naam']);
-    return naam.isEmpty ? 'Project' : naam;
   }
 
   String _bedrijfsnaamVoorProject(Map<String, dynamic> project) {
@@ -606,6 +590,114 @@ class _KlantOpdrachtAanvraagSheetState extends State<_KlantOpdrachtAanvraagSheet
       initialTime: _startTijd ?? const TimeOfDay(hour: 9, minute: 0),
     );
     if (picked != null) setState(() => _startTijd = picked);
+  }
+
+  void _openProjectSelectorModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.6,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+          ),
+          child: Column(
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Selecteer een project',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+              ),
+              const Divider(),
+              Expanded(
+                child: _projecten.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Geen projecten gevonden.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: _projecten.length,
+                        itemBuilder: (context, index) {
+                          final project = _projecten[index];
+                          final isSelected = _geselecteerdProject != null &&
+                              _geselecteerdProject!['id'] == project['id'];
+
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 8,
+                            ),
+                            leading: CircleAvatar(
+                              backgroundColor: isSelected
+                                  ? Colors.blue.shade600
+                                  : Colors.blue.shade50,
+                              child: Icon(
+                                Icons.business_center,
+                                color: isSelected
+                                    ? Colors.white
+                                    : Colors.blue.shade800,
+                              ),
+                            ),
+                            title: Text(
+                              project['project_naam'] ?? 'Onbekend',
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                            ),
+                            subtitle: Text(
+                              project['uitvoer_adres_volledig'] ?? '',
+                              style: TextStyle(color: Colors.grey.shade700),
+                            ),
+                            trailing: isSelected
+                                ? Icon(
+                                    Icons.check_circle,
+                                    color: Colors.blue.shade600,
+                                  )
+                                : null,
+                            onTap: () {
+                              setState(() => _geselecteerdProject = project);
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _submit() async {
@@ -744,30 +836,56 @@ class _KlantOpdrachtAanvraagSheetState extends State<_KlantOpdrachtAanvraagSheet
                 child: Center(child: CircularProgressIndicator()),
               )
             else ...[
-              _fieldLabel('Project'),
-              DropdownButtonFormField<Map<String, dynamic>>(
-                key: ValueKey(_geselecteerdProject?['id']),
-                initialValue: _geselecteerdProject,
-                decoration: _fieldDecoration(hint: 'Selecteer project'),
-                hint: Text(
-                  'Selecteer project',
-                  style: GoogleFonts.inter(color: Colors.blueGrey.shade500),
-                ),
-                isExpanded: true,
-                items: _projecten
-                    .map(
-                      (p) => DropdownMenuItem(
-                        value: p,
-                        child: Text(
-                          _projectLabel(p),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Welk project betreft de aanvraag?',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blueGrey.shade800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.arrow_drop_down),
+                      label: Text(
+                        _geselecteerdProject != null
+                            ? (_geselecteerdProject!['project_naam'] ??
+                                'Project geselecteerd')
+                            : 'Kies een project...',
+                        style: TextStyle(
+                          fontWeight: _geselecteerdProject != null
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color: _geselecteerdProject != null
+                              ? Colors.blue.shade900
+                              : Colors.grey.shade600,
                         ),
                       ),
-                    )
-                    .toList(),
-                onChanged: _submitting
-                    ? null
-                    : (val) => setState(() => _geselecteerdProject = val),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 16,
+                        ),
+                        alignment: Alignment.centerLeft,
+                        foregroundColor: Colors.blue.shade800,
+                        backgroundColor: Colors.blue.shade50,
+                        side: BorderSide(
+                          color: Colors.blue.shade200,
+                          width: 1.5,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _submitting ? null : _openProjectSelectorModal,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               Material(

@@ -3040,12 +3040,12 @@ class AgendaTabState extends State<AgendaTab> {
                     if (ok == true && mounted) await _loadAgenda();
                   },
             child: const Icon(Icons.add),
-          ),
-        ),
-      ],
-    ),
-    );
-  }
+                                              ),
+                                            ),
+                                          ],
+                                  ),
+                                );
+                              }
 }
 
 class OpdrachtDataSource extends CalendarDataSource {
@@ -3686,7 +3686,7 @@ class _AgendaDetailModalState extends State<AgendaDetailModal> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
