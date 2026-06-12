@@ -3,10 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/supabase/chat_service.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/web_reload.dart';
 import '../../../providers/user_provider.dart';
+import '../screens/klant_account_screen.dart';
+import '../screens/klant_contracten_screen.dart';
 import '../screens/klant_dashboard_screen.dart';
+import '../screens/klant_dks_screen.dart';
+import '../screens/klant_facturen_screen.dart';
 import '../screens/klant_logboek_screen.dart';
 import '../screens/klant_planning_screen.dart';
 import '../screens/klant_service_screen.dart';
@@ -14,69 +19,87 @@ import 'klant_nav_scope.dart';
 
 /// Mobiele shell voor het klantportaal met vaste bottom navigation.
 class KlantScaffold extends StatefulWidget {
-  const KlantScaffold({super.key, this.initialKey});
+  const KlantScaffold({
+    super.key,
+    this.initialKey,
+    this.restorePersistedTab = false,
+  });
 
+  /// Tab-key bij eerste open via named route (bijv. `/klant/planning`).
   final String? initialKey;
 
-  static const _tabKeys = <String>[
-    'dashboard',
-    'planning',
-    'logboek',
-    'service',
-  ];
+  /// `true` voor de hoofd-shell in [AuthGate]: gebruik opgeslagen tab i.p.v. dashboard.
+  final bool restorePersistedTab;
+
+  /// Houdt één shell-state vast over [AuthGate]-rebuilds.
+  static final GlobalKey<State<KlantScaffold>> shellKey = GlobalKey();
 
   @override
   State<KlantScaffold> createState() => _KlantScaffoldState();
 }
 
 class _KlantScaffoldState extends State<KlantScaffold> {
+  final ChatService _chatService = ChatService();
   late int _index;
 
   static const _titles = <String>[
     'Dashboard',
     'Planning',
     'Logboek',
-    'Service',
+    'Mijn Berichten',
   ];
 
   @override
   void initState() {
     super.initState();
-    _index = _indexForKey(widget.initialKey);
+    if (widget.restorePersistedTab) {
+      _index = KlantTabPersistence.index;
+    } else {
+      KlantTabPersistence.applyInitialKey(widget.initialKey);
+      _index = KlantTabPersistence.index;
+    }
   }
 
   @override
   void didUpdateWidget(covariant KlantScaffold oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.restorePersistedTab) return;
+
     final key = (widget.initialKey ?? '').trim().toLowerCase();
     final oldKey = (oldWidget.initialKey ?? '').trim().toLowerCase();
     if (key.isNotEmpty && key != oldKey) {
-      final i = _indexForKey(key);
+      KlantTabPersistence.applyInitialKey(key);
+      final i = KlantTabPersistence.index;
       if (i != _index) setState(() => _index = i);
     }
   }
 
-  int _indexForKey(String? key) {
-    final k = (key ?? 'dashboard').trim().toLowerCase();
-    final i = KlantScaffold._tabKeys.indexOf(k);
-    return i >= 0 ? i : 0;
+  void _persistIndex(int i) {
+    KlantTabPersistence.setIndex(i);
+    if (i == _index) return;
+    setState(() => _index = i);
   }
 
   void _goToTab(String tabKey) {
-    final i = _indexForKey(tabKey);
-    if (i == _index) return;
-    setState(() => _index = i);
+    final i = KlantTabPersistence.indexForKey(tabKey);
+    _persistIndex(i);
   }
 
-  void _onNavTap(int i) {
-    if (i == _index) return;
-    setState(() => _index = i);
-  }
+  void _onNavTap(int i) => _persistIndex(i);
 
   void _drawerNavTo(String tabKey) {
     Navigator.pop(context);
     _goToTab(tabKey);
   }
+
+  void _openPushedScreen(Widget screen) {
+    Navigator.pop(context);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => screen),
+    );
+  }
+
+  void _openAccountScreen() => _openPushedScreen(const KlantAccountScreen());
 
   Future<void> _logout() async {
     Navigator.pop(context);
@@ -130,6 +153,30 @@ class _KlantScaffoldState extends State<KlantScaffold> {
             onTap: () => _drawerNavTo('dashboard'),
           ),
           ListTile(
+            leading: Icon(Icons.verified_outlined, color: Colors.blue.shade900),
+            title: const Text(
+              'Kwaliteit & DKS',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            onTap: () => _openPushedScreen(const KlantDksScreen()),
+          ),
+          ListTile(
+            leading: Icon(Icons.description_outlined, color: Colors.blue.shade900),
+            title: const Text(
+              'Contracten & Offertes',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            onTap: () => _openPushedScreen(const KlantContractenScreen()),
+          ),
+          ListTile(
+            leading: Icon(Icons.receipt_long_outlined, color: Colors.blue.shade900),
+            title: const Text(
+              'Facturen',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            onTap: () => _openPushedScreen(const KlantFacturenScreen()),
+          ),
+          ListTile(
             leading: Icon(Icons.calendar_month_outlined, color: Colors.blue.shade900),
             title: const Text('Planning', style: TextStyle(fontWeight: FontWeight.w600)),
             onTap: () => _drawerNavTo('planning'),
@@ -140,9 +187,34 @@ class _KlantScaffoldState extends State<KlantScaffold> {
             onTap: () => _drawerNavTo('logboek'),
           ),
           ListTile(
-            leading: Icon(Icons.support_agent_outlined, color: Colors.blue.shade900),
-            title: const Text('Service', style: TextStyle(fontWeight: FontWeight.w600)),
+            leading: StreamBuilder<int>(
+              stream: _chatService.streamTotalUnreadCount(),
+              initialData: 0,
+              builder: (context, snap) {
+                final unread = snap.data ?? 0;
+                return Badge(
+                  isLabelVisible: unread > 0,
+                  label: Text(unread > 99 ? '99+' : '$unread'),
+                  child: Icon(
+                    Icons.chat_outlined,
+                    color: Colors.blue.shade900,
+                  ),
+                );
+              },
+            ),
+            title: const Text(
+              'Mijn Berichten',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
             onTap: () => _drawerNavTo('service'),
+          ),
+          ListTile(
+            leading: Icon(Icons.manage_accounts, color: Colors.blue.shade900),
+            title: const Text(
+              'Account & Instellingen',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            onTap: _openAccountScreen,
           ),
           const Spacer(),
           const Divider(),
@@ -190,33 +262,51 @@ class _KlantScaffoldState extends State<KlantScaffold> {
             KlantServiceScreen(),
           ],
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: _onNavTap,
-          backgroundColor: Colors.white,
-          indicatorColor: Colors.blue.shade50,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Dashboard',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.calendar_month_outlined),
-              selectedIcon: Icon(Icons.calendar_month_rounded),
-              label: 'Planning',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.folder_outlined),
-              selectedIcon: Icon(Icons.folder_rounded),
-              label: 'Logboek',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.support_agent_outlined),
-              selectedIcon: Icon(Icons.support_agent_rounded),
-              label: 'Service',
-            ),
-          ],
+        bottomNavigationBar: StreamBuilder<int>(
+          stream: _chatService.streamTotalUnreadCount(),
+          initialData: 0,
+          builder: (context, unreadSnap) {
+            final unread = unreadSnap.data ?? 0;
+            final serviceIcon = Badge(
+              isLabelVisible: unread > 0,
+              label: Text(unread > 99 ? '99+' : '$unread'),
+              child: const Icon(Icons.chat_outlined),
+            );
+            final serviceIconSelected = Badge(
+              isLabelVisible: unread > 0,
+              label: Text(unread > 99 ? '99+' : '$unread'),
+              child: const Icon(Icons.chat_rounded),
+            );
+
+            return NavigationBar(
+              selectedIndex: _index,
+              onDestinationSelected: _onNavTap,
+              backgroundColor: Colors.white,
+              indicatorColor: Colors.blue.shade50,
+              destinations: [
+                const NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: 'Dashboard',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.calendar_month_outlined),
+                  selectedIcon: Icon(Icons.calendar_month_rounded),
+                  label: 'Planning',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.folder_outlined),
+                  selectedIcon: Icon(Icons.folder_rounded),
+                  label: 'Logboek',
+                ),
+                NavigationDestination(
+                  icon: serviceIcon,
+                  selectedIcon: serviceIconSelected,
+                  label: 'Mijn Berichten',
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

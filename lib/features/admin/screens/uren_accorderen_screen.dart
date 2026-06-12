@@ -209,7 +209,7 @@ class _UrenAccorderenScreenState extends State<UrenAccorderenScreen> {
             'id, operator_id, opdracht_id, geplande_datum, starttijd, eindtijd, '
             'toegewezen_uren, werkelijke_starttijd, werkelijke_eindtijd, '
             'gewerkte_uren_decimaal, uren_status, doorgeschoven_naar_maand, bedrijfsnaam, '
-            'operator:gebruikers(id, voornaam, achternaam, standaard_uurloon, '
+            'operator:gebruikers!opdracht_planning_operator_id_fkey(id, voornaam, achternaam, standaard_uurloon, '
             'contract_vaste_uren, contract_vast_salaris, contract_startdatum, '
             'contract_einddatum), '
             'opdrachten!opdracht_planning_opdracht_id_fkey(bedrijfsnaam, projecten(project_naam))',

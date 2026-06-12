@@ -17,7 +17,7 @@ import 'project_overview_screen.dart';
 import 'quote_create_header_screen.dart';
 import 'quote_overview_screen.dart';
 import 'sales_centre_screen.dart';
-import 'ticket_overview_screen.dart';
+import 'chat/facilitator_berichten_screen.dart';
 import '../widgets/opname_edit_modal.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 
@@ -1005,7 +1005,7 @@ class _FacilitatorDashboardState extends State<FacilitatorDashboard> {
                       warning: _openTickets > 0,
                       height: squareHeight,
                       onTap: () => _openDashboardPage(
-                        const TicketOverviewScreen(),
+                        const FacilitatorBerichtenScreen(),
                       ),
                     ),
                   ],

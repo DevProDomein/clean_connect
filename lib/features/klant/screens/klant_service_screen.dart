@@ -1,20 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
+import 'chat/klant_chat_lijst_screen.dart';
+
+/// Service-tab in [KlantScaffold] — meldingen & chat inbox.
 class KlantServiceScreen extends StatelessWidget {
   const KlantServiceScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        'Service & Meldingen',
-        style: GoogleFonts.inter(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          color: Colors.blueGrey.shade800,
-        ),
-      ),
-    );
+    return const KlantChatLijstScreen(embeddedInShell: true);
   }
 }

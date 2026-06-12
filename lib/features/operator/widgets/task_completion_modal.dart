@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../helpers/paklijst_programma_helper.dart';
 import '../helpers/werkprogramma_data_helper.dart';
 import '../services/operator_planning_repository.dart';
+import 'operator_melding_modal.dart';
 
 /// Formele afrond-flow: diensten afvinken, daarna status naar afgerond.
 class TaskCompletionModal extends StatefulWidget {
@@ -213,6 +214,18 @@ class _TaskCompletionModalState extends State<TaskCompletionModal> {
             _text(item['project_naam']).isEmpty
                 ? '—'
                 : _text(item['project_naam']),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.report_outlined, size: 18),
+              label: const Text('Melding maken'),
+              onPressed: () => OperatorMeldingModal.showForPlanningItem(
+                context,
+                planningItem: item,
+              ),
+            ),
           ),
         ],
       ),

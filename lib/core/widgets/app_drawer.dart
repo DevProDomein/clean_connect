@@ -38,7 +38,7 @@ import '../../features/facilitator/screens/plannings_dashboard_screen.dart';
 import '../../features/facilitator/screens/quote_overview_screen.dart';
 import '../../features/facilitator/screens/agenda_screen.dart';
 import '../../features/facilitator/screens/sales_centre_screen.dart';
-import '../../features/facilitator/screens/ticket_overview_screen.dart';
+import '../../features/facilitator/screens/chat/facilitator_berichten_screen.dart';
 import '../../features/facilitator/screens/hr_beheer_screen.dart';
 import '../../features/facilitator/screens/brongegevens_screen.dart';
 import '../../features/klant/client_dashboard.dart';
@@ -570,10 +570,10 @@ class AppDrawerContent extends StatelessWidget {
                       ),
                       navTile(
                         name: '/facilitator/tickets',
-                        icon: Icons.confirmation_number_outlined,
-                        title: 'Tickets & Meldingen',
+                        icon: Icons.chat_outlined,
+                        title: 'Berichten & Meldingen',
                         screen: isDesktop
-                            ? const TicketOverviewScreen()
+                            ? const FacilitatorBerichtenScreen()
                             : const MobileBottomNavLayout(initialKey: 'tickets'),
                       ),
                       ExpansionTile(

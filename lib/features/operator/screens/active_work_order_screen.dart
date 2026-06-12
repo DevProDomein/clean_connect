@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../shared/services/werkbon_pdf_service.dart';
 import '../../../services/live_activity_service.dart';
+import '../widgets/operator_melding_modal.dart';
 
 /// Persistente checklist voor een actieve werkbon. Vinkjes zijn alleen lokaal (geen DB per tick).
 class ActiveWorkOrderScreen extends StatefulWidget {
@@ -973,6 +974,24 @@ class _ActiveWorkOrderScreenState extends State<ActiveWorkOrderScreen> {
                   final actueelId =
                       actieveOpdracht?['id']?.toString() ?? widget.opdrachtId;
                   _openKogelvrijePaklijst(context, actueelId);
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.report_outlined),
+                label: const Text('Melding maken'),
+                onPressed: () {
+                  final opdracht = _actieveOpdracht;
+                  OperatorMeldingModal.showForPlanningItem(
+                    context,
+                    planningItem: {
+                      'opdracht_id': widget.opdrachtId,
+                      if (opdracht != null) ...opdracht,
+                    },
+                  );
                 },
               ),
             ),

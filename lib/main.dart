@@ -19,6 +19,9 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/screens/set_password_screen.dart';
 import 'features/facilitator/facilitator_dashboard.dart';
 import 'features/klant/presentation/klant_scaffold.dart';
+import 'features/klant/screens/klant_contracten_screen.dart';
+import 'features/klant/screens/klant_dks_screen.dart';
+import 'features/klant/screens/klant_facturen_screen.dart';
 import 'features/operator/operator_dashboard.dart';
 import 'features/auth/no_portals_assigned_screen.dart';
 import 'features/admin/screens/factuur_editor_screen.dart';
@@ -503,6 +506,26 @@ class _MyAppState extends State<MyApp> {
                   settings: settings,
                   builder: (_) => const KlantScaffold(initialKey: 'service'),
                 );
+              case '/klant/kwaliteit':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantDksScreen(),
+                );
+              case '/klant/contracten':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantContractenScreen(),
+                );
+              case '/klant/facturen':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantFacturenScreen(),
+                );
+              case '/klant/service-module':
+                return MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) => const KlantScaffold(initialKey: 'service'),
+                );
             }
             if (settings.name == '/set-password') {
               return MaterialPageRoute(
@@ -660,6 +683,20 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     return _identityFuture!;
   }
 
+  /// Toon bestaande portal tijdens identity-refresh zodat tab-state niet verloren gaat.
+  Widget? _homeWhileIdentityReloads(
+    BuildContext context,
+    UserProvider userProvider,
+  ) {
+    if (userProvider.hasAnyPortalPermission) {
+      return _homeForPermissions(context, userProvider);
+    }
+    if (userProvider.role != null) {
+      return _homeForRoleFallback(context, userProvider);
+    }
+    return null;
+  }
+
   /// Default portal when multiple [portal_*] permissions exist: administrator → facilitator → operator → klant.
   Widget _homeForPermissions(BuildContext context, UserProvider userProvider) {
     final isDesktop = MediaQuery.of(context).size.width > 800;
@@ -676,7 +713,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       return isDesktop ? const OperatorDashboard() : const MobileBottomNavLayout();
     }
     if (userProvider.hasPermission('portal_klant')) {
-      return const KlantScaffold(initialKey: 'dashboard');
+      return KlantScaffold(
+        key: KlantScaffold.shellKey,
+        restorePersistedTab: true,
+      );
     }
     return const SizedBox.shrink();
   }
@@ -693,7 +733,10 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       case UserRole.operator:
         return isDesktop ? const OperatorDashboard() : const MobileBottomNavLayout();
       case UserRole.klant:
-        return const KlantScaffold(initialKey: 'dashboard');
+        return KlantScaffold(
+          key: KlantScaffold.shellKey,
+          restorePersistedTab: true,
+        );
       case null:
         return const SizedBox.shrink();
     }
@@ -728,10 +771,17 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
           return const LoginScreen();
         }
 
+        final userProvider = context.watch<UserProvider>();
+
         return FutureBuilder<void>(
           future: _identityFutureForUserId(context, user.id),
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
+              final staleHome = _homeWhileIdentityReloads(
+                context,
+                userProvider,
+              );
+              if (staleHome != null) return staleHome;
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );
@@ -784,8 +834,6 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
                 ),
               );
             }
-
-            final userProvider = context.watch<UserProvider>();
 
             if (userProvider.lastError != null) {
               return Scaffold(

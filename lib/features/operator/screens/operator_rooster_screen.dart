@@ -12,6 +12,7 @@ import '../../../shared/layouts/mobile_nav_buffer.dart';
 import '../../shared/services/werkbon_pdf_service.dart';
 import '../helpers/paklijst_programma_helper.dart';
 import '../services/operator_planning_repository.dart';
+import '../widgets/operator_melding_modal.dart';
 import '../widgets/task_completion_modal.dart';
 class OperatorRoosterScreen extends StatefulWidget {
   const OperatorRoosterScreen({super.key});
@@ -1637,6 +1638,34 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     );
   }
 
+  Widget _buildMeldingMakenKnop(Map<String, dynamic> task) {
+    return SizedBox(
+      width: double.infinity,
+      height: 44,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.report_outlined, size: 18),
+        label: Text(
+          'Melding maken',
+          style: GoogleFonts.lato(
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.65)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+        ),
+        onPressed: () => OperatorMeldingModal.showForPlanningItem(
+          context,
+          planningItem: task,
+        ),
+      ),
+    );
+  }
+
   Widget _buildTaakAfrondenKnop(Map<String, dynamic> task) {
     if (_isTaakAfgerond(task)) {
       return Text(
@@ -1843,6 +1872,8 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
           ),
           if (expandVertically) const Spacer() else const SizedBox(height: 14),
           const SizedBox(height: 12),
+          _buildMeldingMakenKnop(task),
+          const SizedBox(height: 10),
           _buildTaakAfrondenKnop(task),
                 ],
               ),

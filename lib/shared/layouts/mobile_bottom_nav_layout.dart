@@ -16,7 +16,7 @@ import '../../features/facilitator/screens/quote_overview_screen.dart';
 import '../../features/facilitator/screens/sales_centre_screen.dart';
 import '../../features/facilitator/screens/relations_crm_screen.dart'
     as facilitator_crm;
-import '../../features/facilitator/screens/ticket_overview_screen.dart';
+import '../../features/facilitator/screens/chat/facilitator_berichten_screen.dart';
 import '../../features/operator/screens/operator_dashboard_screen.dart';
 import '../../features/operator/screens/operator_agenda_screen.dart';
 import '../../features/operator/screens/operator_rooster_screen.dart';
@@ -164,9 +164,9 @@ class _MobileBottomNavLayoutState extends State<MobileBottomNavLayout> {
         );
       case 'tickets':
         return (
-          label: 'Tickets',
-          icon: Icons.confirmation_number_outlined,
-          screen: const TicketOverviewScreen(),
+          label: 'Berichten',
+          icon: Icons.chat_outlined,
+          screen: const FacilitatorBerichtenScreen(),
         );
       case 'planbord':
         return (
