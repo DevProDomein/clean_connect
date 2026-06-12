@@ -334,16 +334,32 @@ class AgendaTabState extends State<AgendaTab> {
         ),
       );
 
-      final start = _safeParseTime(
-        day,
-        taak['tijdslot_start'] ?? taak['starttijd'],
-        8,
-      );
-      var end = _safeParseTime(
-        day,
-        taak['tijdslot_eind'] ?? taak['eindtijd'],
-        9,
-      );
+      var startStr =
+          _text(taak['tijdslot_start']).isNotEmpty
+              ? _text(taak['tijdslot_start'])
+              : _text(taak['starttijd']);
+      var eindStr =
+          _text(taak['tijdslot_eind']).isNotEmpty
+              ? _text(taak['tijdslot_eind'])
+              : _text(taak['eindtijd']);
+      if (startStr.isEmpty) startStr = '08:00';
+      if (eindStr.isEmpty) eindStr = '09:00';
+
+      if (actievePlanning.isNotEmpty) {
+        final p = actievePlanning.first;
+        if (_text(p['starttijd']).isNotEmpty) {
+          startStr = _text(p['starttijd']);
+        }
+        if (_text(p['eindtijd']).isNotEmpty) {
+          eindStr = _text(p['eindtijd']);
+        }
+      }
+
+      startStr = startStr.length >= 5 ? startStr.substring(0, 5) : startStr;
+      eindStr = eindStr.length >= 5 ? eindStr.substring(0, 5) : eindStr;
+
+      final start = _safeParseTime(day, startStr, 8);
+      var end = _safeParseTime(day, eindStr, 9);
       if (!end.isAfter(start)) {
         end = start.add(const Duration(hours: 1));
       }
@@ -1531,20 +1547,24 @@ class AgendaTabState extends State<AgendaTab> {
     }
 
     final planning = _firstMapFrom(task['planning']);
-    final eerstePlanning = _firstMapFrom(task['opdracht_planning']);
+    final actievePlanning = _actievePlanningRijenUitTask(task);
+    final eerstePlanning = actievePlanning.isNotEmpty
+        ? actievePlanning.first
+        : _firstMapFrom(task['opdracht_planning']) ?? planning;
 
-    task['starttijd'] = _text(
-      task['starttijd'],
-    ).isNotEmpty
-        ? task['starttijd']
-        : (eerstePlanning?['starttijd'] ??
-            planning?['starttijd'] ??
-            task['tijdslot_start']);
-    task['eindtijd'] = _text(task['eindtijd']).isNotEmpty
-        ? task['eindtijd']
-        : (eerstePlanning?['eindtijd'] ??
-            planning?['eindtijd'] ??
-            task['tijdslot_eind']);
+    var effectieveStart = task['tijdslot_start'] ?? task['starttijd'];
+    var effectieveEind = task['tijdslot_eind'] ?? task['eindtijd'];
+    if (eerstePlanning != null) {
+      if (_text(eerstePlanning['starttijd']).isNotEmpty) {
+        effectieveStart = eerstePlanning['starttijd'];
+      }
+      if (_text(eerstePlanning['eindtijd']).isNotEmpty) {
+        effectieveEind = eerstePlanning['eindtijd'];
+      }
+    }
+
+    task['starttijd'] = effectieveStart;
+    task['eindtijd'] = effectieveEind;
 
     final operatorNamen = _agendaOperatorNamenUitTask(task);
     if (operatorNamen.isNotEmpty) {

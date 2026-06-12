@@ -768,10 +768,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     return name.isEmpty ? 'Naamloos project' : name;
   }
 
-  /// Embed `planning:opdracht_planning!huidige_planning_id` (+ list→eerste rij tolerantie).
+  /// Embed `planning` / `opdracht_planning` (+ list→eerste actieve rij).
   Map<String, dynamic>? _planningDetailsVanItem(Map<String, dynamic> item) {
     final raw = item['planning'] ?? item['planning_details'];
-    if (raw == null) return null;
     if (raw is Map<String, dynamic>) return raw;
     if (raw is Map) return Map<String, dynamic>.from(raw);
     if (raw is List && raw.isNotEmpty) {
@@ -779,7 +778,28 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
       if (first is Map<String, dynamic>) return first;
       if (first is Map) return Map<String, dynamic>.from(first);
     }
+
+    final rijen = _manualPlannedRijenUitTask(item);
+    if (rijen.isNotEmpty && rijen.first is Map) {
+      return Map<String, dynamic>.from(rijen.first as Map);
+    }
     return null;
+  }
+
+  ({dynamic start, dynamic end}) _effectiveTijdenVanTask(
+    Map<String, dynamic> task,
+  ) {
+    dynamic rawStart = task['tijdslot_start'] ?? task['starttijd'];
+    dynamic rawEind = task['tijdslot_eind'] ?? task['eindtijd'];
+
+    final planningen = _manualPlannedRijenUitTask(task);
+    if (planningen.isNotEmpty && planningen.first is Map) {
+      final p = planningen.first as Map;
+      if (_text(p['starttijd']).isNotEmpty) rawStart = p['starttijd'];
+      if (_text(p['eindtijd']).isNotEmpty) rawEind = p['eindtijd'];
+    }
+
+    return (start: rawStart, end: rawEind);
   }
 
   /// Alias voor sort/modal/tijden: zelfde object als `planning` / `planning_details` embed.
@@ -1568,12 +1588,21 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     Map<String, dynamic> task, {
     Map<String, dynamic>? planning,
   }) {
-    final startTijd = _formatManualKaartTijd(
-      planning?['starttijd'] ?? task['tijdslot_start'] ?? task['starttijd'],
-    );
-    final eindTijd = _formatManualKaartTijd(
-      planning?['eindtijd'] ?? task['tijdslot_eind'] ?? task['eindtijd'],
-    );
+    final tijden = _effectiveTijdenVanTask(task);
+    var rawStart = tijden.start;
+    var rawEind = tijden.end;
+
+    if (planning != null) {
+      if (_text(planning['starttijd']).isNotEmpty) {
+        rawStart = planning['starttijd'];
+      }
+      if (_text(planning['eindtijd']).isNotEmpty) {
+        rawEind = planning['eindtijd'];
+      }
+    }
+
+    final startTijd = _formatManualKaartTijd(rawStart);
+    final eindTijd = _formatManualKaartTijd(rawEind);
     return '$startTijd - $eindTijd';
   }
 
@@ -1675,8 +1704,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
   }
 
   ({int start, int end}) _manualOpenSlotMinutes(Map<String, dynamic> task) {
-    final sh = _timeLabel(task['tijdslot_start'], fallback: '09:00');
-    final eh = _timeLabel(task['tijdslot_eind'], fallback: '10:00');
+    final tijden = _effectiveTijdenVanTask(task);
+    final sh = _timeLabel(tijden.start, fallback: '09:00');
+    final eh = _timeLabel(tijden.end, fallback: '10:00');
     var sm = _timeToMinutes(sh);
     var em = _timeToMinutes(eh);
     if (em <= sm) em = sm + 60;
@@ -1684,13 +1714,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
   }
 
   ({int start, int end}) _manualPlannedSlotMinutes(Map<String, dynamic> item) {
-    final plan = _planningDetailsVanItem(item);
-    final sh = plan != null && _text(plan['starttijd']).isNotEmpty
-        ? _timeLabel(plan['starttijd'])
-        : _timeLabel(item['tijdslot_start'], fallback: '09:00');
-    final eh = plan != null && _text(plan['eindtijd']).isNotEmpty
-        ? _timeLabel(plan['eindtijd'])
-        : _timeLabel(item['tijdslot_eind'], fallback: '10:00');
+    final tijden = _effectiveTijdenVanTask(item);
+    final sh = _timeLabel(tijden.start, fallback: '09:00');
+    final eh = _timeLabel(tijden.end, fallback: '10:00');
     var sm = _timeToMinutes(sh);
     var em = _timeToMinutes(eh);
     if (em <= sm) em = sm + 60;

@@ -39,6 +39,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _afgeslotenLoonstroken = [];
+  Map<String, double> _openVoorschottenPerOperator = {};
   String? _geselecteerdeOperatorFilterId;
 
   String get _maandSleutel =>
@@ -88,13 +89,98 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     return 'Operator ${_text(item['operator_id'])}';
   }
 
-  double _nettoUitLoonstrook(Map<String, dynamic> item) {
+  double _brutoLoonVanItem(Map<String, dynamic> item) =>
+      _asDouble(item['berekend_bruto']);
+
+  double _openstaandVoorschotVanItem(Map<String, dynamic> item) {
+    if (_asBool(item['is_betaald'])) {
+      return _asDouble(item['verrekend_voorschot']);
+    }
+    final opId = _text(item['operator_id']);
+    if (opId.isNotEmpty && _openVoorschottenPerOperator.containsKey(opId)) {
+      return _openVoorschottenPerOperator[opId] ?? 0;
+    }
+    return _asDouble(item['open_voorschot']);
+  }
+
+  double _nettoTeBetalenVanItem(Map<String, dynamic> item) {
     final afw = item['afwijkend_bedrag'];
     if (afw != null && _text(afw).isNotEmpty) {
       return _asDouble(afw);
     }
-    return _asDouble(item['berekend_bruto']) -
-        _asDouble(item['verrekend_voorschot']);
+    return _brutoLoonVanItem(item) - _openstaandVoorschotVanItem(item);
+  }
+
+  Future<Map<String, double>> _fetchOpenVoorschottenPerOperator() async {
+    final voorschottenData = await AppSupabase.client
+        .from('operator_voorschotten')
+        .select('operator_id, voorschot_bedrag')
+        .eq('is_verrekend', false);
+
+    final map = <String, double>{};
+    for (final raw in voorschottenData as List) {
+      if (raw is! Map) continue;
+      final v = Map<String, dynamic>.from(raw);
+      final opId = v['operator_id'].toString();
+      final bedrag =
+          double.tryParse(v['voorschot_bedrag'].toString()) ?? 0.0;
+      map[opId] = (map[opId] ?? 0.0) + bedrag;
+    }
+    return map;
+  }
+
+  void _verrijkLoonstrokenMetOpenVoorschotten(
+    List<Map<String, dynamic>> rows,
+    Map<String, double> openPerOperator,
+  ) {
+    for (final row in rows) {
+      final opId = _text(row['operator_id']);
+      row['open_voorschot'] = openPerOperator[opId] ?? 0.0;
+    }
+  }
+
+  Future<double> _totaalOpenVoorschotVoorOperator(String operatorId) async {
+    if (operatorId.isEmpty) return 0;
+    final map = await _fetchOpenVoorschottenPerOperator();
+    return map[operatorId] ?? 0;
+  }
+
+  Future<void> _markeerAlsUitbetaald({
+    required String operatorId,
+    required double brutoLoon,
+  }) async {
+    final response = await AppSupabase.client.rpc(
+      'betaal_salaris_uit',
+      params: {
+        'p_operator_id': operatorId,
+        'p_maand': _maandSleutel,
+        'p_bruto_loon': brutoLoon,
+      },
+    );
+
+    if (response == null || response is! Map || response['success'] != true) {
+      final msg = response is Map
+          ? _text(response['message']).isNotEmpty
+              ? _text(response['message'])
+              : 'Uitbetaling mislukt'
+          : 'Uitbetaling mislukt';
+      throw Exception(msg);
+    }
+
+    final verrekend = _asDouble(response['verrekend']);
+    final netto = _asDouble(response['netto']);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Succes! Netto: €${netto.toStringAsFixed(2)} '
+          '(Verrekend voorschot: €${verrekend.toStringAsFixed(2)})',
+        ),
+        backgroundColor: Colors.green,
+      ),
+    );
+    await _loadData();
   }
 
   @override
@@ -131,6 +217,14 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
+      Map<String, double> openVoorschottenPerOperator = {};
+      try {
+        openVoorschottenPerOperator = await _fetchOpenVoorschottenPerOperator();
+      } catch (e) {
+        debugPrint('Openstaande voorschotten ophalen mislukt: $e');
+      }
+      _verrijkLoonstrokenMetOpenVoorschotten(rows, openVoorschottenPerOperator);
+
       rows.sort(
         (a, b) => _operatorNaamUitLoonstrook(a).toLowerCase().compareTo(
               _operatorNaamUitLoonstrook(b).toLowerCase(),
@@ -140,6 +234,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
       if (!mounted) return;
       setState(() {
         _afgeslotenLoonstroken = rows;
+        _openVoorschottenPerOperator = openVoorschottenPerOperator;
         _geselecteerdeOperatorFilterId = null;
         _loading = false;
       });
@@ -160,31 +255,22 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     for (final item in _afgeslotenLoonstroken) {
       totaalBruto += _asDouble(item['berekend_bruto']);
       if (_asBool(item['is_betaald'])) {
-        reeds += _nettoUitLoonstrook(item);
+        reeds += _nettoTeBetalenVanItem(item);
       } else {
-        nog += _nettoUitLoonstrook(item);
+        nog += _nettoTeBetalenVanItem(item);
       }
     }
     return (totaalBruto: totaalBruto, reedsUitbetaald: reeds, nogTeBetalen: nog);
   }
 
   Future<void> _openUitbetaalModal(Map<String, dynamic> item) async {
-    final afwijkendCtl = TextEditingController();
-    final rawAfw = item['afwijkend_bedrag'];
-    if (rawAfw != null) {
-      if (rawAfw is num) {
-        afwijkendCtl.text = rawAfw.toString().replaceAll('.', ',');
-      } else {
-        afwijkendCtl.text = _text(rawAfw);
-      }
-    }
-
-    final bruto = _asDouble(item['berekend_bruto']);
-    final voorschot = _asDouble(item['verrekend_voorschot']);
-    final rowId = _text(item['id']);
+    final operatorId = _text(item['operator_id']);
     final naam = _operatorNaamUitLoonstrook(item);
+    final bruto = _brutoLoonVanItem(item);
+    final openVoorschot = await _totaalOpenVoorschotVoorOperator(operatorId);
+    final nettoTeBetalen = bruto - openVoorschot;
 
-    final parentContext = context;
+    if (!mounted) return;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -236,76 +322,42 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
                       ),
                       const SizedBox(height: 16),
                       _modalRegel('Berekend bruto', _eur.format(bruto)),
-                      _modalRegel('Verrekend voorschot', _eur.format(voorschot)),
-                      const Divider(height: 24),
                       _modalRegel(
-                        'Standaard netto',
-                        _eur.format(bruto - voorschot),
+                        'Openstaand voorschot',
+                        '-${_eur.format(openVoorschot)}',
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: afwijkendCtl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Afwijkend bedrag (optioneel)',
-                          hintText: 'Bonus of correctie',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      const Divider(height: 24),
+                      if (openVoorschot > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'Er wordt €${_eur.format(openVoorschot)} aan openstaande '
+                            'voorschotten verrekend.',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
+                      _modalRegel(
+                        'Standaard netto',
+                        _eur.format(nettoTeBetalen),
                       ),
                       const SizedBox(height: 20),
                       FilledButton(
                         onPressed: () async {
-                          if (rowId.isEmpty) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                content: Text('Systeemfout: geen uitbetaling-id.'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          final ingevuldeTekst = afwijkendCtl.text;
-                          final afwijkendBedrag = double.tryParse(
-                            ingevuldeTekst.replaceAll(',', '.'),
-                          );
-
                           Navigator.pop(ctx);
 
                           try {
-                            final updateResponse = await AppSupabase.client
-                                .from('operator_uitbetalingen')
-                                .update({
-                                  'afwijkend_bedrag': afwijkendBedrag,
-                                  'is_betaald': true,
-                                  'betaald_op':
-                                      DateTime.now().toIso8601String(),
-                                })
-                                .eq('id', rowId)
-                                .select();
-
-                            if ((updateResponse as List).isEmpty) {
-                              throw Exception(
-                                'Update mislukt. Controleer RLS of id: $rowId',
-                              );
-                            }
-
-                            if (mounted) {
-                              await _loadData();
-                            }
-                            if (!parentContext.mounted) return;
-                            ScaffoldMessenger.of(parentContext).showSnackBar(
-                              SnackBar(
-                                content: Text('$naam gemarkeerd als uitbetaald.'),
-                                backgroundColor: const Color(0xFF2E7D32),
-                              ),
+                            await _markeerAlsUitbetaald(
+                              operatorId: operatorId,
+                              brutoLoon: bruto,
                             );
                           } catch (e) {
-                            if (!parentContext.mounted) return;
-                            ScaffoldMessenger.of(parentContext).showSnackBar(
+                            debugPrint('Fout bij uitbetalen via RPC: $e');
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Fout bij uitbetalen: $e'),
                                 backgroundColor: Colors.red,
@@ -335,8 +387,161 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
             );
       },
     );
+  }
 
-    afwijkendCtl.dispose();
+  void _showVoorschotModal(
+    BuildContext context,
+    String operatorId,
+    String operatorNaam,
+  ) {
+    final bedragController = TextEditingController();
+    final opmerkingController = TextEditingController();
+    final parentContext = context;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Voorschot toevoegen',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: _deepNavy,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Voor: $operatorNaam',
+                  style: GoogleFonts.inter(
+                    color: Colors.grey.shade600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: bedragController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Bedrag (€)',
+                    prefixIcon: const Icon(Icons.euro),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: opmerkingController,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    labelText: 'Opmerking (bijv. Reparatie auto)',
+                    prefixIcon: const Icon(Icons.notes),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _deepNavy,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () async {
+                      final bedragText =
+                          bedragController.text.replaceAll(',', '.');
+                      final bedrag = double.tryParse(bedragText);
+
+                      if (bedrag == null || bedrag <= 0) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(
+                            content: Text('Vul een geldig bedrag in.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+
+                      try {
+                        await AppSupabase.client
+                            .from('operator_voorschotten')
+                            .insert({
+                          'operator_id': operatorId,
+                          'voorschot_bedrag': bedrag,
+                          'opmerking': opmerkingController.text.trim(),
+                          'toegevoegd_door':
+                              AppSupabase.client.auth.currentUser?.id,
+                          'is_verrekend': false,
+                        });
+
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        if (!mounted) return;
+                        await _loadData();
+                        if (!parentContext.mounted) return;
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Voorschot van €${bedrag.toStringAsFixed(2)} opgeslagen!',
+                            ),
+                            backgroundColor: const Color(0xFF2E7D32),
+                          ),
+                        );
+                      } catch (e) {
+                        if (!ctx.mounted) return;
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text('Fout bij opslaan: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    child: Text(
+                      'Voorschot Opslaan',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ).whenComplete(() {
+      bedragController.dispose();
+      opmerkingController.dispose();
+    });
   }
 
   Widget _modalRegel(String label, String value) {
@@ -531,62 +736,31 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     );
   }
 
-  Widget _bedragBlok(String label, String waarde, {Color? accent}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F3F6),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Colors.grey.shade600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            waarde,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              color: accent ?? const Color(0xFF0F172A),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _uitbetalingKaart(Map<String, dynamic> item) {
+    final operatorId = _text(item['operator_id']);
     final naam = _operatorNaamUitLoonstrook(item);
     final initial = naam.isNotEmpty ? naam[0].toUpperCase() : '?';
-    final bruto = _asDouble(item['berekend_bruto']);
-    final voorschot = _asDouble(item['verrekend_voorschot']);
-    final netto = _nettoUitLoonstrook(item);
+    final brutoLoon = _brutoLoonVanItem(item);
+    final openVoorschot = _openstaandVoorschotVanItem(item);
+    final nettoTeBetalen = _nettoTeBetalenVanItem(item);
     final isBetaald = _asBool(item['is_betaald']);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: isBetaald ? 2 : 0,
+      color: isBetaald ? Colors.grey.shade100 : Colors.white,
+      elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
           color: isBetaald
-              ? const Color(0xFF86EFAC)
-              : Colors.grey.shade200,
-          width: isBetaald ? 2 : 1,
+              ? Colors.grey.shade300
+              : Colors.green.shade200,
+          width: 1,
         ),
       ),
-      shadowColor: isBetaald
-          ? const Color(0xFF22C55E).withValues(alpha: 0.35)
-          : null,
-      child: Padding(
+      child: Opacity(
+        opacity: isBetaald ? 0.72 : 1.0,
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -596,10 +770,10 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
                 CircleAvatar(
                   radius: 22,
                   backgroundColor: isBetaald
-                      ? const Color(0xFFDCFCE7)
+                      ? Colors.grey.shade300
                       : _brightBlue.withValues(alpha: 0.12),
                   foregroundColor: isBetaald
-                      ? const Color(0xFF166534)
+                      ? Colors.grey.shade700
                       : _brightBlue,
                   child: Text(
                     initial,
@@ -626,7 +800,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFDCFCE7),
+                      color: Colors.grey.shade300,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -634,32 +808,42 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
                       style: GoogleFonts.inter(
                         fontWeight: FontWeight.w900,
                         fontSize: 12,
-                        color: const Color(0xFF166534),
+                        color: Colors.grey.shade700,
                       ),
                     ),
                   ),
               ],
             ),
             const SizedBox(height: 14),
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: _bedragBlok('Berekend bruto', _eur.format(bruto)),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _bedragBlok(
-                    'Voorschot',
-                    _eur.format(voorschot),
+                Text(
+                  'Bruto loon: ${_eur.format(brutoLoon)}',
+                  style: GoogleFonts.inter(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _bedragBlok(
-                    'Netto uit te betalen',
-                    _eur.format(netto),
-                    accent: isBetaald
-                        ? const Color(0xFF166534)
+                if (openVoorschot > 0)
+                  Text(
+                    isBetaald
+                        ? 'Verrekend voorschot: -${_eur.format(openVoorschot)}'
+                        : 'Openstaand voorschot: -${_eur.format(openVoorschot)}',
+                    style: GoogleFonts.inter(
+                      color: Colors.redAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Text(
+                  'Uit te betalen: ${_eur.format(nettoTeBetalen)}',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: isBetaald
+                        ? Colors.grey.shade700
                         : _brightBlue,
                   ),
                 ),
@@ -667,26 +851,55 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
             ),
             if (!isBetaald) ...[
               const SizedBox(height: 14),
-              FilledButton(
-                onPressed: () => _openUitbetaalModal(item),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _brightBlue,
-                  minimumSize: const Size.fromHeight(44),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.money_off, size: 18),
+                      label: const Text('Voorschot'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange.shade800,
+                        side: BorderSide(color: Colors.orange.shade200),
+                        minimumSize: const Size.fromHeight(44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: operatorId.isEmpty
+                          ? null
+                          : () => _showVoorschotModal(
+                                context,
+                                operatorId,
+                                naam,
+                              ),
+                    ),
                   ),
-                ),
-                child: Text(
-                  'Markeer als Uitbetaald',
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => _openUitbetaalModal(item),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _brightBlue,
+                        minimumSize: const Size.fromHeight(44),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'Markeer als Uitbetaald',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ],
         ),
+      ),
       ),
     );
   }
