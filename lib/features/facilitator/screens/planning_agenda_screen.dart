@@ -50,6 +50,19 @@ class AgendaTabState extends State<AgendaTab> {
   Object? _loadError;
 
   List<Map<String, dynamic>> _inboxUitnodigingen = [];
+  List<Map<String, dynamic>> _afwezighedenLijst = [];
+  List<Map<String, dynamic>> _alleOpdrachtenLijst = [];
+  Map<String, List<String>> _operatorWeekdagen = {};
+
+  static const List<String> _weekDagenNamen = [
+    'maandag',
+    'dinsdag',
+    'woensdag',
+    'donderdag',
+    'vrijdag',
+    'zaterdag',
+    'zondag',
+  ];
 
   String? _currentUserId;
 
@@ -219,6 +232,27 @@ class AgendaTabState extends State<AgendaTab> {
   DateTime _roundTo5Mins(DateTime time) {
     final roundedMinutes = (time.minute / 5).round() * 5;
     return DateTime(time.year, time.month, time.day, time.hour, roundedMinutes);
+  }
+
+  String? _resolveOperatorIdFromHeader(
+    String rawResourceId,
+    String operatorNaam,
+  ) {
+    final raw = rawResourceId.trim();
+    if (raw.isNotEmpty &&
+        raw != 'ongepland' &&
+        !raw.startsWith('naam_')) {
+      return raw;
+    }
+    return _getOperatorId(operatorNaam);
+  }
+
+  bool _isBeheerbaarOperatorHeader(String operatorNaam, String rawResourceId) {
+    if (operatorNaam == 'Ongepland' || operatorNaam == 'Algemene Planning') {
+      return false;
+    }
+    if (rawResourceId == 'ongepland') return false;
+    return true;
   }
 
   String? _operatorIdFromResource(CalendarResource? resource) {
@@ -751,34 +785,75 @@ class AgendaTabState extends State<AgendaTab> {
                 height: 80,
               ),
               resourceViewHeaderBuilder: (context, details) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(
-                    vertical: 4,
-                    horizontal: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade800,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    details.resource.displayName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                final operatorNaam = details.resource.displayName;
+                final rawResourceId = details.resource.id.toString();
+                final opId = _resolveOperatorIdFromHeader(
+                  rawResourceId,
+                  operatorNaam,
+                );
+                final currentDate = _normalizeDate(
+                  _calendarController.displayDate ?? day,
+                );
+                final isAfwezig = opId != null
+                    ? _isOperatorAfwezigById(opId, currentDate)
+                    : _isOperatorAfwezig(operatorNaam, currentDate);
+                final isBeheerbaar =
+                    _isBeheerbaarOperatorHeader(operatorNaam, rawResourceId);
+
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: isBeheerbaar
+                      ? () => _openAfwezigheidModal(
+                            rawResourceId,
+                            operatorNaam,
+                            currentDate,
+                          )
+                      : null,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 8,
                     ),
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
+                    decoration: BoxDecoration(
+                      color: isAfwezig
+                          ? Colors.grey.shade400
+                          : const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          operatorNaam,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (isAfwezig)
+                          Text(
+                            'Afwezig',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -1600,6 +1675,41 @@ class AgendaTabState extends State<AgendaTab> {
 
       final opdrachten = await _fetchAgendaOpdrachten();
 
+      List<Map<String, dynamic>> afwezigheden = [];
+      try {
+        final afwezigData = await AppSupabase.client
+            .from('operator_afwezigheid')
+            .select('id, operator_id, datum, reden, is_beschikbaar');
+        afwezigheden = List<Map<String, dynamic>>.from(afwezigData);
+      } catch (e) {
+        debugPrint('Fout bij ophalen afwezigheden: $e');
+      }
+
+      final operatorWeekdagen = <String, List<String>>{};
+      try {
+        final opsResponse = await AppSupabase.client
+            .from('gebruikers')
+            .select('id, onbeschikbare_weekdagen')
+            .eq('gebruikersrol', 'operator');
+        for (final raw in opsResponse as List) {
+          if (raw is! Map) continue;
+          final op = Map<String, dynamic>.from(raw);
+          final id = _text(op['id']);
+          if (id.isEmpty) continue;
+          final dagenRaw = op['onbeschikbare_weekdagen'];
+          if (dagenRaw is List) {
+            operatorWeekdagen[id] = dagenRaw
+                .map((e) => e.toString().trim().toLowerCase())
+                .where((e) => e.isNotEmpty)
+                .toList();
+          } else {
+            operatorWeekdagen[id] = [];
+          }
+        }
+      } catch (e) {
+        debugPrint('Fout bij ophalen operator weekdagen: $e');
+      }
+
       final grouped = <DateTime, List<dynamic>>{};
       for (final task in opdrachten) {
         final day = _normalizeDate(_parseDate(task['geplande_datum']));
@@ -1633,6 +1743,9 @@ class AgendaTabState extends State<AgendaTab> {
       if (!mounted) return;
       setState(() {
         _groupedTasks = grouped;
+        _alleOpdrachtenLijst = opdrachten;
+        _afwezighedenLijst = afwezigheden;
+        _operatorWeekdagen = operatorWeekdagen;
         _inboxUitnodigingen = inbox;
         _currentUserId = uid.isEmpty ? null : uid;
         _isLoading = false;
@@ -1709,6 +1822,160 @@ class AgendaTabState extends State<AgendaTab> {
     }
     if (userMap == null) return '';
     return '${_text(userMap['voornaam'])} ${_text(userMap['achternaam'])}'.trim();
+  }
+
+  String _dateStr(DateTime date) => date.toIso8601String().split('T')[0];
+
+  String? _operatorIdVanNaam(String operatorNaam) {
+    if (operatorNaam.isEmpty ||
+        operatorNaam == 'Ongepland' ||
+        operatorNaam == 'Algemene Planning') {
+      return null;
+    }
+    for (final taak in _alleOpdrachtenLijst) {
+      for (final planning in _actievePlanningRijenUitTask(taak)) {
+        final naam = _operatorNaamUitPlanning(planning);
+        if (naam != operatorNaam) continue;
+        final opId = _text(planning['operator_id']);
+        if (opId.isNotEmpty) return opId;
+        final user = planning['gebruikers'];
+        if (user is Map) {
+          final id = _text(user['id']);
+          if (id.isNotEmpty) return id;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _getOperatorId(String operatorNaam) => _operatorIdVanNaam(operatorNaam);
+
+  bool? _isBeschikbaarFlag(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    final s = value.toString().toLowerCase();
+    if (s == 'true' || s == '1') return true;
+    if (s == 'false' || s == '0') return false;
+    return null;
+  }
+
+  bool _isOperatorAfwezig(String operatorNaam, DateTime date) {
+    final opId = _getOperatorId(operatorNaam);
+    if (opId == null) return false;
+    return _isOperatorAfwezigById(opId, date);
+  }
+
+  bool _isOperatorAfwezigById(String operatorId, DateTime date) {
+    if (operatorId.isEmpty) return false;
+    final dateStr = _dateStr(date);
+
+    final specifieke = _afwezighedenLijst.where((a) {
+      final aOpId = _text(a['operator_id']);
+      final aDatum = _text(a['datum']).split('T').first;
+      return aOpId == operatorId && aDatum == dateStr;
+    }).toList();
+
+    if (specifieke.isNotEmpty) {
+      final flag = _isBeschikbaarFlag(specifieke.first['is_beschikbaar']);
+      if (flag == true) return false;
+      if (flag == false) return true;
+      return true;
+    }
+
+    final dagNaam = _weekDagenNamen[date.weekday - 1];
+    final onbeschikbaar = _operatorWeekdagen[operatorId] ?? [];
+    return onbeschikbaar.contains(dagNaam);
+  }
+
+  void _openAfwezigheidModal(
+    String operatorId,
+    String operatorNaam,
+    DateTime date,
+  ) {
+    final dateStr = _dateStr(_normalizeDate(date));
+    final opId = _resolveOperatorIdFromHeader(operatorId, operatorNaam);
+
+    if (opId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Kan operator ID niet vinden. Deze operator is hier mogelijk 'nep'.",
+          ),
+        ),
+      );
+      return;
+    }
+
+    final isAfwezig = _isOperatorAfwezigById(opId, _normalizeDate(date));
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Beschikbaarheid: $operatorNaam'),
+        content: Text(
+          isAfwezig
+              ? '$operatorNaam is vandaag (standaard) NIET beschikbaar.\n\n'
+                  'Wil je een eenmalige uitzondering maken (Override) zodat hij wél '
+                  'ingepland kan worden?'
+              : 'Wil je $operatorNaam vandaag eenmalig markeren als afwezig '
+                  '(Verlof/Ziek)? Hij kan dan niet meer ingepland worden.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annuleren'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor:
+                  isAfwezig ? Colors.green.shade600 : Colors.red.shade600,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              try {
+                await AppSupabase.client.from('operator_afwezigheid').upsert(
+                  {
+                    'operator_id': opId,
+                    'datum': dateStr,
+                    'is_beschikbaar': isAfwezig,
+                    'reden': isAfwezig ? 'beschikbaar_override' : 'vrij',
+                    'toegevoegd_door': AppSupabase.client.auth.currentUser?.id,
+                  },
+                  onConflict: 'operator_id, datum',
+                );
+                await _loadAgenda();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      isAfwezig
+                          ? '$operatorNaam is vandaag beschikbaar gemaakt!'
+                          : '$operatorNaam is afwezig gemeld.',
+                    ),
+                    backgroundColor: isAfwezig ? Colors.green : Colors.orange,
+                  ),
+                );
+              } catch (e) {
+                debugPrint('Fout bij aanpassen afwezigheid: $e');
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Fout bij opslaan: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: Text(isAfwezig ? 'Maak Beschikbaar' : 'Markeer Afwezig'),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _taskHasOperator(Map<String, dynamic> task, String operator) {

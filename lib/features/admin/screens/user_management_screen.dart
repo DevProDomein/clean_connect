@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/models/user_role.dart';
@@ -29,7 +30,7 @@ class _UserManagementScreenState extends State<UserManagementScreen>
   @override
   void initState() {
     super.initState();
-    _mainTabController = TabController(length: 2, vsync: this)
+    _mainTabController = TabController(length: 3, vsync: this)
       ..addListener(() {
         if (!_mainTabController.indexIsChanging) setState(() {});
       });
@@ -195,7 +196,8 @@ class _UserManagementScreenState extends State<UserManagementScreen>
             ),
           ],
         ),
-        floatingActionButton: FloatingActionButton(
+        floatingActionButton: _mainTabController.index == 0
+            ? FloatingActionButton(
         backgroundColor: Colors.blue.shade900,
           tooltip: 'Nieuwe gebruiker uitnodigen',
           onPressed: () async {
@@ -211,7 +213,8 @@ class _UserManagementScreenState extends State<UserManagementScreen>
             }
           },
         child: const Icon(Icons.add, color: Colors.white),
-        ),
+        )
+            : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: _mainTabController.index == 0
           ? _medewerkersPanelKey.currentState?.buildBottomPaginationBar()
@@ -263,6 +266,9 @@ class _UserManagementScreenState extends State<UserManagementScreen>
 
                         // Tab 2: Systeemrechten Overzicht (read-only dictionary)
                         const _SystemRightsOverviewTab(),
+
+                        // Tab 3: Operator beschikbaarheid (weekmatrix + maandkalender)
+                        const _BeschikbaarheidTab(),
                       ],
                     ),
                   ),
@@ -320,6 +326,7 @@ class _TopTabs extends StatelessWidget {
         tabs: const [
           Tab(text: 'Medewerkers'),
           Tab(text: 'Systeemrechten Overzicht'),
+          Tab(text: 'Beschikbaarheid'),
         ],
       ),
     );
@@ -555,6 +562,838 @@ class _SystemRightsOverviewTabState extends State<_SystemRightsOverviewTab> {
   }
 }
 
+class _BeschikbaarheidTab extends StatefulWidget {
+  const _BeschikbaarheidTab();
+
+  @override
+  State<_BeschikbaarheidTab> createState() => _BeschikbaarheidTabState();
+}
+
+class _BeschikbaarheidTabState extends State<_BeschikbaarheidTab> {
+  static const _weekDagenNamen = [
+    'maandag',
+    'dinsdag',
+    'woensdag',
+    'donderdag',
+    'vrijdag',
+    'zaterdag',
+    'zondag',
+  ];
+
+  List<Map<String, dynamic>> _operators = [];
+  List<Map<String, dynamic>> _alleAfwezigheden = [];
+  late DateTime _currentWeekStart = _weekStartMaandag(DateTime.now());
+  final ScrollController _matrixScrollController = ScrollController();
+  bool _loading = true;
+  String? _error;
+
+  static DateTime _weekStartMaandag(DateTime ref) {
+    final d = DateTime(ref.year, ref.month, ref.day);
+    return d.subtract(Duration(days: d.weekday - 1));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    _matrixScrollController.dispose();
+    super.dispose();
+  }
+
+  String _text(dynamic v) => (v ?? '').toString().trim();
+
+  DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  String _dateStr(DateTime date) => _dayOnly(date).toIso8601String().split('T')[0];
+
+  bool? _isBeschikbaarFlag(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    final s = value.toString().toLowerCase();
+    if (s == 'true' || s == '1') return true;
+    if (s == 'false' || s == '0') return false;
+    return null;
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await Future.wait([_loadOperators(), _loadAfwezigheden()]);
+      if (!mounted) return;
+      setState(() => _loading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _loadOperators() async {
+    final response = await AppSupabase.client
+        .from(GebruikersTable.name)
+        .select(
+          'id, voornaam, achternaam, onbeschikbare_weekdagen, gebruikersrol',
+        )
+        .eq(GebruikersTable.gebruikersrol, 'operator')
+        .order(GebruikersTable.achternaam);
+    _operators = List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> _loadAfwezigheden() async {
+    try {
+      final vanaf = _dateStr(
+        DateTime.now().subtract(const Duration(days: 30)),
+      );
+      final data = await AppSupabase.client
+          .from('operator_afwezigheid')
+          .select('*')
+          .or('start_datum.gte.$vanaf,eind_datum.gte.$vanaf,datum.gte.$vanaf');
+      if (!mounted) return;
+      setState(
+        () => _alleAfwezigheden = List<Map<String, dynamic>>.from(data),
+      );
+    } catch (e) {
+      debugPrint('Fout afwezigheden: $e');
+    }
+  }
+
+  DateTime? _parseRecordDatum(dynamic value) {
+    final raw = _text(value).split('T').first;
+    if (raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  Map<String, dynamic>? _afwezigheidRecordVoorDag(
+    List<Map<String, dynamic>> records,
+    DateTime date,
+  ) {
+    final day = _dayOnly(date);
+    for (final record in records) {
+      final start = _parseRecordDatum(record['start_datum']) ??
+          _parseRecordDatum(record['datum']);
+      if (start == null) continue;
+      final end = _parseRecordDatum(record['eind_datum']) ?? start;
+      if (!day.isBefore(_dayOnly(start)) && !day.isAfter(_dayOnly(end))) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  bool _isOperatorVrij(Map<String, dynamic> operator, DateTime date) {
+    final opId = _text(operator['id']);
+
+    final specifiekeRecords = _alleAfwezigheden
+        .where((a) => _text(a['operator_id']) == opId)
+        .toList();
+    final record = _afwezigheidRecordVoorDag(specifiekeRecords, date);
+
+    if (record != null) {
+      final flag = _isBeschikbaarFlag(record['is_beschikbaar']);
+      if (flag == true) return false;
+      if (flag == false) return true;
+      return true;
+    }
+
+    final dagNaam = _weekDagenNamen[date.weekday - 1];
+    final onbeschikbaarRaw = operator['onbeschikbare_weekdagen'];
+    final onbeschikbaar = onbeschikbaarRaw is List
+        ? onbeschikbaarRaw.map((e) => e.toString().trim().toLowerCase()).toList()
+        : <String>[];
+    return onbeschikbaar.contains(dagNaam);
+  }
+
+  void _showBeschikbaarheidModal(Map<String, dynamic> operator) {
+    DateTime focusedDay = DateTime.now();
+    bool isSelectingRange = false;
+    DateTime? rangeStart;
+    final operatorId = _text(operator['id']);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Map<String, dynamic>? getExistingRecord(DateTime date) {
+              final records = _alleAfwezigheden
+                  .where((a) => _text(a['operator_id']) == operatorId)
+                  .toList();
+              return _afwezigheidRecordVoorDag(records, date);
+            }
+
+            bool isOnderdeelVanPeriode(Map<String, dynamic> record) {
+              final start = _parseRecordDatum(record['start_datum']) ??
+                  _parseRecordDatum(record['datum']);
+              final end = _parseRecordDatum(record['eind_datum']) ?? start;
+              if (start == null || end == null) return false;
+              return !_dayOnly(start).isAtSameMomentAs(_dayOnly(end));
+            }
+
+            Future<void> saveAvailability({
+              required DateTime startDt,
+              required DateTime endDt,
+              required bool isBeschikbaar,
+              String reden = '',
+            }) async {
+              if (operatorId.isEmpty) return;
+
+              final startStr = _dateStr(_dayOnly(startDt));
+              final endStr = _dateStr(_dayOnly(endDt));
+
+              try {
+                await AppSupabase.client.from('operator_afwezigheid').insert({
+                  'operator_id': operatorId,
+                  'datum': startStr,
+                  'start_datum': startStr,
+                  'eind_datum': endStr,
+                  'is_beschikbaar': isBeschikbaar,
+                  'reden': reden.isEmpty
+                      ? (isBeschikbaar ? 'Extra beschikbaar' : 'Afwezig')
+                      : reden,
+                  'toegevoegd_door':
+                      AppSupabase.client.auth.currentUser?.id,
+                });
+
+                await _loadAfwezigheden();
+                if (!context.mounted) return;
+                setModalState(() {});
+              } catch (e) {
+                debugPrint('Fout bij opslaan: $e');
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Fout: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+
+            Future<void> handleRangeEndSelection(DateTime endDate) async {
+              if (rangeStart == null) return;
+
+              final realStart =
+                  endDate.isBefore(rangeStart!) ? endDate : rangeStart!;
+              final realEnd =
+                  endDate.isBefore(rangeStart!) ? rangeStart! : endDate;
+              final reasonController = TextEditingController();
+
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Periode Blokkeren'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Je blokkeert de periode van ${realStart.day}-${realStart.month} '
+                        't/m ${realEnd.day}-${realEnd.month}.',
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: reasonController,
+                        decoration: InputDecoration(
+                          labelText: 'Reden (optioneel, bijv. Vakantie)',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Annuleren'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade600,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Blokkeren'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm == true) {
+                await saveAvailability(
+                  startDt: realStart,
+                  endDt: realEnd,
+                  isBeschikbaar: false,
+                  reden: reasonController.text.trim(),
+                );
+              }
+
+              setModalState(() {
+                isSelectingRange = false;
+                rangeStart = null;
+              });
+            }
+
+            Future<void> handleDateClick(DateTime selectedDate) async {
+              final normalized = _dayOnly(selectedDate);
+
+              if (isSelectingRange && rangeStart != null) {
+                if (isSameDay(normalized, rangeStart!)) return;
+                await handleRangeEndSelection(normalized);
+                return;
+              }
+
+              final existingRecord = getExistingRecord(normalized);
+              final isVrij = _isOperatorVrij(operator, normalized);
+              final isPeriode = existingRecord != null &&
+                  isOnderdeelVanPeriode(existingRecord);
+
+              final action = await showDialog<String>(
+                context: context,
+                builder: (ctx) => SimpleDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  title: Text(
+                    'Acties voor ${normalized.day}-${normalized.month}',
+                  ),
+                  children: [
+                    if (!isVrij) ...[
+                      ListTile(
+                        leading: Icon(Icons.block, color: Colors.red.shade600),
+                        title: const Text('Markeer als Afwezig'),
+                        onTap: () => Navigator.pop(ctx, 'afwezig'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.date_range, color: Colors.blue),
+                        title: const Text('Blokkeer Periode...'),
+                        subtitle: const Text('Kies hierna een einddatum'),
+                        onTap: () => Navigator.pop(ctx, 'periode'),
+                      ),
+                    ],
+                    if (isVrij)
+                      ListTile(
+                        leading: Icon(
+                          Icons.event_available,
+                          color: Colors.green.shade600,
+                        ),
+                        title: Text(
+                          isPeriode
+                              ? 'Maak gehele periode weer beschikbaar'
+                              : 'Maak Beschikbaar (Uitzondering)',
+                        ),
+                        onTap: () => Navigator.pop(ctx, 'beschikbaar'),
+                      ),
+                  ],
+                ),
+              );
+
+              if (action == null) return;
+
+              if (action == 'periode') {
+                setModalState(() {
+                  isSelectingRange = true;
+                  rangeStart = normalized;
+                });
+                return;
+              }
+
+              try {
+                if (action == 'beschikbaar') {
+                  if (existingRecord != null &&
+                      _isBeschikbaarFlag(existingRecord['is_beschikbaar']) ==
+                          false) {
+                    await AppSupabase.client
+                        .from('operator_afwezigheid')
+                        .delete()
+                        .eq('id', existingRecord['id']);
+                  } else {
+                    await saveAvailability(
+                      startDt: normalized,
+                      endDt: normalized,
+                      isBeschikbaar: true,
+                    );
+                  }
+                } else if (action == 'afwezig') {
+                  if (existingRecord != null &&
+                      _isBeschikbaarFlag(existingRecord['is_beschikbaar']) ==
+                          true) {
+                    await AppSupabase.client
+                        .from('operator_afwezigheid')
+                        .delete()
+                        .eq('id', existingRecord['id']);
+                  } else {
+                    await saveAvailability(
+                      startDt: normalized,
+                      endDt: normalized,
+                      isBeschikbaar: false,
+                    );
+                  }
+                }
+
+                await _loadAfwezigheden();
+                if (!context.mounted) return;
+                setModalState(() {});
+              } catch (e) {
+                debugPrint('Fout bij toepassen actie: $e');
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Fout: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              padding: const EdgeInsets.all(24),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Beheer: ${_text(operator['voornaam'])} ${_text(operator['achternaam'])}',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  if (isSelectingRange && rangeStart != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        border: Border.all(color: Colors.blue.shade200),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Klik nu op de einddatum in de kalender '
+                              '(Start: ${rangeStart!.day}-${rangeStart!.month}).',
+                              style: TextStyle(
+                                color: Colors.blue.shade900,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.cancel, color: Colors.red),
+                            onPressed: () => setModalState(() {
+                              isSelectingRange = false;
+                              rangeStart = null;
+                            }),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    const SizedBox(height: 16),
+                  Expanded(
+                    child: TableCalendar<void>(
+                      firstDay:
+                          DateTime.now().subtract(const Duration(days: 365)),
+                      lastDay: DateTime.now().add(const Duration(days: 365)),
+                      focusedDay: focusedDay,
+                      calendarFormat: CalendarFormat.month,
+                      startingDayOfWeek: StartingDayOfWeek.monday,
+                      selectedDayPredicate: (day) =>
+                          isSelectingRange &&
+                          rangeStart != null &&
+                          isSameDay(day, rangeStart),
+                      onDaySelected: (selectedDay, fDay) {
+                        setModalState(() => focusedDay = fDay);
+                        handleDateClick(selectedDay);
+                      },
+                      onPageChanged: (fDay) {
+                        setModalState(() => focusedDay = fDay);
+                      },
+                      calendarBuilders: CalendarBuilders(
+                        defaultBuilder: (context, day, fDay) {
+                          if (_isOperatorVrij(operator, day)) {
+                            return Container(
+                              margin: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                border: Border.all(color: Colors.red.shade200),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${day.day}',
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          return null;
+                        },
+                        selectedBuilder: (context, day, fDay) {
+                          return Container(
+                            margin: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade600,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${day.day}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  Widget _buildBeschikbaarheidTab() {
+    final operators = _operators;
+    final weekDates = List.generate(
+      7,
+      (i) => _dayOnly(_currentWeekStart.add(Duration(days: i))),
+    );
+    const weekDaysNames = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
+
+    if (operators.isEmpty) {
+      return const Center(
+        child: Text(
+          'Geen operators gevonden.',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    const double rowHeight = 56.0;
+    const double headerHeight = 60.0;
+    const double nameColWidth = 160.0;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.chevron_left, size: 18),
+                label: const Text('Vorige'),
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _currentWeekStart = _currentWeekStart.subtract(
+                      const Duration(days: 7),
+                    );
+                  });
+                  _loadAfwezigheden();
+                },
+              ),
+              Text(
+                'Week van ${weekDates.first.day}-${weekDates.first.month} '
+                't/m ${weekDates.last.day}-${weekDates.last.month}',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade900,
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.chevron_right, size: 18),
+                label: const Text('Volgende'),
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _currentWeekStart = _currentWeekStart.add(
+                      const Duration(days: 7),
+                    );
+                  });
+                  _loadAfwezigheden();
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: nameColWidth,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border(
+                        right: BorderSide(
+                          color: Colors.grey.shade200,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          height: headerHeight,
+                          color: Colors.blue.shade50,
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 16),
+                          child: Text(
+                            'Medewerker',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade900,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _matrixScrollController,
+                            physics: const ClampingScrollPhysics(),
+                            itemExtent: rowHeight,
+                            itemCount: operators.length,
+                            itemBuilder: (context, index) {
+                              final op = operators[index];
+                              return InkWell(
+                                onTap: () => _showBeschikbaarheidModal(op),
+                                child: Container(
+                                  height: rowHeight,
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      bottom: BorderSide(
+                                        color: Colors.grey.shade100,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '${op['voornaam'] ?? ''} ${op['achternaam'] ?? ''}'
+                                        .trim(),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                      color: Color(0xFF334155),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Row(
+                          children: weekDates.asMap().entries.map((entry) {
+                            final date = entry.value;
+                            final isToday = date.year ==
+                                    DateTime.now().year &&
+                                date.month == DateTime.now().month &&
+                                date.day == DateTime.now().day;
+                            return Expanded(
+                              child: Container(
+                                height: headerHeight,
+                                decoration: BoxDecoration(
+                                  color: isToday
+                                      ? Colors.blue.shade900
+                                      : Colors.blue.shade50,
+                                  border: Border(
+                                    right: BorderSide(
+                                      color: isToday
+                                          ? Colors.blue.shade800
+                                          : Colors.blue.shade100,
+                                    ),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      weekDaysNames[entry.key],
+                                      style: TextStyle(
+                                        color: isToday
+                                            ? Colors.white70
+                                            : Colors.blue.shade700,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${date.day}/${date.month}',
+                                      style: TextStyle(
+                                        color: isToday
+                                            ? Colors.white
+                                            : Colors.blue.shade900,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _matrixScrollController,
+                            physics: const ClampingScrollPhysics(),
+                            itemExtent: rowHeight,
+                            itemCount: operators.length,
+                            itemBuilder: (context, index) {
+                              final op = operators[index];
+                              return Row(
+                                children: weekDates.map((date) {
+                                  final isVrij = _isOperatorVrij(op, date);
+                                  return Expanded(
+                                    child: InkWell(
+                                      onTap: () =>
+                                          _showBeschikbaarheidModal(op),
+                                      child: Container(
+                                        height: rowHeight,
+                                        decoration: BoxDecoration(
+                                          color: isVrij
+                                              ? Colors.grey.shade50
+                                              : Colors.white,
+                                          border: Border(
+                                            right: BorderSide(
+                                              color: Colors.grey.shade100,
+                                            ),
+                                            bottom: BorderSide(
+                                              color: Colors.grey.shade100,
+                                            ),
+                                          ),
+                                        ),
+                                        child: isVrij
+                                            ? Center(
+                                                child: Icon(
+                                                  Icons.do_not_disturb_alt,
+                                                  color: Colors.red.shade300,
+                                                  size: 20,
+                                                ),
+                                              )
+                                            : const Center(
+                                                child: Text(
+                                                  '-',
+                                                  style: TextStyle(
+                                                    color: Colors.black12,
+                                                  ),
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text('Laden mislukt: $_error'),
+        ),
+      );
+    }
+
+    return _buildBeschikbaarheidTab();
+  }
+}
+
 class _InviteUserDialog extends StatefulWidget {
   const _InviteUserDialog();
 
@@ -576,6 +1415,17 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
 
   List<Map<String, dynamic>> _suggestiesLijst = [];
   Map<String, dynamic>? _geselecteerdeSuggestie;
+
+  List<String> _onbeschikbareDagen = [];
+  final List<String> _weekDagen = [
+    'maandag',
+    'dinsdag',
+    'woensdag',
+    'donderdag',
+    'vrijdag',
+    'zaterdag',
+    'zondag',
+  ];
 
   @override
   void initState() {
@@ -628,6 +1478,7 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
     setState(() {
       _geselecteerdeSuggestie = null;
       _selectedBedrijfId = null;
+      _onbeschikbareDagen = [];
       if (_selectedRol == 'klant') {
         _selectedRol = 'operator';
       }
@@ -638,6 +1489,16 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
   String _rolFromGebruikerMap(Map<String, dynamic> g) {
     final raw = g['gebruikersrol'] ?? g['rol'];
     return raw?.toString().trim().toLowerCase() ?? '';
+  }
+
+  List<String> _parseOnbeschikbareDagen(dynamic value) {
+    if (value is List) {
+      return value
+          .map((e) => e.toString().trim().toLowerCase())
+          .where((e) => _weekDagen.contains(e))
+          .toList(growable: false);
+    }
+    return [];
   }
 
   String _suggestieRolSectieTitel(String displayRol) {
@@ -939,6 +1800,17 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
       );
       debugPrint('Edge Function succesvol: ${response.data}');
 
+      String? userId = suggestie?['id']?.toString();
+      if (userId == null || userId.isEmpty) {
+        final data = response.data;
+        if (data is Map) userId = data['user_id']?.toString();
+      }
+      if (userId != null && userId.isNotEmpty) {
+        await AppSupabase.client.from(GebruikersTable.name).update({
+          'onbeschikbare_weekdagen': _onbeschikbareDagen,
+        }).eq(GebruikersTable.id, userId);
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1148,6 +2020,10 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
                                           }
                                           _selectedBedrijfId =
                                               _bedrijfIdFromContact(g);
+                                          _onbeschikbareDagen =
+                                              _parseOnbeschikbareDagen(
+                                            g['onbeschikbare_weekdagen'],
+                                          );
                                         });
                                         Navigator.pop(sheetContext);
                                       },
@@ -1323,6 +2199,61 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
                         'Admin status verlenen',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                       ),
+                    ),
+                  ],
+                  if (inviter.isGenerator &&
+                      (_selectedRol == 'operator' ||
+                          _selectedRol == 'facilitator')) ...[
+                    const SizedBox(height: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Standaard niet beschikbaar op:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blueGrey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _weekDagen.map((dag) {
+                            final isSelected =
+                                _onbeschikbareDagen.contains(dag);
+                            return FilterChip(
+                              label: Text(
+                                dag[0].toUpperCase() + dag.substring(1),
+                              ),
+                              selected: isSelected,
+                              selectedColor: Colors.red.shade100,
+                              checkmarkColor: Colors.red.shade700,
+                              labelStyle: TextStyle(
+                                color: isSelected
+                                    ? Colors.red.shade900
+                                    : Colors.blueGrey.shade700,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                              onSelected: _submitting
+                                  ? null
+                                  : (bool selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          _onbeschikbareDagen.add(dag);
+                                        } else {
+                                          _onbeschikbareDagen.remove(dag);
+                                        }
+                                      });
+                                    },
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                     ),
                   ],
 
@@ -2400,11 +3331,27 @@ class _ProfileTabState extends State<_ProfileTab> {
   ];
 
   Set<String> _selectedWerkRegios = <String>{};
+  List<String> _onbeschikbareDagen = [];
   bool _loadingWerkRegios = true;
   bool _savingWerkRegios = false;
+  bool _savingOnbeschikbareDagen = false;
   String? _werkRegioError;
 
+  static const List<String> _weekDagen = [
+    'maandag',
+    'dinsdag',
+    'woensdag',
+    'donderdag',
+    'vrijdag',
+    'zaterdag',
+    'zondag',
+  ];
+
   bool get _isOperator => widget.role.trim().toLowerCase() == 'operator';
+
+  bool get _isFacilitator => widget.role.trim().toLowerCase() == 'facilitator';
+
+  bool get _showOnbeschikbareDagen => _isOperator || _isFacilitator;
 
   @override
   void initState() {
@@ -2442,6 +3389,16 @@ class _ProfileTabState extends State<_ProfileTab> {
     return <String>{};
   }
 
+  List<String> _parseOnbeschikbareDagen(dynamic value) {
+    if (value is List) {
+      return value
+          .map((e) => e.toString().trim().toLowerCase())
+          .where((e) => _weekDagen.contains(e))
+          .toList(growable: false);
+    }
+    return [];
+  }
+
   Future<void> _loadWerkRegios() async {
     setState(() {
       _loadingWerkRegios = true;
@@ -2450,14 +3407,20 @@ class _ProfileTabState extends State<_ProfileTab> {
     try {
       final row = await AppSupabase.client
           .from(GebruikersTable.name)
-          .select('werk_regio')
+          .select('werk_regio, onbeschikbare_weekdagen')
           .eq(GebruikersTable.id, widget.user.id)
           .maybeSingle();
       final regions = row is Map<String, dynamic>
           ? _parseWerkRegios(row['werk_regio'])
           : <String>{};
+      final onbeschikbaar = row is Map<String, dynamic>
+          ? _parseOnbeschikbareDagen(row['onbeschikbare_weekdagen'])
+          : <String>[];
       if (!mounted) return;
-      setState(() => _selectedWerkRegios = regions);
+      setState(() {
+        _selectedWerkRegios = regions;
+        _onbeschikbareDagen = onbeschikbaar;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _werkRegioError = e.toString());
@@ -2488,6 +3451,34 @@ class _ProfileTabState extends State<_ProfileTab> {
       );
     } finally {
       if (mounted) setState(() => _savingWerkRegios = false);
+    }
+  }
+
+  Future<void> _saveOnbeschikbareDagen(
+    List<String> dagenBefore,
+    List<String> dagenAfter,
+  ) async {
+    setState(() {
+      _onbeschikbareDagen = dagenAfter;
+      _savingOnbeschikbareDagen = true;
+      _werkRegioError = null;
+    });
+
+    try {
+      await AppSupabase.client.from(GebruikersTable.name).update({
+        'onbeschikbare_weekdagen': dagenAfter,
+      }).eq(GebruikersTable.id, widget.user.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _onbeschikbareDagen = dagenBefore;
+        _werkRegioError = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Onbeschikbare dagen opslaan mislukt: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingOnbeschikbareDagen = false);
     }
   }
 
@@ -2639,6 +3630,111 @@ class _ProfileTabState extends State<_ProfileTab> {
                       ),
                     ),
                   ],
+                ],
+              ],
+            ),
+          ),
+        ],
+        if (_showOnbeschikbareDagen) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: cs.onSurface.withValues(alpha: 0.06)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Standaard niet beschikbaar op',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Vaste vrije dagen voor Smart Planner (bijv. elke woensdag).',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface.withValues(alpha: 0.72),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_loadingWerkRegios)
+                  const Center(child: CircularProgressIndicator())
+                else ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _weekDagen.map((dag) {
+                      final isSelected = _onbeschikbareDagen.contains(dag);
+                      return FilterChip(
+                        label: Text(
+                          dag[0].toUpperCase() + dag.substring(1),
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                        ),
+                        selected: isSelected,
+                        selectedColor: Colors.red.shade100,
+                        checkmarkColor: Colors.red.shade700,
+                        labelStyle: TextStyle(
+                          color: isSelected
+                              ? Colors.red.shade900
+                              : Colors.blueGrey.shade700,
+                          fontWeight:
+                              isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                        onSelected: _savingOnbeschikbareDagen
+                            ? null
+                            : (selected) {
+                                final before =
+                                    List<String>.from(_onbeschikbareDagen);
+                                final after =
+                                    List<String>.from(_onbeschikbareDagen);
+                                if (selected) {
+                                  after.add(dag);
+                                } else {
+                                  after.remove(dag);
+                                }
+                                _saveOnbeschikbareDagen(before, after);
+                              },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      if (_savingOnbeschikbareDagen) ...[
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(cs.primary),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Opslaan...',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface.withValues(alpha: 0.70),
+                          ),
+                        ),
+                      ] else
+                        Text(
+                          'Wijzigingen worden automatisch opgeslagen.',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface.withValues(alpha: 0.70),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ],
             ),

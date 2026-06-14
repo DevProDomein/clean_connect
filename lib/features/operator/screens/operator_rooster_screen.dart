@@ -1758,126 +1758,131 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     final thumbnail = _roosterPandThumbnail(task);
     final hasToelichting = _hasPlanningToelichting(task);
 
+    final cardContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (topChipLabel != null)
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    topChipLabel,
+                    style: GoogleFonts.lato(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11,
+                      color: Colors.white.withValues(alpha: 0.95),
+                    ),
+                  ),
+                ),
+              ),
+            if (hasToelichting) ...[
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.notification_important_rounded,
+                      size: 16,
+                      color: Colors.orange.shade200,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Opmerking toegevoegd',
+                      style: GoogleFonts.lato(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                        color: Colors.orange.shade100,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            _buildTaakCompactActions(task, forPremiumCard: true),
+          ],
+        ),
+        if (topChipLabel != null) const SizedBox(height: 14),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                bedrijfsnaam,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.lato(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17,
+                  letterSpacing: -0.3,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            if (thumbnail != null) ...[
+              const SizedBox(width: 10),
+              thumbnail,
+            ],
+          ],
+        ),
+        if (projectNaam.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _roosterPremiumInfoRow(
+            icon: Icons.business_center_rounded,
+            text: projectNaam,
+          ),
+        ],
+        const SizedBox(height: 14),
+        _roosterPremiumInfoRow(
+          icon: Icons.access_time_rounded,
+          text: '$start – $eind',
+        ),
+        const SizedBox(height: 10),
+        _roosterPremiumInfoRow(
+          icon: Icons.location_on_rounded,
+          text: adres,
+          maxLines: 2,
+        ),
+        const SizedBox(height: 14),
+        _buildMeldingMakenKnop(task),
+        const SizedBox(height: 10),
+        _buildTaakAfrondenKnop(task),
+      ],
+    );
+
     return Container(
       margin: margin,
       decoration: _roosterPremiumCardDecoration(isRedVariant: isRedVariant),
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize:
-            expandVertically ? MainAxisSize.max : MainAxisSize.min,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (topChipLabel != null)
-                Flexible(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-      decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      topChipLabel,
-                      style: GoogleFonts.lato(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.95),
-                      ),
-                    ),
-                  ),
-                ),
-              if (hasToelichting) ...[
-                const SizedBox(width: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.orange.withValues(alpha: 0.45),
-                    ),
-                  ),
-                  child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.notification_important_rounded,
-                        size: 16,
-                        color: Colors.orange.shade200,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Opmerking toegevoegd',
-                        style: GoogleFonts.lato(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
-                          color: Colors.orange.shade100,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              _buildTaakCompactActions(task, forPremiumCard: true),
-            ],
-          ),
-          if (topChipLabel != null) const SizedBox(height: 14),
-          Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-              Expanded(
-                child: Text(
-                  bedrijfsnaam,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.lato(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                    letterSpacing: -0.3,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              if (thumbnail != null) ...[
-                const SizedBox(width: 10),
-                thumbnail,
-              ],
-            ],
-          ),
-          if (projectNaam.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _roosterPremiumInfoRow(
-              icon: Icons.business_center_rounded,
-              text: projectNaam,
-            ),
-          ],
-          const SizedBox(height: 14),
-          _roosterPremiumInfoRow(
-            icon: Icons.access_time_rounded,
-            text: '$start – $eind',
-          ),
-          const SizedBox(height: 10),
-          _roosterPremiumInfoRow(
-            icon: Icons.location_on_rounded,
-            text: adres,
-            maxLines: 2,
-          ),
-          if (expandVertically) const Spacer() else const SizedBox(height: 14),
-          const SizedBox(height: 12),
-          _buildMeldingMakenKnop(task),
-          const SizedBox(height: 10),
-          _buildTaakAfrondenKnop(task),
-                ],
-              ),
-            );
+      child: expandVertically
+          ? SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: cardContent,
+            )
+          : cardContent,
+    );
   }
 
   Widget _buildTodayCard(Map<String, dynamic> task) {
@@ -1964,7 +1969,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
           ),
         ),
         SizedBox(
-          height: (MediaQuery.of(context).size.height * 0.35).clamp(300.0, 420.0),
+          height: (MediaQuery.of(context).size.height * 0.38).clamp(360.0, 480.0),
           child: Stack(
             alignment: Alignment.center,
             children: [
