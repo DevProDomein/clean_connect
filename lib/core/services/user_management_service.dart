@@ -9,6 +9,7 @@ class UserSummary {
     required this.email,
     required this.roleString,
     required this.permissions,
+    this.gebruikerEmbed,
   });
 
   final String id;
@@ -16,6 +17,9 @@ class UserSummary {
   final String email;
   final String roleString;
   final Set<String> permissions;
+
+  /// Klant-rij uit [GebruikersTable] met geneste [bedrijven] + [offertes].
+  final Map<String, dynamic>? gebruikerEmbed;
 
   bool get isAdminByPermission => permissions.contains('invite_operator');
 }
@@ -42,6 +46,14 @@ class UserManagementService {
       meta.map((m) => m.id).toList(),
     );
 
+    final klantIds = meta
+        .where((m) => (m.roleString ?? '').trim().toLowerCase() == 'klant')
+        .map((m) => m.id)
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+
+    final embedById = await _fetchKlantBedrijfOffertes(klantIds);
+
     return meta
         .map(
           (m) => UserSummary(
@@ -52,9 +64,38 @@ class UserManagementService {
             email: (m.email ?? '').trim(),
             roleString: (m.roleString ?? '').trim(),
             permissions: permsByUser[m.id] ?? const <String>{},
+            gebruikerEmbed: embedById[m.id],
           ),
         )
         .toList();
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _fetchKlantBedrijfOffertes(
+    List<String> klantIds,
+  ) async {
+    if (klantIds.isEmpty) return {};
+
+    try {
+      final res = await AppSupabase.client
+          .from(GebruikersTable.name)
+          .select(
+            'id, bedrijven!gebruikers_bedrijf_id_fkey('
+            'id, bedrijfsnaam, '
+            'offertes(id, status, contract_type, aangemaakt_op)'
+            ')',
+          )
+          .inFilter(GebruikersTable.id, klantIds);
+
+      final out = <String, Map<String, dynamic>>{};
+      for (final row in (res as List).whereType<Map>()) {
+        final m = Map<String, dynamic>.from(row);
+        final id = m[GebruikersTable.id]?.toString();
+        if (id != null && id.isNotEmpty) out[id] = m;
+      }
+      return out;
+    } catch (_) {
+      return {};
+    }
   }
 
   Future<Map<String, Set<String>>> _fetchPermissionsForUsers(

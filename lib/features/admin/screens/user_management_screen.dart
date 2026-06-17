@@ -12,6 +12,7 @@ import '../../../core/widgets/app_drawer.dart';
 import '../../../providers/user_provider.dart';
 import '../../../shared/widgets/enterprise_tooltip.dart';
 import '../../../shared/widgets/enterprise_pill_badge.dart';
+import '../../facilitator/screens/quote_create_header_screen.dart';
 
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({super.key});
@@ -1561,7 +1562,10 @@ class _InviteUserDialogState extends State<_InviteUserDialog> {
       final data = await AppSupabase.client
           .from('gebruikers')
           .select(
-            '*, bedrijven!gebruikers_bedrijf_id_fkey(bedrijfsnaam, id)',
+            '*, bedrijven!gebruikers_bedrijf_id_fkey('
+            'bedrijfsnaam, id, '
+            'offertes(id, status, contract_type, aangemaakt_op)'
+            ')',
           )
           .eq('heeft_app_account', false)
           .order('achternaam');
@@ -2758,6 +2762,134 @@ Color _roleIconColor(Color rolColor) {
   return rolColor;
 }
 
+Map<String, dynamic>? _bedrijfMapFromEmbed(dynamic raw) {
+  if (raw is Map) return Map<String, dynamic>.from(raw);
+  if (raw is List && raw.isNotEmpty && raw.first is Map) {
+    return Map<String, dynamic>.from(raw.first as Map);
+  }
+  return null;
+}
+
+Map<String, dynamic>? _bedrijfFromGebruikerEmbed(Map<String, dynamic>? gebruiker) {
+  if (gebruiker == null) return null;
+  return _bedrijfMapFromEmbed(
+    gebruiker['bedrijven'] ??
+        gebruiker['bedrijven!gebruikers_bedrijf_id_fkey'],
+  );
+}
+
+List<Map<String, dynamic>> _offertesFromGebruikerEmbed(
+  Map<String, dynamic>? gebruiker,
+) {
+  final bedrijfData = _bedrijfFromGebruikerEmbed(gebruiker) ?? {};
+  final offertesLijst = (bedrijfData['offertes'] as List<dynamic>?) ?? [];
+  return offertesLijst
+      .whereType<Map>()
+      .map((o) => Map<String, dynamic>.from(o))
+      .toList(growable: false);
+}
+
+({String tekst, Color kleur}) _offerteStatusUi(Map<String, dynamic>? gebruiker) {
+  final offertesLijst = _offertesFromGebruikerEmbed(gebruiker);
+
+  final hasSigned = offertesLijst.any((o) {
+    final s = (o['status'] ?? '').toString().toLowerCase();
+    return s == 'signed' || s == 'getekend';
+  });
+  final hasConcept = offertesLijst.any((o) {
+    final s = (o['status'] ?? '').toString().toLowerCase();
+    return s == 'concept' ||
+        s == 'new' ||
+        s == 'verzonden' ||
+        s == 'send';
+  });
+
+  if (hasSigned) {
+    return (tekst: 'Actief contract', kleur: Colors.green.shade700);
+  }
+  if (hasConcept) {
+    return (
+      tekst: 'Offerte in bewerking/verzonden',
+      kleur: Colors.orange.shade700,
+    );
+  }
+  return (tekst: 'Geen offerte', kleur: Colors.grey);
+}
+
+Future<void> _wijzigContractVanuitDossier(
+  BuildContext context,
+  Map<String, dynamic> offerte,
+) async {
+  final userId = AppSupabase.client.auth.currentUser?.id;
+  if (userId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Je bent niet ingelogd.'),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+
+  try {
+    final raw = await AppSupabase.client.rpc(
+      'kloon_offerte_voor_wijziging',
+      params: {
+        'p_oude_offerte_id': offerte['id'],
+        'p_aangemaakt_door': userId,
+      },
+    );
+    final nieuwOfferteId = (raw ?? '').toString().trim();
+
+    if (!context.mounted) return;
+    Navigator.pop(context);
+
+    if (nieuwOfferteId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Kon geen nieuwe concept-offerte aanmaken.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.pop(context);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/facilitator/quotes/edit'),
+        builder: (_) => QuoteCreateHeaderScreen(offerteId: nieuwOfferteId),
+      ),
+    );
+  } catch (e) {
+    if (context.mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fout bij wijzigen: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+void _openNieuweOfferteWizard(BuildContext context) {
+  Navigator.pop(context);
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      settings: const RouteSettings(name: '/facilitator/quotes/new'),
+      builder: (_) => const QuoteCreateHeaderScreen(),
+    ),
+  );
+}
+
 class _KpiRow extends StatelessWidget {
   const _KpiRow({required this.users});
 
@@ -2971,6 +3103,9 @@ class _UserCard extends StatelessWidget {
     final emailLabel =
         user.email.trim().isEmpty ? 'Geen e-mail' : user.email.trim();
 
+    final isKlant = rol == 'klant';
+    final offerteUi = isKlant ? _offerteStatusUi(user.gebruikerEmbed) : null;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -3020,6 +3155,24 @@ class _UserCard extends StatelessWidget {
                 ),
               ),
             ),
+            if (offerteUi != null) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: offerteUi.kleur.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  offerteUi.tekst,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: offerteUi.kleur,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         trailing: Row(
@@ -3304,6 +3457,117 @@ class _UserDeepDiveSheetState extends State<_UserDeepDiveSheet> {
   }
 }
 
+class _KlantOffertesSectie extends StatelessWidget {
+  const _KlantOffertesSectie({required this.gebruikerEmbed});
+
+  final Map<String, dynamic>? gebruikerEmbed;
+
+  @override
+  Widget build(BuildContext context) {
+    final offertesLijst = _offertesFromGebruikerEmbed(gebruikerEmbed);
+    final bedrijf = _bedrijfFromGebruikerEmbed(gebruikerEmbed);
+    final bedrijfsnaam = (bedrijf?['bedrijfsnaam'] ?? '').toString().trim();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Offertes & Contracten',
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue.shade900,
+          ),
+        ),
+        if (bedrijfsnaam.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            bedrijfsnaam,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        if (offertesLijst.isEmpty)
+          Text(
+            'Nog geen offertes of contracten voor deze klant.',
+            style: GoogleFonts.inter(color: Colors.grey),
+          )
+        else
+          ...offertesLijst.map((offerte) {
+            final status = (offerte['status'] ?? '').toString().toLowerCase();
+            final isSigned = status == 'signed' || status == 'getekend';
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isSigned ? Colors.green.shade50 : Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSigned
+                      ? Colors.green.shade200
+                      : Colors.blue.shade200,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Type: ${offerte['contract_type'] ?? 'Onbekend'}',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Status: ${offerte['status']}',
+                          style: GoogleFonts.inter(
+                            color: Colors.grey.shade700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isSigned)
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.edit_document, size: 16),
+                      label: const Text('Wijzigen'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.green.shade800,
+                        side: BorderSide(color: Colors.green.shade400),
+                      ),
+                      onPressed: () =>
+                          _wijzigContractVanuitDossier(context, offerte),
+                    ),
+                ],
+              ),
+            );
+          }),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.add),
+            label: const Text('Nieuwe Offerte Maken'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade800,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => _openNieuweOfferteWizard(context),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ProfileTab extends StatefulWidget {
   const _ProfileTab({
     required this.scrollController,
@@ -3350,6 +3614,8 @@ class _ProfileTabState extends State<_ProfileTab> {
   bool get _isOperator => widget.role.trim().toLowerCase() == 'operator';
 
   bool get _isFacilitator => widget.role.trim().toLowerCase() == 'facilitator';
+
+  bool get _isKlant => widget.role.trim().toLowerCase() == 'klant';
 
   bool get _showOnbeschikbareDagen => _isOperator || _isFacilitator;
 
@@ -3524,6 +3790,10 @@ class _ProfileTabState extends State<_ProfileTab> {
           value: widget.user.id,
           background: bg,
         ),
+        if (_isKlant) ...[
+          const SizedBox(height: 24),
+          _KlantOffertesSectie(gebruikerEmbed: widget.user.gebruikerEmbed),
+        ],
         if (_isOperator) ...[
           const SizedBox(height: 16),
           Container(

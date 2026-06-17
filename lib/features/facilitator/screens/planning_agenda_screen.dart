@@ -1081,6 +1081,7 @@ class AgendaTabState extends State<AgendaTab> {
   Color _bepaalStatusKleur(Map<String, dynamic> task) {
     if (_isTaskGeannuleerd(task)) return Colors.grey.shade600;
     if (_isTaskAfgerond(task)) return Colors.grey.shade600;
+    if (_isDeelsGeplandOpdracht(task)) return Colors.grey.shade800;
     final agendaKleur = _text(task['agenda_kleur']).toLowerCase();
     switch (agendaKleur) {
       case 'rood':
@@ -1563,6 +1564,7 @@ class AgendaTabState extends State<AgendaTab> {
         .whereType<Map>()
         .map((raw) => _normaliseOpdrachtVoorAgenda(Map<String, dynamic>.from(raw)))
         .where((task) => _text(task['geplande_datum']).isNotEmpty)
+        .where((task) => !_isVolledigOpenOpdracht(task))
         .toList(growable: false);
   }
 
@@ -1601,6 +1603,15 @@ class AgendaTabState extends State<AgendaTab> {
     if (raw is int) return raw > 0 ? raw : 1;
     final parsed = int.tryParse(raw?.toString() ?? '');
     return (parsed != null && parsed > 0) ? parsed : 1;
+  }
+
+  bool _isVolledigOpenOpdracht(Map<String, dynamic> task) =>
+      _actievePlanningRijenUitTask(task).isEmpty;
+
+  bool _isDeelsGeplandOpdracht(Map<String, dynamic> task) {
+    final actievePlanningen = _actievePlanningRijenUitTask(task);
+    if (actievePlanningen.isEmpty) return false;
+    return actievePlanningen.length < _nodigOperatorsAantalUitTask(task);
   }
 
   String _agendaOperatorNamenUitTask(Map<String, dynamic> task) {
@@ -1653,7 +1664,9 @@ class AgendaTabState extends State<AgendaTab> {
     task['planning_status'] = _text(task['planning_status']).isEmpty
         ? _text(task['status'])
         : task['planning_status'];
-    if (_text(task['agenda_kleur']).isEmpty) {
+    if (_isDeelsGeplandOpdracht(task)) {
+      task['agenda_kleur'] = 'grijs';
+    } else if (_text(task['agenda_kleur']).isEmpty) {
       task['agenda_kleur'] = switch (status) {
         'geannuleerd' => 'grijs',
         'afgerond' || 'voltooid' => 'groen',
@@ -1765,6 +1778,7 @@ class AgendaTabState extends State<AgendaTab> {
   bool _matchesAgendaFilters(dynamic raw) {
     if (raw is! Map) return false;
     final task = Map<String, dynamic>.from(raw);
+    if (_isVolledigOpenOpdracht(task)) return false;
     final klant = _text(task['bedrijfsnaam']);
     final project = _agendaProjectNaam(task);
     final regio = _text(task['werk_regio']);
@@ -2841,16 +2855,18 @@ class AgendaTabState extends State<AgendaTab> {
     );
   }
 
-  BoxDecoration _agendaPremiumTaskDecoration() {
+  BoxDecoration _agendaPremiumTaskDecoration({bool isDeelsGepland = false}) {
     return BoxDecoration(
       borderRadius: BorderRadius.circular(20),
       gradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [
-          const Color(0xFF0F172A).withValues(alpha: 0.95),
-          const Color(0xFF0052CC).withValues(alpha: 0.85),
-        ],
+        colors: isDeelsGepland
+            ? [Colors.grey.shade800, Colors.grey.shade900]
+            : [
+                const Color(0xFF0F172A).withValues(alpha: 0.95),
+                const Color(0xFF0052CC).withValues(alpha: 0.85),
+              ],
       ),
       boxShadow: [
         BoxShadow(
@@ -2913,6 +2929,7 @@ class AgendaTabState extends State<AgendaTab> {
     final ingeplandAantal = _ingeplandOperatorsAantalUitTask(item);
     final nodig = _nodigOperatorsAantalUitTask(item);
     final isRood = agendaKleur.toLowerCase() == 'rood';
+    final isDeelsGepland = _isDeelsGeplandOpdracht(item);
 
     return InkWell(
       borderRadius: BorderRadius.circular(20),
@@ -2920,7 +2937,7 @@ class AgendaTabState extends State<AgendaTab> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
-        decoration: _agendaPremiumTaskDecoration(),
+        decoration: _agendaPremiumTaskDecoration(isDeelsGepland: isDeelsGepland),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

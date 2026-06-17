@@ -80,7 +80,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
   Map<DateTime, List<Map<String, dynamic>>> _groupedOpenTaken = {};
   Map<DateTime, List<Map<String, dynamic>>> _groupedGeplandeTaken = {};
 
-  /// Ingeplande opdrachten voor de momenteel gekozen kalenderdag (query op `opdrachten`, status `ingepland`).
+  /// Ingeplande opdrachten voor de momenteel gekozen kalenderdag (`ingepland`, `deels_voltooid`, `afgerond`).
   List<Map<String, dynamic>> _reedsGeplandeTaken = [];
   bool _isLoadingReedsGeplande = false;
   bool _isLoading = true;
@@ -951,6 +951,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
           .from('projecten')
           .select()
           .eq('status', 'actief')
+          .neq('status', 'vervangen')
           .order('project_naam', ascending: true);
 
       if (!mounted) return;
@@ -1624,6 +1625,13 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     return const [];
   }
 
+  bool _isDeelsGeplandOpdracht(Map<String, dynamic> task) {
+    if (_text(task['status']).toLowerCase() == 'deels_voltooid') return true;
+    final actief = _manualPlannedRijenUitTask(task).length;
+    if (actief == 0) return false;
+    return actief < _safeOperatorsVoorOpdracht(task);
+  }
+
   String _manualPlannedOperatorString(Map<String, dynamic> task) {
     final namen = <String>[];
     for (final raw in _manualPlannedRijenUitTask(task)) {
@@ -1764,9 +1772,10 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .where((row) {
-          if (_text(row['huidige_planning_id']).isEmpty) return false;
           final status = _text(row['status']).toLowerCase();
-          return status != 'geannuleerd';
+          if (status == 'geannuleerd') return false;
+          if (_text(row['huidige_planning_id']).isNotEmpty) return true;
+          return status == 'deels_voltooid' || status == 'ingepland';
         })
         .toList(growable: false);
   }
@@ -1836,7 +1845,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     var q = AppSupabase.client
         .from('opdrachten')
         .select(select)
-        .inFilter('status', ['ingepland', 'afgerond']);
+        .inFilter('status', ['ingepland', 'deels_voltooid', 'afgerond']);
     if (geplandeDatumEq != null && geplandeDatumEq.isNotEmpty) {
       q = q.eq('geplande_datum', geplandeDatumEq);
     }
@@ -1956,9 +1965,10 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
             '*, '
             'benodigde_operators, benodigde_uren_totaal, verwachte_uren_totaal, '
             'toegewezen_uren_totaal, '
-            'projecten(project_naam)',
+            'projecten(project_naam), '
+            'opdracht_planning!opdracht_planning_opdracht_id_fkey(id, operator_id, status)',
           )
-          .eq('status', 'open');
+          .inFilter('status', ['open', 'deels_voltooid']);
 
       if (_selectedManualProjectId != null &&
           _selectedManualProjectId!.isNotEmpty) {
@@ -4183,16 +4193,18 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     );
   }
 
-  BoxDecoration _manualPremiumTaskDecoration() {
+  BoxDecoration _manualPremiumTaskDecoration({bool isDeelsGepland = false}) {
     return BoxDecoration(
       borderRadius: BorderRadius.circular(20),
       gradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [
-          const Color(0xFF0F172A).withValues(alpha: 0.95),
-          const Color(0xFF0052CC).withValues(alpha: 0.85),
-        ],
+        colors: isDeelsGepland
+            ? [Colors.grey.shade800, Colors.grey.shade900]
+            : [
+                const Color(0xFF0F172A).withValues(alpha: 0.95),
+                const Color(0xFF0052CC).withValues(alpha: 0.85),
+              ],
       ),
       boxShadow: [
         BoxShadow(
@@ -4220,6 +4232,8 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     final safeOperators = _safeOperatorsVoorOpdracht(task);
     final urenPerPersoon = totaalUrenKaart / safeOperators;
     final title = project.isNotEmpty ? project : company;
+    final isDeelsGepland = _isDeelsGeplandOpdracht(task);
+    final actiefAantal = _manualPlannedRijenUitTask(task).length;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, left: 4, right: 4),
@@ -4240,13 +4254,39 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        title,
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                        ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            title,
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          if (isDeelsGepland)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade800.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'Deels ingepland ($actiefAantal / $safeOperators)',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -4752,6 +4792,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     final urenPerPersoon = totaalUrenKaart / safeOperators;
     final isAfgerond = _text(item['status']).toLowerCase() == 'afgerond' ||
         _text(item['status']).toLowerCase() == 'voltooid';
+    final isDeelsGepland = !isAfgerond && _isDeelsGeplandOpdracht(item);
 
                                   return Padding(
       padding: const EdgeInsets.only(bottom: 12, left: 4, right: 4),
@@ -4770,7 +4811,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: Colors.grey.shade500),
                   )
-                : _manualPremiumTaskDecoration(),
+                : _manualPremiumTaskDecoration(isDeelsGepland: isDeelsGepland),
                                           child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
@@ -6051,6 +6092,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
               openBlockTitle: _manualTimelineOpenTitle,
               plannedBlockTitle: _manualTimelinePlannedTitle,
               plannedWorkerName: _extractIngeplandWeergaveNaam,
+              plannedEventColor: (item) => _isDeelsGeplandOpdracht(item)
+                  ? Colors.grey.shade800
+                  : Colors.blue.shade700,
               onOpenTap: (task) {
                 final id = _text(task['id']);
                 if (id.isEmpty) return;
@@ -6094,7 +6138,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Kalender: ${_calendarViewMode.toLowerCase()} · Open (rood) versus ingepland (blauw) voor de geselecteerde dag',
+                      'Kalender: ${_calendarViewMode.toLowerCase()} · Open (rood) versus ingepland (blauw/grijs bij deels) voor de geselecteerde dag',
                       style: GoogleFonts.lato(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -6265,6 +6309,7 @@ class ManualPlannerInfiniteView extends StatefulWidget {
     required this.openBlockTitle,
     required this.plannedBlockTitle,
     required this.plannedWorkerName,
+    required this.plannedEventColor,
     required this.onOpenTap,
     required this.onPlannedTap,
   });
@@ -6287,6 +6332,7 @@ class ManualPlannerInfiniteView extends StatefulWidget {
   final String Function(Map<String, dynamic>) openBlockTitle;
   final String Function(Map<String, dynamic>) plannedBlockTitle;
   final String Function(Map<String, dynamic>) plannedWorkerName;
+  final Color Function(Map<String, dynamic>) plannedEventColor;
   final void Function(Map<String, dynamic>) onOpenTap;
   final void Function(Map<String, dynamic>) onPlannedTap;
 
@@ -6412,7 +6458,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
               endTime: end,
               title: widget.plannedBlockTitle(item),
               description: worker.isNotEmpty ? worker : null,
-              color: Colors.blue.shade700,
+              color: widget.plannedEventColor(item),
               textColor: Colors.white,
               data: item,
               eventType: _plannedKind,
@@ -6648,7 +6694,7 @@ class _ManualPlannerInfiniteViewState extends State<ManualPlannerInfiniteView> {
   Widget _plannerTile(Event ev, double height, double width, double hpm) {
     final accent = identical(ev.eventType, _openKind)
         ? Colors.red.shade700
-        : Colors.blue.shade700;
+        : ev.color;
     final raw = ev.data;
     if (raw is! Map) return const SizedBox.shrink();
     final map = Map<String, dynamic>.from(raw);
@@ -7083,6 +7129,7 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
           // `bedrijfsnaam` is not a column on `projecten`; fetch it via join.
           .select('id, project_naam, werk_regio, bedrijven(bedrijfsnaam)')
           .eq('status', 'actief')
+          .neq('status', 'vervangen')
           .order('project_naam', ascending: true);
 
       final rows = (res as List)

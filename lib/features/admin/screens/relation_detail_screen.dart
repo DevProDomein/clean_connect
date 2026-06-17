@@ -9,6 +9,7 @@ import '../../../core/services/image_upload_service.dart';
 import '../../../core/supabase_client.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../providers/user_provider.dart';
+import '../../facilitator/screens/quote_create_header_screen.dart';
 import '../widgets/add_contact_modal.dart';
 
 /// 360° client dossier.
@@ -80,12 +81,14 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
 
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _contactpersonen = [];
+  List<Map<String, dynamic>> _offertes = [];
   List<Map<String, dynamic>> _btwCodes = [];
 
   late TabController _tabController;
 
   bool _isLoading = true;
   bool _isLoadingContacts = true;
+  bool _isLoadingOffertes = true;
   bool _isSaving = false;
   Object? _loadError;
 
@@ -116,6 +119,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     _id = widget.bedrijfId;
     _loadAll();
     _loadContactpersonen();
+    _loadOffertes();
   }
 
   @override
@@ -265,6 +269,89 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     }
   }
 
+  Future<void> _loadOffertes() async {
+    final bid = _id;
+    if (bid == null || bid.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _offertes = [];
+          _isLoadingOffertes = false;
+        });
+      }
+      return;
+    }
+
+    setState(() => _isLoadingOffertes = true);
+    try {
+      final data = await AppSupabase.client
+          .from('offertes')
+          .select(
+            'id, offerte_nummer, status, totaal_prijs_ex_btw, aangemaakt_op, contract_type',
+          )
+          .eq('bedrijf_id', bid)
+          .order('aangemaakt_op', ascending: false);
+      if (!mounted) return;
+      setState(() {
+        _offertes = (data as List)
+            .whereType<Map>()
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('Fout bij laden offertes: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingOffertes = false);
+    }
+  }
+
+  Future<void> _wijzigContract(Map<String, dynamic> actieveOfferte) async {
+    final userId = AppSupabase.client.auth.currentUser?.id;
+    if (userId == null) {
+      _showError('Je bent niet ingelogd.');
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final raw = await AppSupabase.client.rpc(
+        'kloon_offerte_voor_wijziging',
+        params: {
+          'p_oude_offerte_id': actieveOfferte['id'],
+          'p_aangemaakt_door': userId,
+        },
+      );
+
+      final nieuwOfferteId = _text(raw);
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      if (nieuwOfferteId.isEmpty) {
+        _showError('Kon geen nieuwe concept-offerte aanmaken.');
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: '/facilitator/quotes/edit'),
+          builder: (_) => QuoteCreateHeaderScreen(offerteId: nieuwOfferteId),
+        ),
+      );
+      if (!mounted) return;
+      await _loadOffertes();
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        _showError('Kon contract niet wijzigen: $e');
+      }
+    }
+  }
+
   Future<void> _loadContactpersonen() async {
     final bid = _id;
     if (bid == null || bid.isEmpty) {
@@ -394,6 +481,7 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
       if (!mounted) return;
       await _loadAll(silent: true);
       await _loadContactpersonen();
+      await _loadOffertes();
       if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -1003,6 +1091,10 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
       children: [
+        if ((_id ?? '').isNotEmpty) ...[
+          _buildOffertesSection(),
+          const SizedBox(height: 14),
+        ],
         _Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1165,6 +1257,127 @@ class _RelationDetailScreenState extends State<RelationDetailScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildOffertesSection() {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle('Offertes'),
+          const SizedBox(height: 12),
+          if (_isLoadingOffertes)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_offertes.isEmpty)
+            Text(
+              'Geen offertes voor deze relatie.',
+              style: GoogleFonts.lato(
+                fontWeight: FontWeight.w600,
+                color: _muted,
+              ),
+            )
+          else
+            ..._offertes.map(_buildOfferteCard),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOfferteCard(Map<String, dynamic> offerte) {
+    final status = _text(offerte['status']).toLowerCase();
+    final nr = _text(offerte['offerte_nummer']);
+    final label = nr.isEmpty ? 'Concept' : nr;
+    final totaal = _asDouble(offerte['totaal_prijs_ex_btw']);
+    final totaalLabel = totaal > 0
+        ? NumberFormat.currency(locale: 'nl_NL', symbol: '€').format(totaal)
+        : '—';
+    final datum = _formatDate(_asDate(offerte['aangemaakt_op']));
+
+    Color statusColor;
+    switch (status) {
+      case 'signed':
+      case 'getekend':
+        statusColor = _green;
+        break;
+      case 'send':
+      case 'verzonden':
+        statusColor = _orange;
+        break;
+      default:
+        statusColor = _muted;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+          ),
+          title: Text(
+            label,
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: _navy,
+            ),
+          ),
+          subtitle: Text(
+            '$totaalLabel · $datum',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              color: _muted,
+            ),
+          ),
+          leading: Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.request_quote_rounded, color: statusColor, size: 20),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  status.isEmpty ? 'onbekend' : status,
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+              if (status == 'signed') ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.edit_document, color: _blue),
+                  tooltip: 'Contract Wijzigen',
+                  onPressed: () => _wijzigContract(offerte),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 

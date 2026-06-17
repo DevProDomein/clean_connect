@@ -109,6 +109,7 @@ class _PlanningDashboardScreenState extends State<PlanningDashboardScreen> {
           .from('projecten')
           .select()
           .eq('status', 'actief')
+          .neq('status', 'vervangen')
           .order('project_naam', ascending: true);
       if (!mounted) return;
       setState(() {

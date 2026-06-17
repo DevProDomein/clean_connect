@@ -101,6 +101,124 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     return h * 60 + m.clamp(0, 59);
   }
 
+  List<Map<String, dynamic>> _planningenUitTaak(Map<String, dynamic> taak) {
+    final raw = taak['opdracht_planning'] ??
+        taak['opdracht_planning!opdracht_planning_opdracht_id_fkey'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((p) => Map<String, dynamic>.from(p))
+        .toList(growable: false);
+  }
+
+  String _operatorIdUitOperatorRow(Map<String, dynamic> op) {
+    final id = _text(op['id']);
+    if (id.isNotEmpty) return id;
+    return _text(op['operator_id']);
+  }
+
+  double _parseTimeHours(String raw) {
+    var t = _text(raw);
+    if (t.isEmpty) return 0.0;
+    if (t.contains('T')) {
+      t = t.substring(t.indexOf('T') + 1).split('+').first.split('-').first;
+    }
+    final parts = t.split(':');
+    if (parts.length < 2) return 0.0;
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = int.tryParse(parts[1]) ?? 0;
+    return h + (m / 60.0);
+  }
+
+  bool _planningStatusActief(dynamic status) {
+    final s = _text(status).toLowerCase();
+    return s != 'geannuleerd' && s != 'no_show';
+  }
+
+  bool _operatorAlActiefOpDezeKlus(
+    List<Map<String, dynamic>> planningen,
+    String taakId,
+    String operatorId, {
+    String? excludePlanningId,
+  }) {
+    return planningen.any((p) {
+      if (_text(p['opdracht_id']) != taakId) return false;
+      if (_text(p['operator_id']) != operatorId) return false;
+      if (excludePlanningId != null && _text(p['id']) == excludePlanningId) {
+        return false;
+      }
+      return _planningStatusActief(p['status']);
+    });
+  }
+
+  ({String? excludePlanningId, bool isBestaandePlanning})
+      _planningExcludeContext(Map<String, dynamic>? item) {
+    if (item == null) {
+      return (excludePlanningId: null, isBestaandePlanning: false);
+    }
+    final bestaandePlanningIdRaw =
+        _text(_bestaandePlanningId ?? item['huidige_planning_id']).isEmpty
+            ? null
+            : _text(_bestaandePlanningId ?? item['huidige_planning_id']);
+    final isBestaandePlanning =
+        _text(item['status']) == 'ingepland' && bestaandePlanningIdRaw != null;
+    return (
+      excludePlanningId:
+          isBestaandePlanning ? bestaandePlanningIdRaw : null,
+      isBestaandePlanning: isBestaandePlanning,
+    );
+  }
+
+  bool _isOperatorAlIngeplandOpTaak(
+    Map<String, dynamic> taak,
+    String operatorId, {
+    String? excludePlanningId,
+  }) {
+    if (operatorId.isEmpty) return false;
+    final bestaandePlanningen = _planningenUitTaak(taak);
+    return bestaandePlanningen.any((planning) {
+      if (excludePlanningId != null &&
+          _text(planning['id']) == excludePlanningId) {
+        return false;
+      }
+      final pStatus = _text(planning['status']).toLowerCase();
+      final pOperatorId = _text(planning['operator_id']);
+      return pOperatorId == operatorId &&
+          pStatus != 'geannuleerd' &&
+          pStatus != 'no_show';
+    });
+  }
+
+  void _toonDubbeleOperatorBlokkade() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'LET OP: Deze operator is al actief ingepland op deze klus!',
+        ),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  bool _blokkeerDubbeleOperator(String operatorId) {
+    final item = _opdracht;
+    if (item == null || operatorId.isEmpty) return false;
+
+    final ctx = _planningExcludeContext(item);
+
+    if (_isOperatorAlIngeplandOpTaak(
+      item,
+      operatorId,
+      excludePlanningId: ctx.excludePlanningId,
+    )) {
+      _toonDubbeleOperatorBlokkade();
+      return true;
+    }
+    return false;
+  }
+
   /// Uren tussen planning [starttijd] en [eindtijd] (nachtdienst: eind < start → +24u).
   double _urenTussenPlanningTijden(dynamic startV, dynamic eindV) {
     final startMin = _dbTijdStringNaarMinuten(startV.toString());
@@ -160,7 +278,10 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     final n = _text(op['naam']);
     if (n.isNotEmpty) return n;
     final on = _text(op['operator_naam']);
-    return on.isNotEmpty ? on : 'Operator';
+    if (on.isNotEmpty) return on;
+    final full =
+        '${_text(op['voornaam'])} ${_text(op['achternaam'])}'.trim();
+    return full.isNotEmpty ? full : 'Operator';
   }
 
   String _berekenEindTijdDb(String startHuman, double uren) {
@@ -350,7 +471,8 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
             'benodigde_operators, werk_regio, uitvoer_adres_volledig, '
             'toelichting_planning, bedrijfsnaam, '
             'projecten(project_naam), '
-            'planning:opdracht_planning!huidige_planning_id(starttijd, eindtijd, operator_id)',
+            'planning:opdracht_planning!huidige_planning_id(starttijd, eindtijd, operator_id), '
+            'opdracht_planning!opdracht_planning_opdracht_id_fkey(id, operator_id, status)',
           )
           .eq('id', widget.opdrachtId)
           .single();
@@ -543,7 +665,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
   Future<void> _loadAvailableOperators() async {
     final start = _selectedStartTime;
     final hours = _shiftHours;
-    if (start == null || hours <= 0 || _regio.isEmpty) {
+    if (start == null || hours <= 0) {
       setState(() {
         _availableOperators = <dynamic>[];
         _gekozenOperatorIds = [];
@@ -553,55 +675,153 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       return;
     }
 
-    final selectedStartTimeFormatted =
-        '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
-    final dateString = _plannedDateDb.contains('T') ? _plannedDateDb.split('T').first : _plannedDateDb;
-    final regio = _text(_opdracht?['werk_regio']);
-    final opdrachtIdParam =
-        _text(_opdracht?['id']).isNotEmpty ? _text(_opdracht?['id']) : widget.opdrachtId;
+    final item = _opdracht;
+    final taakId = _text(item?['id']).isNotEmpty
+        ? _text(item!['id'])
+        : widget.opdrachtId;
+    final datumStr = _plannedDateDb.contains('T')
+        ? _plannedDateDb.split('T').first
+        : _plannedDateDb;
+    final startHuman = _text(geselecteerdeHandmatigeTijd).isNotEmpty
+        ? _text(geselecteerdeHandmatigeTijd)
+        : '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
+    final taakStartStr = '$startHuman:00';
+    final taakEindStr = _berekenEindTijdDb(startHuman, hours);
+    final tStart = _parseTimeHours(taakStartStr);
+    final tEind = _parseTimeHours(taakEindStr);
+
+    final dateObj = DateTime.tryParse(datumStr) ?? _effectieveHandmatigePlanningDatum;
+    const weekDays = [
+      'maandag',
+      'dinsdag',
+      'woensdag',
+      'donderdag',
+      'vrijdag',
+      'zaterdag',
+      'zondag',
+    ];
+    final dagNaam = weekDays[dateObj.weekday - 1];
+    final ctx = _planningExcludeContext(item);
 
     setState(() {
       _isSearching = true;
       _gekozenOperatorIds = [];
       _gekozenOperatorNamen = [];
     });
-    void logRpc(Object message) {
-      assert(() {
-        debugPrint(message.toString());
-        return true;
-      }());
-    }
+
     try {
-      logRpc('--- START RPC CALL ---');
-      logRpc('Datum: $dateString');
-      logRpc('Start: $selectedStartTimeFormatted');
-      logRpc('Duur: $_shiftHours');
-      logRpc('Regio: $regio');
+      List<Map<String, dynamic>> opsRows;
+      try {
+        final opsResponse = await AppSupabase.client
+            .from('gebruikers')
+            .select(
+              'id, voornaam, achternaam, rol, gebruikersrol, '
+              'onbeschikbare_weekdagen, werk_regio',
+            )
+            .eq('is_actief', true)
+            .or('rol.eq.operator,gebruikersrol.eq.operator');
+        opsRows = (opsResponse as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(growable: false);
+      } catch (_) {
+        final opsResponse = await AppSupabase.client
+            .from('gebruikers')
+            .select(
+              'id, voornaam, achternaam, rol, gebruikersrol, '
+              'onbeschikbare_weekdagen, werk_regio',
+            )
+            .or('rol.eq.operator,gebruikersrol.eq.operator');
+        opsRows = (opsResponse as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(growable: false);
+      }
 
-      final result = await Supabase.instance.client.rpc(
-        'haal_beschikbare_operators_op',
-        params: {
-          'p_geplande_datum': dateString,
-          'p_starttijd': '$selectedStartTimeFormatted:00',
-          'p_duur_uren': hours,
-          'p_regio': regio,
-          'p_opdracht_id': opdrachtIdParam,
-          // Handmatige planner: geen reistijd-buffer in RPC (past SQL‑functie migratie hieronder aan).
-          'p_negeer_reistijd': true,
-        },
-      );
+      final planningResponse = (await AppSupabase.client
+              .from('opdracht_planning')
+              .select('id, operator_id, opdracht_id, starttijd, eindtijd, status')
+              .eq('geplande_datum', datumStr) as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .where((p) => _planningStatusActief(p['status']))
+          .toList(growable: false);
 
-      logRpc('--- RPC SUCCESS ---');
-      logRpc(result);
-      final rows = List<dynamic>.from((result as List?) ?? const <dynamic>[]);
+      final afwezigResponse = (await AppSupabase.client
+              .from('operator_afwezigheid')
+              .select('operator_id, is_beschikbaar')
+              .eq('datum', datumStr) as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false);
+
+      final beschikbaar = <Map<String, dynamic>>[];
+
+      for (final raw in opsRows) {
+        final op = Map<String, dynamic>.from(raw);
+        final opId = _operatorIdUitOperatorRow(op);
+        if (opId.isEmpty) continue;
+
+        if (_operatorAlActiefOpDezeKlus(
+          planningResponse,
+          taakId,
+          opId,
+          excludePlanningId: ctx.excludePlanningId,
+        )) {
+          continue;
+        }
+
+        final afwezig = afwezigResponse.any((a) {
+          if (_text(a['operator_id']) != opId) return false;
+          final beschikbaarFlag = a['is_beschikbaar'];
+          if (beschikbaarFlag is bool) return !beschikbaarFlag;
+          return _text(beschikbaarFlag).toLowerCase() == 'false';
+        });
+        if (afwezig) continue;
+
+        final onbeschikbaarRaw = op['onbeschikbare_weekdagen'];
+        final onbeschikbaar = onbeschikbaarRaw is List
+            ? onbeschikbaarRaw.map((d) => _text(d).toLowerCase()).toList()
+            : <String>[];
+        if (onbeschikbaar.contains(dagNaam)) {
+          final override = afwezigResponse.any((a) {
+            if (_text(a['operator_id']) != opId) return false;
+            final beschikbaarFlag = a['is_beschikbaar'];
+            if (beschikbaarFlag is bool) return beschikbaarFlag;
+            return _text(beschikbaarFlag).toLowerCase() == 'true';
+          });
+          if (!override) continue;
+        }
+
+        var heeftOverlap = false;
+        final mijnPlanningenVandaag = planningResponse
+            .where((p) => _text(p['operator_id']) == opId)
+            .toList(growable: false);
+
+        for (final p in mijnPlanningenVandaag) {
+          if (ctx.excludePlanningId != null &&
+              _text(p['id']) == ctx.excludePlanningId) {
+            continue;
+          }
+          final pStart = _parseTimeHours(_text(p['starttijd']));
+          final pEind = _parseTimeHours(_text(p['eindtijd']));
+          if ((pStart - 0.25) < tEind && (pEind + 0.25) > tStart) {
+            heeftOverlap = true;
+            break;
+          }
+        }
+        if (heeftOverlap) continue;
+
+        beschikbaar.add(op);
+      }
+
       if (!mounted) return;
       setState(() {
-        _availableOperators = rows;
+        _availableOperators = beschikbaar;
         _hasSearchedOperators = true;
       });
     } catch (e) {
-      logRpc('--- RPC ERROR ---');
-      logRpc(e);
+      debugPrint('Fout bij laden beschikbare operators: $e');
       if (!mounted) return;
       setState(() {
         _availableOperators = <dynamic>[];
@@ -688,7 +908,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                                 if (raw is! Map) return const SizedBox.shrink();
                                 final operator =
                                     Map<String, dynamic>.from(raw);
-                                final opId = _text(operator['id']);
+                                final opId = _operatorIdUitOperatorRow(operator);
                                 final opNaam = _operatorDisplayNaam(operator);
                                 if (opId.isEmpty) return const SizedBox.shrink();
                                 final isSelected = tempIds.contains(opId);
@@ -714,6 +934,9 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                                   selectedTileColor: Colors.blue.shade50,
                                   onTap: () {
                                     if (maxAantal == 1) {
+                                      if (_blokkeerDubbeleOperator(opId)) {
+                                        return;
+                                      }
                                       setState(() {
                                         _gekozenOperatorIds = [opId];
                                         _gekozenOperatorNamen = [opNaam];
@@ -736,6 +959,9 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
                                           }
                                         } else if (tempIds.length <
                                             maxAantal) {
+                                          if (_blokkeerDubbeleOperator(opId)) {
+                                            return;
+                                          }
                                           tempIds.add(opId);
                                           tempNamen.add(opNaam);
                                         } else {
@@ -842,19 +1068,26 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     final startDb = _minutesToDb(startMinutes);
     final berekendeEindTijd = _berekenEindTijdDb(startHuman, hours);
 
+    final item = _opdracht ?? <String, dynamic>{'id': widget.opdrachtId};
+    final opdrachtId = _text(item['id']).isEmpty
+        ? widget.opdrachtId
+        : _text(item['id']);
+
+    final ctx = _planningExcludeContext(item);
+
+    for (final operatorId in _gekozenOperatorIds) {
+      if (_isOperatorAlIngeplandOpTaak(
+        item,
+        operatorId,
+        excludePlanningId: ctx.excludePlanningId,
+      )) {
+        _toonDubbeleOperatorBlokkade();
+        return;
+      }
+    }
+
     setState(() => _saving = true);
     try {
-      final item = _opdracht ?? <String, dynamic>{'id': widget.opdrachtId};
-      final opdrachtId = _text(item['id']).isEmpty
-          ? widget.opdrachtId
-          : _text(item['id']);
-
-      final String? bestaandePlanningIdRaw =
-          _text(_bestaandePlanningId ?? item['huidige_planning_id']).isEmpty
-              ? null
-              : _text(_bestaandePlanningId ?? item['huidige_planning_id']);
-      final bool isBestaandePlanning =
-          _text(item['status']) == 'ingepland' && bestaandePlanningIdRaw != null;
 
       final String nieuweDatum = geselecteerdeHandmatigeDatum!
           .toIso8601String()
@@ -866,7 +1099,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
       final double benodigdeUren = hours;
       final double berekendeTotaalUren = benodigdeUren * operatorsNodig;
 
-      if (isBestaandePlanning) {
+      if (ctx.isBestaandePlanning && ctx.excludePlanningId != null) {
         await Supabase.instance.client.from('opdracht_planning').update({
           'operator_id': gekozenOperatorId,
           'geplande_datum': nieuweDatum,
@@ -874,7 +1107,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           'eindtijd': berekendeEindTijd,
           'toegewezen_uren': hours,
           'status': 'gepland',
-        }).eq('id', bestaandePlanningIdRaw);
+        }).eq('id', ctx.excludePlanningId!);
 
         final Map<String, dynamic> opdrachtUpdate = {
           'geplande_datum': nieuweDatum,
@@ -972,7 +1205,7 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF1E8E3E),
           content: Text(
-            isBestaandePlanning
+            ctx.isBestaandePlanning
                 ? 'Planning succesvol bijgewerkt.'
                 : 'Opdracht succesvol ingepland.',
             style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800),
