@@ -414,13 +414,6 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     return direct.isEmpty ? 'Onbekende klant' : direct;
   }
 
-  String get _regio {
-    final fromJoin = _text(_projectJoin()?['werk_regio']);
-    if (fromJoin.isNotEmpty) return fromJoin;
-    final direct = _text(_opdracht?['werk_regio']);
-    return direct.isEmpty ? '' : direct;
-  }
-
   DateTime get _plannedDate => _dateFromValue(_opdracht?['geplande_datum']);
 
   /// Datum voor handmatige planning (kiezer override of opdracht-bron).
