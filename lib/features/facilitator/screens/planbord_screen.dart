@@ -969,6 +969,20 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     }
   }
 
+  static const String _smartOverigeTakenProjectId = '__overige_taken__';
+
+  Map<String, dynamic> _projectDataFromTaak(Map<String, dynamic> taak) {
+    final raw = taak['projecten'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return const {};
+  }
+
+  int _smartOpenTakenCount(Map<String, dynamic> project) =>
+      _asInt(project['totaal_open_taken'], fallback: _asInt(project['open_taken']));
+
   Future<void> _fetchSmartProjects() async {
     setState(() {
       _isLoadingSmartProjects = true;
@@ -976,69 +990,132 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     });
 
     try {
-      final vandaag = DateTime.now().toIso8601String().split('T')[0];
+      final vandaag = DateTime.now().toIso8601String().split('T').first;
 
-      final eligibleOpdrachten = await Supabase.instance.client
+      final allOpenTasksRes = await Supabase.instance.client
           .from('opdrachten')
           .select(
-            'project_id, id, voorkeur_aantal_operators, benodigde_operators',
+            'id, project_id, status, bedrijfsnaam, uitvoer_adres_volledig, '
+            'werk_regio, frequentie_type, is_buiten_abonnement, '
+            'voorkeur_aantal_operators, benodigde_operators, geplande_datum, '
+            'opdracht_planning!opdracht_planning_opdracht_id_fkey(id, status), '
+            'projecten(project_naam, uitvoer_adres_volledig, werk_regio, '
+            'frequentie_type)',
           )
           .inFilter('status', ['open', 'deels_voltooid'])
           .gte('geplande_datum', vandaag)
           .order('geplande_datum', ascending: true);
 
-      final prefsByProject = <String, Map<String, dynamic>>{};
-      final eligibleProjectIds = <String>[];
-      for (final raw in eligibleOpdrachten as List) {
-        if (raw is! Map) continue;
-        final row = Map<String, dynamic>.from(raw);
-        final projectId = _text(row['project_id']);
-        if (projectId.isEmpty) continue;
-        eligibleProjectIds.add(projectId);
-        prefsByProject.putIfAbsent(projectId, () => row);
+      final allOpenTasks = (allOpenTasksRes as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false);
+
+      final groupedByProject = <String, List<Map<String, dynamic>>>{};
+      for (final taak in allOpenTasks) {
+        var projectId = _text(taak['project_id']);
+        if (projectId.isEmpty) {
+          projectId = _smartOverigeTakenProjectId;
+        }
+        groupedByProject
+            .putIfAbsent(projectId, () => <Map<String, dynamic>>[])
+            .add(taak);
       }
 
-      if (eligibleProjectIds.isEmpty) {
+      if (groupedByProject.isEmpty) {
         if (!mounted) return;
         setState(() => _smartProjects = <dynamic>[]);
         return;
       }
 
-      final eligibleSet = eligibleProjectIds.toSet();
-      final response = await Supabase.instance.client
-          .from('app_smart_planner_projecten')
-          .select()
-          .gt('open_taken', 0);
+      final viewByProjectId = <String, Map<String, dynamic>>{};
+      try {
+        final response = await Supabase.instance.client
+            .from('app_smart_planner_projecten')
+            .select();
+        for (final raw in (response as List)) {
+          if (raw is! Map) continue;
+          final project = Map<String, dynamic>.from(raw);
+          final id = _text(project['project_id']).isNotEmpty
+              ? _text(project['project_id'])
+              : _text(project['id']);
+          if (id.isNotEmpty && groupedByProject.containsKey(id)) {
+            viewByProjectId[id] = project;
+          }
+        }
+      } catch (_) {
+        // View-metadata is optioneel; telling komt uit gegroepeerde opdrachten.
+      }
 
-      final filtered = (response as List)
-          .where((raw) {
-            if (raw is! Map) return false;
-            final project = Map<String, dynamic>.from(raw);
-            final id = _text(project['project_id']).isNotEmpty
-                ? _text(project['project_id'])
-                : _text(project['id']);
-            return eligibleSet.contains(id);
-          })
-          .map((raw) {
-            final project = Map<String, dynamic>.from(raw as Map);
-            final id = _text(project['project_id']).isNotEmpty
-                ? _text(project['project_id'])
-                : _text(project['id']);
-            final prefs = prefsByProject[id];
-            if (prefs != null) {
-              project['hoofdopdracht_id'] = prefs['id'];
-              project['voorkeur_aantal_operators'] =
-                  prefs['voorkeur_aantal_operators'];
-              if (project['benodigde_operators'] == null) {
-                project['benodigde_operators'] = prefs['benodigde_operators'];
-              }
-            }
-            return project;
-          })
-          .toList(growable: false);
+      final weergaveLijst = <Map<String, dynamic>>[];
+      for (final entry in groupedByProject.entries) {
+        final tasks = entry.value;
+        final representatieveTaak = tasks.first;
+        final projectData = _projectDataFromTaak(representatieveTaak);
+        final totaalOpen = tasks.length;
+
+        final heeftAandachtNodig = tasks.any((t) {
+          if (_text(t['status']).toLowerCase() == 'deels_voltooid') return true;
+          final planning = t['opdracht_planning'] ??
+              t['opdracht_planning!opdracht_planning_opdracht_id_fkey'];
+          return planning is List && planning.isNotEmpty;
+        });
+
+        final isOverigeBucket = entry.key == _smartOverigeTakenProjectId;
+
+        final item = !isOverigeBucket && viewByProjectId[entry.key] != null
+            ? Map<String, dynamic>.from(viewByProjectId[entry.key]!)
+            : <String, dynamic>{};
+
+        item['project_id'] = entry.key;
+        item['id'] = entry.key;
+        item['project_naam'] = isOverigeBucket
+            ? 'Overige taken'
+            : (_text(projectData['project_naam']).isNotEmpty
+                ? _text(projectData['project_naam'])
+                : (_text(representatieveTaak['bedrijfsnaam']).isNotEmpty
+                    ? _text(representatieveTaak['bedrijfsnaam'])
+                    : 'Onbekend'));
+        item['uitvoer_adres_volledig'] =
+            _text(representatieveTaak['uitvoer_adres_volledig']).isNotEmpty
+                ? _text(representatieveTaak['uitvoer_adres_volledig'])
+                : _text(projectData['uitvoer_adres_volledig']);
+        item['werk_regio'] = _text(representatieveTaak['werk_regio']).isNotEmpty
+            ? _text(representatieveTaak['werk_regio'])
+            : _text(projectData['werk_regio']);
+        if (_text(item['bedrijfsnaam']).isEmpty) {
+          item['bedrijfsnaam'] = _text(representatieveTaak['bedrijfsnaam']);
+        }
+        if (_text(item['bedrijfsnaam_klant']).isEmpty) {
+          item['bedrijfsnaam_klant'] = _text(representatieveTaak['bedrijfsnaam']);
+        }
+        if (_text(item['frequentie_type']).isEmpty) {
+          item['frequentie_type'] = _text(representatieveTaak['frequentie_type']);
+        }
+        item['totaal_open_taken'] = totaalOpen;
+        item['open_taken'] = totaalOpen;
+        item['taken_lijst'] = tasks;
+        item['heeft_aandacht_nodig'] = heeftAandachtNodig;
+        item['hoofdopdracht_id'] = _text(representatieveTaak['id']);
+        item['voorkeur_aantal_operators'] ??=
+            representatieveTaak['voorkeur_aantal_operators'];
+        item['benodigde_operators'] ??=
+            representatieveTaak['benodigde_operators'];
+
+        weergaveLijst.add(item);
+      }
+
+      weergaveLijst.sort((a, b) {
+        final aOverige =
+            _text(a['project_id']) == _smartOverigeTakenProjectId;
+        final bOverige =
+            _text(b['project_id']) == _smartOverigeTakenProjectId;
+        if (aOverige != bOverige) return aOverige ? 1 : -1;
+        return _text(a['project_naam']).compareTo(_text(b['project_naam']));
+      });
 
       if (!mounted) return;
-      setState(() => _smartProjects = filtered);
+      setState(() => _smartProjects = weergaveLijst);
     } catch (error) {
       debugPrint('Smart planner projecten query failed: $error');
       if (!mounted) return;
@@ -1184,7 +1261,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     final voornaam = _text(row['voornaam']);
     final achternaam = _text(row['achternaam']);
     final composedNaam = '$voornaam $achternaam'.trim();
-    final openTaken = _asInt(_selectedProject?['open_taken'], fallback: 1);
+    final openTaken = _smartOpenTakenCount(_selectedProject ?? const {});
 
     return {
       ...row,
@@ -2969,8 +3046,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                       final region = _text(project['werk_regio']).isEmpty
                           ? 'Geen regio'
                           : _text(project['werk_regio']);
-                      final openTaskCount = _asInt(project['open_taken']);
-                      final totalTaskCount = _asInt(project['totaal_taken']);
+                      final openTaskCount = _smartOpenTakenCount(project);
                       final neededOperators = _asInt(
       project['standaard_aantal_operators'] ?? project['benodigde_operators'],
                         fallback: 1,
@@ -3035,7 +3111,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
-                                      '$openTaskCount open taken van de $totalTaskCount',
+                                      '$openTaskCount openstaande taken',
                                       style: GoogleFonts.inter(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w800,
@@ -3079,7 +3155,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
         : _text(_selectedProject?['id']);
     final allOpenProjects = _smartProjects
         .map((raw) => Map<String, dynamic>.from(raw as Map))
-        .where((project) => _asInt(project['open_taken']) > 0)
+        .where((project) => _smartOpenTakenCount(project) > 0)
         .toList(growable: false);
     final visibleProjects = allOpenProjects
         .where(_matchesSmartProjectFilters)
@@ -3258,6 +3334,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                           ? _text(project['project_id'])
                           : _text(project['id']);
                       final hasAssignedHours =
+                          project['heeft_aandacht_nodig'] == true ||
                           _asDouble(project['reeds_toegewezen_uren']) > 0;
                       final selected =
                           selectedProjectId.isNotEmpty &&
@@ -3651,7 +3728,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                                     ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    'Nog in te vullen: ${_asInt(_selectedProject?['open_taken'])} deeltaken.',
+                                    'Nog in te vullen: ${_smartOpenTakenCount(_selectedProject ?? const {})} deeltaken.',
                                     style: GoogleFonts.inter(
                                       fontWeight: FontWeight.w800,
                                       color: cs.primary.withValues(alpha: 0.90),
@@ -4055,7 +4132,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                             ),
                           const SizedBox(height: 6),
                           Text(
-                            'Nog in te vullen: ${_asInt(_selectedProject?['open_taken'])} deeltaken.',
+                            'Nog in te vullen: ${_smartOpenTakenCount(_selectedProject ?? const {})} deeltaken.',
                             style: GoogleFonts.inter(
                               fontWeight: FontWeight.w800,
                               color: cs.primary.withValues(alpha: 0.90),
@@ -7116,6 +7193,27 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   String _t(dynamic v) => (v ?? '').toString().trim();
 
+  String _bedrijfsnaamUitProject(Map<String, dynamic> project) {
+    final direct = _t(project['bedrijfsnaam']);
+    if (direct.isNotEmpty) return direct;
+    final bedrijven = project['bedrijven'];
+    if (bedrijven is Map) {
+      final naam = _t(bedrijven['bedrijfsnaam']);
+      if (naam.isNotEmpty) return naam;
+    } else if (bedrijven is List &&
+        bedrijven.isNotEmpty &&
+        bedrijven.first is Map) {
+      final naam = _t((bedrijven.first as Map)['bedrijfsnaam']);
+      if (naam.isNotEmpty) return naam;
+    }
+    return 'Onbekend Bedrijf';
+  }
+
+  String _adresUitProject(Map<String, dynamic> project) {
+    final adres = _t(project['uitvoer_adres_volledig']);
+    return adres.isNotEmpty ? adres : 'Adres onbekend';
+  }
+
   Future<void> _loadProjects() async {
     setState(() {
       _loadingProjects = true;
@@ -7127,7 +7225,10 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
       final res = await Supabase.instance.client
           .from('projecten')
           // `bedrijfsnaam` is not a column on `projecten`; fetch it via join.
-          .select('id, project_naam, werk_regio, bedrijven(bedrijfsnaam)')
+          .select(
+            'id, project_naam, werk_regio, uitvoer_adres_volledig, '
+            'bedrijven(bedrijfsnaam)',
+          )
           .eq('status', 'actief')
           .neq('status', 'vervangen')
           .order('project_naam', ascending: true);
@@ -7356,11 +7457,10 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
     try {
       final p = _selectedProject!;
 
-      final bedrijven = p['bedrijven'];
-
-      final bedrijfsnaam = (bedrijven is Map)
-          ? _t(bedrijven['bedrijfsnaam'])
-          : 'Onbekend Bedrijf';
+      final bedrijfsnaam = _bedrijfsnaamUitProject(p);
+      final adres = _isAnderAdres && _anderAdresController.text.trim().isNotEmpty
+          ? _anderAdresController.text.trim()
+          : _adresUitProject(p);
 
       final double benodigdeUren = _benodigdeUren;
       final berekendeEindTijd = _timeToDb(eind);
@@ -7368,6 +7468,7 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
       final Map<String, dynamic> payload = {
         'project_id': p['id'],
         'bedrijfsnaam': bedrijfsnaam,
+        'uitvoer_adres_volledig': adres,
         'werk_regio': p['werk_regio'],
         'geplande_datum': _date!.toIso8601String().substring(0, 10),
         'tijdslot_start': _timeToDb(_start!),
@@ -7380,10 +7481,6 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
         'is_buiten_abonnement': true,
         'frequentie_type': 'incidenteel',
       };
-
-      if (_isAnderAdres && _anderAdresController.text.trim().isNotEmpty) {
-        payload['uitvoer_adres_volledig'] = _anderAdresController.text.trim();
-      }
 
       if (_isAfwijkendePrijs &&
           _afwijkendePrijsController.text.trim().isNotEmpty) {

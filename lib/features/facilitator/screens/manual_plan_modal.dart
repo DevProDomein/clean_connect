@@ -672,6 +672,12 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
     final taakId = _text(item?['id']).isNotEmpty
         ? _text(item!['id'])
         : widget.opdrachtId;
+    final projectJoin = _projectJoin();
+    final taakRegio = (_text(item?['werk_regio']).isNotEmpty
+            ? _text(item!['werk_regio'])
+            : _text(projectJoin?['werk_regio']))
+        .toLowerCase()
+        .trim();
     final datumStr = _plannedDateDb.contains('T')
         ? _plannedDateDb.split('T').first
         : _plannedDateDb;
@@ -804,6 +810,13 @@ class _ManualPlanModalState extends State<ManualPlanModal> {
           }
         }
         if (heeftOverlap) continue;
+
+        if (taakRegio.isNotEmpty) {
+          final opRegio = _text(op['werk_regio']).toLowerCase();
+          if (opRegio.isNotEmpty && !opRegio.contains(taakRegio)) {
+            continue;
+          }
+        }
 
         beschikbaar.add(op);
       }
