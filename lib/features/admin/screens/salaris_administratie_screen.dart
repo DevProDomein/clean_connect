@@ -149,11 +149,14 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     required String operatorId,
     required double brutoLoon,
   }) async {
+    final String dbMaandSleutel =
+        '${_geselecteerdeMaand.year}-${_geselecteerdeMaand.month.toString().padLeft(2, '0')}';
+
     final response = await AppSupabase.client.rpc(
       'betaal_salaris_uit',
       params: {
         'p_operator_id': operatorId,
-        'p_maand': _maandSleutel,
+        'p_maand': dbMaandSleutel,
         'p_bruto_loon': brutoLoon,
       },
     );
