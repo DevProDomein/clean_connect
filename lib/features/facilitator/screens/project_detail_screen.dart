@@ -790,6 +790,56 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
+  Future<void> _annuleerProject() async {
+    final project = _project;
+    if (project == null) return;
+
+    final bevestigd = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Project annuleren'),
+        content: const Text(
+          'Weet je zeker dat je dit project en alle onderliggende opdrachten '
+          'wilt annuleren?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Nee'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Ja, annuleren'),
+          ),
+        ],
+      ),
+    );
+
+    if (bevestigd != true || !mounted) return;
+
+    try {
+      await AppSupabase.client.rpc(
+        'annuleer_project',
+        params: {'p_project_id': project['id']},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Project en opdrachten geannuleerd.')),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Fout bij annuleren project: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fout bij annuleren: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -1357,6 +1407,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ],
             ),
           ),
+          if (_status.toLowerCase() != 'geannuleerd') ...[
+            const SizedBox(height: 28),
+            OutlinedButton.icon(
+              onPressed: _annuleerProject,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red.shade700,
+                side: BorderSide(color: Colors.red.shade300),
+                minimumSize: const Size.fromHeight(48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: const Icon(Icons.cancel_outlined),
+              label: Text(
+                'Project Annuleren',
+                style: GoogleFonts.lato(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
         ],
       ),
     );

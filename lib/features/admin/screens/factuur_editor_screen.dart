@@ -1156,6 +1156,7 @@ class _FactuurEditorScreenState extends State<FactuurEditorScreen> {
                 )
                 .eq('projecten.bedrijf_id', geselecteerdeKlantId!)
                 .eq('facturatie_status', 'facturabel')
+                .neq('status', 'geannuleerd')
                 .isFilter('factuur_id', null)
                 .order('geplande_datum', ascending: false);
 

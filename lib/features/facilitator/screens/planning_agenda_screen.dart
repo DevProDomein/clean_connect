@@ -190,6 +190,12 @@ class AgendaTabState extends State<AgendaTab> {
   }
 
   bool _isGeannuleerdAppointment(Appointment app) {
+    final opdrachtId = app.id.toString();
+    for (final t in _alleOpdrachtenLijst) {
+      if (_text(t['id']) == opdrachtId) {
+        return _isTaskGeannuleerd(t);
+      }
+    }
     final task = _taskForAppointment(app);
     return task != null && _isTaskGeannuleerd(task);
   }
@@ -528,18 +534,30 @@ class AgendaTabState extends State<AgendaTab> {
     }
 
     final app = calendarAppointmentDetails.appointments.first as Appointment;
+    final rawTask = _alleOpdrachtenLijst.cast<Map<String, dynamic>>().firstWhere(
+      (t) => _text(t['id']) == app.id.toString(),
+      orElse: () => <String, dynamic>{},
+    );
     final isTimeline = _calendarController.view == CalendarView.timelineDay;
     final isMonth = _calendarController.view == CalendarView.month;
     final isAfgerond = _isAfgerondAppointment(app);
     final isVerleden = _isAppointmentStartInVerleden(app);
-    final isGeannuleerd = _isGeannuleerdAppointment(app);
+    final isGeannuleerd = rawTask.isNotEmpty
+        ? _isTaskGeannuleerd(rawTask)
+        : _isGeannuleerdAppointment(app);
     final isVergrendeld = isAfgerond || isVerleden;
-    final tileColor = isVergrendeld ? Colors.grey.shade600 : app.color;
-    final bgOpacityMonthWeek = isGeannuleerd ? 0.1 : 0.15;
-    final bgColor = isGeannuleerd ? app.color.withValues(alpha: 0.1) : tileColor;
+    final tileColor = isGeannuleerd
+        ? Colors.grey.shade300
+        : (isVergrendeld ? Colors.grey.shade600 : app.color);
+    final bgOpacityMonthWeek = isGeannuleerd ? 1.0 : 0.15;
+    final bgColor = isGeannuleerd
+        ? Colors.grey.shade300
+        : (isMonth || !isTimeline
+            ? app.color.withValues(alpha: bgOpacityMonthWeek)
+            : tileColor);
     final textColor = isGeannuleerd ? Colors.grey.shade600 : Colors.white;
     final textDarkColor =
-        isGeannuleerd ? Colors.grey.shade500 : Colors.blue.shade900;
+        isGeannuleerd ? Colors.grey.shade600 : Colors.blue.shade900;
     final titleDecoration =
         isGeannuleerd ? TextDecoration.lineThrough : TextDecoration.none;
 
@@ -549,16 +567,19 @@ class AgendaTabState extends State<AgendaTab> {
         '${app.endTime.hour.toString().padLeft(2, '0')}:${app.endTime.minute.toString().padLeft(2, '0')}';
 
     if (isMonth || !isTimeline) {
-      return Opacity(
-        opacity: isGeannuleerd ? 0.3 : 1.0,
-        child: Container(
+      return Container(
         margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         clipBehavior: Clip.hardEdge,
         decoration: BoxDecoration(
-          color: app.color.withValues(alpha: bgOpacityMonthWeek),
+          color: bgColor,
           borderRadius: BorderRadius.circular(4),
-          border: Border(left: BorderSide(color: tileColor, width: 3)),
+          border: Border(
+            left: BorderSide(
+              color: isGeannuleerd ? Colors.grey.shade500 : tileColor,
+              width: 3,
+            ),
+          ),
         ),
         child: SingleChildScrollView(
           physics: const NeverScrollableScrollPhysics(),
@@ -604,13 +625,10 @@ class AgendaTabState extends State<AgendaTab> {
             ],
           ),
         ),
-      ),
       );
     }
 
-    return Opacity(
-      opacity: isGeannuleerd ? 0.3 : 1.0,
-      child: Container(
+    return Container(
       width: calendarAppointmentDetails.bounds.width,
       height: calendarAppointmentDetails.bounds.height,
       margin: const EdgeInsets.only(right: 2, top: 2, bottom: 2),
@@ -692,7 +710,6 @@ class AgendaTabState extends State<AgendaTab> {
           ],
         ],
       ),
-    ),
     );
   }
 
@@ -1564,7 +1581,7 @@ class AgendaTabState extends State<AgendaTab> {
         .whereType<Map>()
         .map((raw) => _normaliseOpdrachtVoorAgenda(Map<String, dynamic>.from(raw)))
         .where((task) => _text(task['geplande_datum']).isNotEmpty)
-        .where((task) => !_isVolledigOpenOpdracht(task))
+        .where((task) => _isTaskGeannuleerd(task) || !_isVolledigOpenOpdracht(task))
         .toList(growable: false);
   }
 
@@ -1778,7 +1795,7 @@ class AgendaTabState extends State<AgendaTab> {
   bool _matchesAgendaFilters(dynamic raw) {
     if (raw is! Map) return false;
     final task = Map<String, dynamic>.from(raw);
-    if (_isVolledigOpenOpdracht(task)) return false;
+    if (_isVolledigOpenOpdracht(task) && !_isTaskGeannuleerd(task)) return false;
     final klant = _text(task['bedrijfsnaam']);
     final project = _agendaProjectNaam(task);
     final regio = _text(task['werk_regio']);

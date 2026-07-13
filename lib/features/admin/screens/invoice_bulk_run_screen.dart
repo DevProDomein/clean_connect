@@ -23,8 +23,6 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
   );
   String? _geselecteerdeKlantId;
   String? _geselecteerdeKlantNaam;
-  List<Map<String, dynamic>> _klantenLijst = [];
-  List<Map<String, dynamic>> _klantenStatusLijst = [];
   int _analyticsTeFactureren = 0;
   int _analyticsGefactureerd = 0;
   int _analyticsTotaalKlanten = 0;
@@ -32,13 +30,9 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
   bool _isDefinitiefBezig = false;
   String? _loadError;
 
-  List<Map<String, dynamic>> _offertesSigned = [];
-  List<Map<String, dynamic>> _planningRows = [];
+  List<Map<String, dynamic>> _factureerbareKlanten = [];
+  List<Map<String, dynamic>> _gefactureerdeKlanten = [];
   List<Map<String, dynamic>> _conceptFacturen = [];
-  /// Elk bedrijf met een rij in klant_facturaties voor de maand (concept, gefactureerd, …).
-  Set<String> _trackerBedrijfIdsMaand = {};
-  /// Alleen status gefactureerd/betaald (analytics-kaart).
-  Set<String> _gefactureerdStatusBedrijfIds = {};
 
   String? _defaultBtwCode;
   double _defaultBtwPct = 21;
@@ -74,11 +68,12 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
   String _maandSleutel(DateTime m) =>
       '${m.year.toString().padLeft(4, '0')}-${m.month.toString().padLeft(2, '0')}';
 
-  bool get _isMaandVoorbij {
-    final nu = DateTime.now();
-    return _geselecteerdeMaand.year < nu.year ||
-        (_geselecteerdeMaand.year == nu.year &&
-            _geselecteerdeMaand.month < nu.month);
+  /// Een maand is pas factureerbaar als we in de volgende maand zitten.
+  bool get _isMaandAfgesloten {
+    final now = DateTime.now();
+    return _geselecteerdeMaand.year < now.year ||
+        (_geselecteerdeMaand.year == now.year &&
+            _geselecteerdeMaand.month < now.month);
   }
 
   String _maandLabelNl(DateTime m) {
@@ -98,222 +93,273 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
     return DateTime.tryParse(head);
   }
 
-  bool _offerteActiefInMaand(
-    Map<String, dynamic> o,
-    DateTime monthFirst,
-    DateTime monthLast,
-  ) {
-    final start = _parseDateOnly(o['contract_startdatum']);
-    final end = _parseDateOnly(o['contract_einddatum']);
-    if (start == null) return false;
-    if (start.isAfter(monthLast)) return false;
-    if (end != null && end.isBefore(monthFirst)) return false;
-    return true;
+  double _getTaakWaarde(Map<String, dynamic> taak) {
+    return double.tryParse(
+          taak['opdracht_waarde_ex_btw']?.toString() ?? '0',
+        ) ??
+        0.0;
   }
 
-  /// Abonnement op offerte-niveau: maandprijs (frequentie staat op project/opdracht).
-  bool _offerteTeltAlsAbonnement(Map<String, dynamic> o) {
-    return _asDouble(o['maandprijs_ex_btw']) > 0;
-  }
+  /// Abonnement (eerste taak → offerte) + extra's (buiten abo, facturabel, open).
+  ({
+    double aboBedrag,
+    double extraBedrag,
+    int aantalExtraTaken,
+    List<Map<String, dynamic>> regels,
+    List<String> inbegrepenOpdrachtIds,
+  }) _berekenKlantFacturatie(
+    List<Map<String, dynamic>> takenVanKlant, {
+    required String maandLabel,
+  }) {
+    double aboBedrag = 0.0;
+    if (takenVanKlant.isNotEmpty) {
+      final eersteTaak = takenVanKlant.first;
+      final projectenRaw = eersteTaak['projecten'];
+      final projecten = projectenRaw is Map
+          ? Map<String, dynamic>.from(projectenRaw)
+          : <String, dynamic>{};
+      final offertesRaw = projecten['offertes'];
 
-  bool _planningInSelectedMonth(Map<String, dynamic> row) {
-    final d = _parseDateOnly(row['geplande_datum']);
-    if (d == null) return false;
-    return d.year == _geselecteerdeMaand.year &&
-        d.month == _geselecteerdeMaand.month;
-  }
-
-  String? _bedrijfIdVanPlanning(Map<String, dynamic> row) {
-    final op = row['opdracht'];
-    if (op is! Map) return null;
-    final m = Map<String, dynamic>.from(op);
-    final project = m['project'];
-    if (project is! Map) return null;
-    final id = _text(Map<String, dynamic>.from(project)['bedrijf_id']);
-    return id.isEmpty ? null : id;
-  }
-
-  bool _isBuitenAbonnement(Map<String, dynamic> opMap) {
-    final v = opMap['is_buiten_abonnement'];
-    if (v is bool) return v;
-    final s = _text(v).toLowerCase();
-    return s == 'true' || s == '1' || s == 'ja';
-  }
-
-  bool _opdrachtAlGefactureerd(Map<String, dynamic> opMap) {
-    final fid = opMap['factuur_id'];
-    if (fid == null) return false;
-    return _text(fid).isNotEmpty;
-  }
-
-  bool _projectHeeftAbonnement(dynamic project) {
-    if (project is! Map) return false;
-    final oid = Map<String, dynamic>.from(project)['offerte_id'];
-    if (oid == null) return false;
-    return _text(oid).isNotEmpty;
-  }
-
-  /// Basisbedrag vóór korting: opdracht_waarde → vaste_prijs_per_beurt → uren × tarief.
-  double _basisWaardeVanOpdracht(Map<String, dynamic> opMap) {
-    var waarde = _asDouble(opMap['opdracht_waarde_ex_btw']);
-    if (waarde <= 0) waarde = _asDouble(opMap['vaste_prijs_per_beurt']);
-    if (waarde <= 0) {
-      final uren = _asDouble(opMap['verwachte_uren_totaal']);
-      final project = opMap['project'];
-      var tarief = 0.0;
-      if (project is Map) {
-        tarief = _asDouble(
-          Map<String, dynamic>.from(project)['vastgelegd_uurtarief'],
-        );
+      if (offertesRaw != null) {
+        Map<String, dynamic> offertesMap = {};
+        if (offertesRaw is List && offertesRaw.isNotEmpty) {
+          final first = offertesRaw.first;
+          if (first is Map) {
+            offertesMap = Map<String, dynamic>.from(first);
+          }
+        } else if (offertesRaw is Map) {
+          offertesMap = Map<String, dynamic>.from(offertesRaw);
+        }
+        aboBedrag = double.tryParse(
+              offertesMap['maandprijs_ex_btw']?.toString() ?? '0',
+            ) ??
+            0.0;
       }
-      waarde = uren * tarief;
     }
-    return waarde;
-  }
 
-  double _definitiefBedragVanOpdracht(Map<String, dynamic> opMap) {
-    final korting = _asDouble(opMap['korting_bedrag']);
-    return (_basisWaardeVanOpdracht(opMap) - korting).clamp(0.0, double.infinity);
-  }
+    double extraBedrag = 0.0;
+    var aantalExtraTaken = 0;
+    final regels = <Map<String, dynamic>>[];
+    final inbegrepenOpdrachtIds = <String>[];
 
-  Future<({Set<String> trackerIds, Set<String> gefactureerdStatusIds})>
-      _laadFacturatieTrackerVoorMaand(String maandSleutel) async {
-    final trackerIds = <String>{};
-    final gefactureerdStatusIds = <String>{};
-    try {
-      final facturatiesRes = await AppSupabase.client
-          .from('klant_facturaties')
-          .select('bedrijf_id, status')
-          .eq('maand_sleutel', maandSleutel);
-      for (final row in facturatiesRes as List) {
-        if (row is! Map) continue;
-        final m = Map<String, dynamic>.from(row);
-        final id = _text(m['bedrijf_id']);
-        if (id.isEmpty) continue;
-        trackerIds.add(id);
-        final s = _text(m['status']).toLowerCase();
-        if (s == 'gefactureerd' || s == 'betaald') {
-          gefactureerdStatusIds.add(id);
+    for (final taak in takenVanKlant) {
+      final isGefactureerd = taak['is_gefactureerd'] == true ||
+          taak['facturatie_status'] == 'gefactureerd';
+      final opdrachtId = _text(taak['id']);
+
+      if (!isGefactureerd && opdrachtId.isNotEmpty) {
+        inbegrepenOpdrachtIds.add(opdrachtId);
+      }
+
+      final isBuitenAbo = taak['is_buiten_abonnement'] == true;
+      final isFacturabel = taak['facturatie_status'] == 'facturabel';
+
+      if (isBuitenAbo && isFacturabel && !isGefactureerd) {
+        final waarde = _getTaakWaarde(taak);
+        extraBedrag += waarde;
+        aantalExtraTaken++;
+
+        if (waarde > 0) {
+          var projectNaam = _text(taak['bedrijfsnaam']);
+          final project = taak['projecten'] ?? taak['project'];
+          if (project is Map) {
+            final pn = _text(Map<String, dynamic>.from(project)['project_naam']);
+            if (pn.isNotEmpty) projectNaam = pn;
+          }
+          final datum = _parseDateOnly(taak['geplande_datum']);
+          final datumStr = datum != null
+              ? DateFormat('dd-MM-yyyy').format(datum)
+              : _text(taak['geplande_datum']);
+
+          regels.add({
+            'omschrijving': 'Extra werk $datumStr — $projectNaam',
+            'bedrag': waarde,
+            'aantal': 1.0,
+            'opdracht_id': opdrachtId,
+          });
         }
       }
-    } catch (e) {
-      debugPrint('klant_facturaties (tracker): $e');
-    }
-    return (trackerIds: trackerIds, gefactureerdStatusIds: gefactureerdStatusIds);
-  }
-
-  /// Abonnement, incidenteel, extra per klant + regels (zelfde logica als concept-run).
-  ({
-    double abonnement,
-    double incidenteel,
-    double extra,
-    double totaal,
-    List<Map<String, dynamic>> regels,
-  }) _facturatieVoorKlant(
-    String bedrijfId, {
-    required DateTime monthFirst,
-    required DateTime monthLast,
-    required String maandLabel,
-    Set<String>? reedsGefactureerdeIds,
-  }) {
-    final geblokkeerd = reedsGefactureerdeIds ?? _trackerBedrijfIdsMaand;
-    if (geblokkeerd.contains(bedrijfId)) {
-      return (
-        abonnement: 0.0,
-        incidenteel: 0.0,
-        extra: 0.0,
-        totaal: 0.0,
-        regels: <Map<String, dynamic>>[],
-      );
     }
 
-    double abonnementBedrag = 0.0;
-    double incidenteelBedrag = 0.0;
-    double extraBedrag = 0.0;
-    final regels = <Map<String, dynamic>>[];
-    final incidenteelVerwerkt = <String>{};
-    final extraVerwerkt = <String>{};
-
-    for (final o in _offertesSigned) {
-      if (_text(o['bedrijf_id']) != bedrijfId) continue;
-      if (!_offerteActiefInMaand(o, monthFirst, monthLast)) continue;
-      if (!_offerteTeltAlsAbonnement(o)) continue;
-      abonnementBedrag += _asDouble(o['maandprijs_ex_btw']);
-    }
-
-    if (abonnementBedrag > 0) {
-      regels.add({
+    if (aboBedrag > 0) {
+      regels.insert(0, {
         'omschrijving': 'Abonnement $maandLabel',
-        'bedrag': abonnementBedrag,
+        'bedrag': aboBedrag,
         'aantal': 1.0,
       });
     }
 
-    for (final row in _planningRows) {
-      if (!_planningInSelectedMonth(row)) continue;
-      if (_bedrijfIdVanPlanning(row) != bedrijfId) continue;
-      final op = row['opdracht'];
-      if (op is! Map) continue;
-      final opMap = Map<String, dynamic>.from(op);
-      if (_opdrachtAlGefactureerd(opMap)) continue;
+    return (
+      aboBedrag: aboBedrag,
+      extraBedrag: extraBedrag,
+      aantalExtraTaken: aantalExtraTaken,
+      regels: regels,
+      inbegrepenOpdrachtIds: inbegrepenOpdrachtIds,
+    );
+  }
 
-      final heeftAbonnement = _projectHeeftAbonnement(opMap['project']);
-      final isExtra = _isBuitenAbonnement(opMap);
-      final freqType = _text(opMap['frequentie_type']).toLowerCase();
-      final isIncidenteel = freqType == 'incidenteel' || freqType == 'eenmalig';
+  List<Map<String, dynamic>> _takenVanKlantItem(Map<String, dynamic> klant) {
+    final takenRaw = klant['taken'];
+    if (takenRaw is! List) return const [];
+    return takenRaw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
 
-      if (heeftAbonnement && !isExtra && !isIncidenteel) continue;
+  void _updatePreviewAnalytics() {
+    _analyticsTeFactureren = _factureerbareKlanten.length;
+    _analyticsGefactureerd = _gefactureerdeKlanten.length;
+    _analyticsTotaalKlanten =
+        _factureerbareKlanten.length + _gefactureerdeKlanten.length;
+  }
 
-      final definitiefBedrag = _definitiefBedragVanOpdracht(opMap);
-      if (definitiefBedrag <= 0) continue;
+  Future<void> _loadFacturatiePreview() async {
+    final startStr = DateTime(
+      _geselecteerdeMaand.year,
+      _geselecteerdeMaand.month,
+      1,
+    ).toIso8601String().split('T')[0];
+    final endStr = DateTime(
+      _geselecteerdeMaand.year,
+      _geselecteerdeMaand.month + 1,
+      0,
+    ).toIso8601String().split('T')[0];
 
-      final opdrachtId = _text(opMap['id']);
-      var projectNaam = _text(opMap['bedrijfsnaam']);
-      final project = opMap['project'];
-      if (project is Map) {
-        final pn = _text(Map<String, dynamic>.from(project)['project_naam']);
-        if (pn.isNotEmpty) projectNaam = pn;
-      }
-      final datum = _parseDateOnly(row['geplande_datum']);
-      final datumStr = datum != null
-          ? DateFormat('dd-MM-yyyy').format(datum)
-          : _text(row['geplande_datum']);
+    final now = DateTime.now();
+    final isMaandAfgesloten = _geselecteerdeMaand.year < now.year ||
+        (_geselecteerdeMaand.year == now.year &&
+            _geselecteerdeMaand.month < now.month);
 
-      if (isExtra || (!heeftAbonnement && !isIncidenteel)) {
-        if (opdrachtId.isNotEmpty && extraVerwerkt.contains(opdrachtId)) continue;
-        if (opdrachtId.isNotEmpty) extraVerwerkt.add(opdrachtId);
-        extraBedrag += definitiefBedrag;
-        regels.add({
-          'omschrijving': 'Extra werk $datumStr — $projectNaam',
-          'bedrag': definitiefBedrag,
-          'aantal': 1.0,
-          'planning_id': _text(row['id']),
-          'opdracht_id': opdrachtId,
+    if (!isMaandAfgesloten) {
+      if (mounted) {
+        setState(() {
+          _factureerbareKlanten = [];
+          _gefactureerdeKlanten = [];
         });
       } else {
-        if (opdrachtId.isNotEmpty && incidenteelVerwerkt.contains(opdrachtId)) {
-          continue;
-        }
-        if (opdrachtId.isNotEmpty) incidenteelVerwerkt.add(opdrachtId);
-        incidenteelBedrag += definitiefBedrag;
-        regels.add({
-          'omschrijving': 'Incidenteel werk $datumStr — $projectNaam',
-          'bedrag': definitiefBedrag,
-          'aantal': 1.0,
-          'planning_id': _text(row['id']),
-          'opdracht_id': opdrachtId,
-        });
+        _factureerbareKlanten = [];
+        _gefactureerdeKlanten = [];
       }
+      _updatePreviewAnalytics();
+      return;
     }
 
-    final totaalBedrag = abonnementBedrag + incidenteelBedrag + extraBedrag;
-    return (
-      abonnement: abonnementBedrag,
-      incidenteel: incidenteelBedrag,
-      extra: extraBedrag,
-      totaal: totaalBedrag,
-      regels: regels,
-    );
+    try {
+      final data = await AppSupabase.client
+          .from('opdrachten')
+          .select('*, projecten(*, offertes(*), bedrijven(*))')
+          .gte('geplande_datum', startStr)
+          .lte('geplande_datum', endStr);
+
+      final factureerbaar = <Map<String, dynamic>>[];
+      final reedsGefactureerd = <Map<String, dynamic>>[];
+      final takenPerBedrijf = <String, List<Map<String, dynamic>>>{};
+
+      for (final raw in data as List) {
+        if (raw is! Map) continue;
+        final taak = Map<String, dynamic>.from(raw);
+        final projectenRaw = taak['projecten'];
+        final projecten = projectenRaw is Map
+            ? Map<String, dynamic>.from(projectenRaw)
+            : <String, dynamic>{};
+
+        final bedrijfIdRaw = projecten['bedrijf_id'] ?? taak['bedrijf_id'];
+        final String? bedrijfId = bedrijfIdRaw == null
+            ? null
+            : bedrijfIdRaw.toString().trim().isEmpty
+                ? null
+                : bedrijfIdRaw.toString().trim();
+
+        final bedrijven = projecten['bedrijven'];
+        final bedrijfsnaamViaProject = bedrijven is Map
+            ? _text(Map<String, dynamic>.from(bedrijven)['bedrijfsnaam'])
+            : '';
+        final bedrijfsnaam = bedrijfsnaamViaProject.isNotEmpty
+            ? bedrijfsnaamViaProject
+            : (_text(taak['bedrijfsnaam']).isNotEmpty
+                ? _text(taak['bedrijfsnaam'])
+                : 'Onbekende Klant');
+
+        final groupKey = bedrijfId ?? bedrijfsnaam;
+        takenPerBedrijf.putIfAbsent(groupKey, () => []).add(taak);
+      }
+
+      for (final entry in takenPerBedrijf.entries) {
+        final tasks = entry.value;
+        final first = tasks.first;
+        final projectenRaw = first['projecten'];
+        final projecten = projectenRaw is Map
+            ? Map<String, dynamic>.from(projectenRaw)
+            : <String, dynamic>{};
+        final bedrijven = projecten['bedrijven'];
+        final bedrijfsnaam = bedrijven is Map
+            ? (_text(Map<String, dynamic>.from(bedrijven)['bedrijfsnaam']).isNotEmpty
+                ? _text(Map<String, dynamic>.from(bedrijven)['bedrijfsnaam'])
+                : _text(first['bedrijfsnaam']).isNotEmpty
+                    ? _text(first['bedrijfsnaam'])
+                    : 'Onbekende Klant')
+            : (_text(first['bedrijfsnaam']).isNotEmpty
+                ? _text(first['bedrijfsnaam'])
+                : 'Onbekende Klant');
+
+        final bedrijfIdRaw = projecten['bedrijf_id'] ?? first['bedrijf_id'];
+        final String? bedrijfId = bedrijfIdRaw == null
+            ? null
+            : bedrijfIdRaw.toString().trim().isEmpty
+                ? null
+                : bedrijfIdRaw.toString().trim();
+
+        final allInvoiced = tasks.every((t) {
+          return t['is_gefactureerd'] == true ||
+              t['facturatie_status']?.toString() == 'gefactureerd';
+        });
+
+        final berekening = _berekenKlantFacturatie(
+          tasks.map((t) => Map<String, dynamic>.from(t)).toList(),
+          maandLabel: _maandLabelNl(_geselecteerdeMaand),
+        );
+
+        final klantMap = {
+          'bedrijf_id': bedrijfId ?? entry.key,
+          'bedrijfsnaam': bedrijfsnaam,
+          'taken': tasks,
+          'abo_bedrag': berekening.aboBedrag,
+          'extra_bedrag': berekening.extraBedrag,
+          'aantal_extra_taken': berekening.aantalExtraTaken,
+          'totaal_bedrag': berekening.aboBedrag + berekening.extraBedrag,
+        };
+
+        if (allInvoiced) {
+          reedsGefactureerd.add(klantMap);
+        } else {
+          factureerbaar.add(klantMap);
+        }
+      }
+
+      factureerbaar.sort(
+        (a, b) => _text(a['bedrijfsnaam']).compareTo(_text(b['bedrijfsnaam'])),
+      );
+      reedsGefactureerd.sort(
+        (a, b) => _text(a['bedrijfsnaam']).compareTo(_text(b['bedrijfsnaam'])),
+      );
+
+      _factureerbareKlanten = factureerbaar;
+      _gefactureerdeKlanten = reedsGefactureerd;
+      _updatePreviewAnalytics();
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      debugPrint('Fout bij laden facturatie preview: $e');
+      _factureerbareKlanten = [];
+      _gefactureerdeKlanten = [];
+      _updatePreviewAnalytics();
+      if (mounted) {
+        setState(() {});
+      }
+    }
   }
 
   Future<void> _koppelOpdrachtenAanFactuur({
@@ -344,6 +390,8 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
     try {
       await AppSupabase.client.from('opdrachten').update({
         'factuur_id': factuurIdStr,
+        'is_gefactureerd': true,
+        'facturatie_status': 'gefactureerd',
       }).inFilter('id', ids.toList());
     } catch (e) {
       debugPrint(
@@ -420,113 +468,32 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
     }
   }
 
-  void _berekenKlantenStatus({
-    required List<Map<String, dynamic>> bedrijven,
-    required List<Map<String, dynamic>> facturaties,
-  }) {
-    final monthFirst =
-        DateTime(_geselecteerdeMaand.year, _geselecteerdeMaand.month);
-    final monthLast =
-        DateTime(_geselecteerdeMaand.year, _geselecteerdeMaand.month + 1, 0);
-
-    final maandLabel = _maandLabelNl(_geselecteerdeMaand);
-    final trackerIds = _trackerBedrijfIdsMaand.isNotEmpty
-        ? _trackerBedrijfIdsMaand
-        : facturaties.map((f) => _text(f['bedrijf_id'])).where((id) => id.isNotEmpty).toSet();
-    final facturenRes = facturaties;
-
-    var teFactureren = 0;
-    var gefactureerd = 0;
-    final statusLijst = <Map<String, dynamic>>[];
-
-    for (final bedrijf in bedrijven) {
-      final bedrijfId = _text(bedrijf['id']);
-      if (bedrijfId.isEmpty) continue;
-      final bNaam = _text(bedrijf['bedrijfsnaam']);
-
-      final bedragen = _facturatieVoorKlant(
-        bedrijfId,
-        monthFirst: monthFirst,
-        monthLast: monthLast,
-        maandLabel: maandLabel,
-        reedsGefactureerdeIds: trackerIds,
-      );
-      final heeftOmzet = bedragen.totaal > 0;
-      const heeftOnverwerkteUren = false;
-
-      String statusType = 'geen_omzet';
-      String statusTekst = 'Geen werk deze maand';
-
-      Map<String, dynamic>? factuurTracker;
-      for (final f in facturenRes) {
-        if (_text(f['bedrijf_id']) == bedrijfId) {
-          factuurTracker = f;
-          break;
-        }
-      }
-
-      if (factuurTracker != null) {
-        final dbStatus = factuurTracker['status']?.toString().toLowerCase();
-
-        if (dbStatus == 'concept') {
-          statusType = 'concept';
-          statusTekst = 'Concept al gegenereerd voor deze maand';
-        } else {
-          statusType = 'gefactureerd';
-          statusTekst = 'Reeds definitief gefactureerd';
-        }
-        gefactureerd++;
-      // ignore: dead_code — klaar voor uren-accordering zodra planning uren_status meelevert
-      } else if (heeftOnverwerkteUren) {
-        statusType = 'blokkade';
-        statusTekst = 'Wacht op uren-accordering';
-      } else if (heeftOmzet) {
-        statusType = 'klaar';
-        statusTekst = 'Klaar voor facturatie';
-        teFactureren++;
-      }
-
-      statusLijst.add({
-        'id': bedrijfId,
-        'naam': bNaam,
-        'status_type': statusType,
-        'status_tekst': statusTekst,
-      });
-    }
-
-    statusLijst.sort((a, b) => _text(a['naam']).compareTo(_text(b['naam'])));
-
-    _klantenStatusLijst = statusLijst;
-    _analyticsTeFactureren = teFactureren;
-    _analyticsGefactureerd = gefactureerd;
-    _analyticsTotaalKlanten = bedrijven.length;
-  }
-
-  Color _statusSubtitleColor(String statusType) {
-    switch (statusType) {
-      case 'klaar':
-        return Colors.green.shade800;
-      case 'concept':
-        return Colors.orange.shade800;
-      case 'blokkade':
-        return Colors.red.shade700;
-      case 'gefactureerd':
-        return Colors.blue.shade700;
-      default:
-        return Colors.grey.shade500;
-    }
-  }
-
   Future<void> _toonKlantZoekModal() async {
+    if (!_isMaandAfgesloten || _factureerbareKlanten.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Geen factureerbare klanten: de maand is nog niet afgesloten of '
+              'alle werk is al gefactureerd.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     var zoekTerm = '';
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final gefilterd = _klantenStatusLijst.where((b) {
+            final gefilterd = _factureerbareKlanten.where((b) {
               if (zoekTerm.isEmpty) return true;
-              return _text(b['naam']).toLowerCase().contains(zoekTerm.toLowerCase());
+              return _text(b['bedrijfsnaam'])
+                  .toLowerCase()
+                  .contains(zoekTerm.toLowerCase());
             }).toList();
 
             return SelectionArea(
@@ -573,59 +540,39 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                             if (gefilterd.isEmpty)
                               const Padding(
                                 padding: EdgeInsets.all(24),
-                                child: Center(child: Text('Geen klanten gevonden.')),
+                                child: Center(
+                                  child: Text('Geen factureerbare klanten gevonden.'),
+                                ),
                               )
                             else
                               ...gefilterd.map((klant) {
-                                final id = _text(klant['id']);
-                                final statusType = _text(klant['status_type']);
-                                final isKlaar = statusType == 'klaar';
-                                final statusTekst = _text(klant['status_tekst']);
-
-                                Color statusKleur = Colors.grey;
-                                IconData statusIcon = Icons.info_outline;
-
-                                if (isKlaar) {
-                                  statusKleur = Colors.green;
-                                  statusIcon = Icons.check_circle;
-                                } else if (klant['status_type'] == 'concept') {
-                                  statusKleur = Colors.orange;
-                                  statusIcon = Icons.file_copy;
-                                } else if (klant['status_type'] == 'blokkade') {
-                                  statusKleur = Colors.red;
-                                  statusIcon = Icons.warning;
-                                } else if (klant['status_type'] == 'gefactureerd') {
-                                  statusKleur = Colors.blue;
-                                  statusIcon = Icons.receipt;
-                                }
+                                final id = _text(klant['bedrijf_id']);
+                                final naam = _text(klant['bedrijfsnaam']);
 
                                 return ListTile(
-                                  enabled: isKlaar,
-                                  leading: Icon(statusIcon, color: statusKleur),
+                                  leading: Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green.shade700,
+                                  ),
                                   title: Text(
-                                    _text(klant['naam']).isEmpty ? 'Onbekend' : _text(klant['naam']),
-                                    style: TextStyle(
-                                      fontWeight: isKlaar ? FontWeight.bold : FontWeight.normal,
-                                      color: isKlaar ? Colors.black87 : Colors.grey.shade500,
-                                    ),
+                                    naam.isEmpty ? 'Onbekend' : naam,
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                   subtitle: Text(
-                                    statusTekst.isEmpty ? 'Status onbekend' : statusTekst,
+                                    'Klaar voor facturatie',
                                     style: TextStyle(
-                                      color: _statusSubtitleColor(statusType),
-                                      fontWeight: isKlaar ? FontWeight.w600 : FontWeight.normal,
+                                      color: Colors.green.shade800,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  onTap: isKlaar
-                                      ? () {
-                                          Navigator.of(dialogContext).pop();
-                                          setState(() {
-                                            _geselecteerdeKlantId = id;
-                                            _geselecteerdeKlantNaam = _text(klant['naam']);
-                                            _conceptFacturen = [];
-                                          });
-                                        }
-                                      : null,
+                                  onTap: () {
+                                    Navigator.of(dialogContext).pop();
+                                    setState(() {
+                                      _geselecteerdeKlantId = id;
+                                      _geselecteerdeKlantNaam = naam;
+                                      _conceptFacturen = [];
+                                    });
+                                  },
                                 );
                               }),
                           ],
@@ -660,65 +607,7 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
       _conceptFacturen = [];
     });
 
-    final maandSleutel = _maandSleutel(_geselecteerdeMaand);
-    final startMaand = DateTime(
-      _geselecteerdeMaand.year,
-      _geselecteerdeMaand.month,
-      1,
-    );
-    final eindMaand = DateTime(
-      _geselecteerdeMaand.year,
-      _geselecteerdeMaand.month + 1,
-      0,
-      23,
-      59,
-      59,
-    );
-
     try {
-      final tracker = await _laadFacturatieTrackerVoorMaand(maandSleutel);
-      _trackerBedrijfIdsMaand = tracker.trackerIds;
-      _gefactureerdStatusBedrijfIds = tracker.gefactureerdStatusIds;
-
-      final bedrijvenRes = await AppSupabase.client
-          .from('bedrijven')
-          .select('id, bedrijfsnaam, is_actief')
-          .order('bedrijfsnaam', ascending: true);
-
-      final offertesRes = await AppSupabase.client
-          .from('offertes')
-          .select(
-            'id, bedrijf_id, status, '
-            'contract_startdatum, contract_einddatum, maandprijs_ex_btw',
-          )
-          .eq('status', 'signed');
-
-      final planningRes = await AppSupabase.client
-          .from('opdracht_planning')
-          .select('''
-            id, status, geplande_datum,
-            opdracht:opdrachten!opdracht_planning_opdracht_id_fkey(
-              id, bedrijfsnaam, frequentie_type, is_buiten_abonnement,
-              opdracht_waarde_ex_btw, vaste_prijs_per_beurt, korting_bedrag,
-              factuur_id, verwachte_uren_totaal,
-              project:projecten(bedrijf_id, project_naam, vastgelegd_uurtarief, offerte_id)
-            )
-          ''')
-          .gte('geplande_datum', startMaand.toIso8601String())
-          .lte('geplande_datum', eindMaand.toIso8601String())
-          .neq('status', 'geannuleerd');
-
-      final facturaties = _trackerBedrijfIdsMaand
-          .map(
-            (id) => {
-              'bedrijf_id': id,
-              'status': _gefactureerdStatusBedrijfIds.contains(id)
-                  ? 'gefactureerd'
-                  : 'concept',
-            },
-          )
-          .toList();
-
       final btwRes = await AppSupabase.client
           .from('fiscale_btw_codes')
           .select('code, percentage')
@@ -731,16 +620,6 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
           .limit(1);
 
       if (!mounted) return;
-
-      final klanten = (bedrijvenRes as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .where((b) {
-            final actief = b['is_actief'];
-            if (actief is bool && !actief) return false;
-            return _text(b['bedrijfsnaam']).isNotEmpty;
-          })
-          .toList();
 
       final btwList = btwRes as List;
       if (btwList.isNotEmpty) {
@@ -755,25 +634,10 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
         );
       }
 
-      final offertes = (offertesRes as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      final planningLijst = (planningRes as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-
-      _offertesSigned = offertes;
-      _planningRows = planningLijst;
-      _berekenKlantenStatus(
-        bedrijven: klanten,
-        facturaties: facturaties,
-      );
+      await _loadFacturatiePreview();
 
       if (!mounted) return;
       setState(() {
-        _klantenLijst = klanten;
         _isLoading = false;
       });
     } catch (e) {
@@ -799,250 +663,62 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
   }
 
   Future<void> _genereerConceptRun() async {
+    if (!_isMaandAfgesloten) return;
+
     setState(() {
       _isLoading = true;
       _conceptFacturen = [];
     });
 
     try {
-      final maandSleutel = _maandSleutel(_geselecteerdeMaand);
       final maandLabel = _maandLabelNl(_geselecteerdeMaand);
-      final startMaand =
-          DateTime(_geselecteerdeMaand.year, _geselecteerdeMaand.month, 1)
-              .toIso8601String();
-      final eindMaand = DateTime(
-        _geselecteerdeMaand.year,
-        _geselecteerdeMaand.month + 1,
-        0,
-        23,
-        59,
-        59,
-      ).toIso8601String();
 
-      final facturatiesRes = await AppSupabase.client
-          .from('klant_facturaties')
-          .select('bedrijf_id')
-          .eq('maand_sleutel', maandSleutel);
-      final reedsGefactureerdeIds = (facturatiesRes as List)
-          .whereType<Map>()
-          .map((f) => _text(f['bedrijf_id']))
-          .where((id) => id.isNotEmpty)
-          .toList();
-      _trackerBedrijfIdsMaand = reedsGefactureerdeIds.toSet();
+      await _loadFacturatiePreview();
 
-      final bedrijvenRes = await AppSupabase.client
-          .from('bedrijven')
-          .select('id, bedrijfsnaam');
-
-      final actieveOffertesRes = await AppSupabase.client
-          .from('offertes')
-          .select(
-            'id, bedrijf_id, maandprijs_ex_btw, contract_startdatum, contract_einddatum',
-          )
-          .eq('status', 'signed');
-      final actieveOffertes = (actieveOffertesRes as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-
-      final planningRes = await AppSupabase.client
-          .from('opdracht_planning')
-          .select('''
-            id, status, geplande_datum,
-            opdracht:opdrachten!opdracht_planning_opdracht_id_fkey(
-              id, bedrijfsnaam, frequentie_type, is_buiten_abonnement,
-              opdracht_waarde_ex_btw, vaste_prijs_per_beurt, factuur_id,
-              verwachte_uren_totaal,
-              project:projecten(bedrijf_id, project_naam, vastgelegd_uurtarief, offerte_id)
-            )
-          ''')
-          .gte('geplande_datum', startMaand)
-          .lte('geplande_datum', eindMaand)
-          .neq('status', 'geannuleerd');
-
-      final planningLijst = (planningRes as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      _offertesSigned = actieveOffertes;
-      _planningRows = planningLijst;
+      if (_factureerbareKlanten.isEmpty) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Geen factureerbaar werk gevonden of maand nog niet afgesloten.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
 
       final nieuweConceptLijst = <Map<String, dynamic>>[];
 
-      for (final bedrijfRaw in bedrijvenRes as List) {
-        if (bedrijfRaw is! Map) continue;
-        final bedrijf = Map<String, dynamic>.from(bedrijfRaw);
-        final bedrijfId = _text(bedrijf['id']);
+      for (final klant in _factureerbareKlanten) {
+        final bedrijfId = _text(klant['bedrijf_id']);
         if (bedrijfId.isEmpty || !_klantPassesFilter(bedrijfId)) continue;
 
-        if (reedsGefactureerdeIds.contains(bedrijfId)) continue;
-
-        double abonnementBedrag = 0.0;
-        double incidenteelBedrag = 0.0;
-        double extraBedrag = 0.0;
-        final regels = <Map<String, dynamic>>[];
-        final inbegrepenOpdrachtIds = <String>[];
-
-        // A. Bereken Abonnement (vaste maandprijs met start/einddatum-check)
-        final bedrijfsOffertes = actieveOffertes
-            .where((o) => _text(o['bedrijf_id']) == bedrijfId)
-            .toList();
-
-        final startVanGeselecteerdeMaand = DateTime(
-          _geselecteerdeMaand.year,
-          _geselecteerdeMaand.month,
-          1,
-        );
-        final eindVanGeselecteerdeMaand = DateTime(
-          _geselecteerdeMaand.year,
-          _geselecteerdeMaand.month + 1,
-          0,
-          23,
-          59,
-          59,
+        final listTaken = _takenVanKlantItem(klant);
+        final berekening = _berekenKlantFacturatie(
+          listTaken,
+          maandLabel: maandLabel,
         );
 
-        for (final o in bedrijfsOffertes) {
-          final startStr = o['contract_startdatum']?.toString() ?? '';
-          final eindStr = o['contract_einddatum']?.toString() ?? '';
-
-          var magFactureren = true;
-
-          if (startStr.isNotEmpty) {
-            final startDatum = DateTime.tryParse(startStr);
-            if (startDatum != null &&
-                startDatum.isAfter(eindVanGeselecteerdeMaand)) {
-              magFactureren = false;
-            }
-          }
-
-          if (eindStr.isNotEmpty) {
-            final eindDatum = DateTime.tryParse(eindStr);
-            if (eindDatum != null &&
-                eindDatum.isBefore(startVanGeselecteerdeMaand)) {
-              magFactureren = false;
-            }
-          }
-
-          if (magFactureren) {
-            abonnementBedrag +=
-                double.tryParse(o['maandprijs_ex_btw']?.toString() ?? '0') ??
-                    0.0;
-          }
-        }
-        if (abonnementBedrag > 0) {
-          regels.add({
-            'omschrijving': 'Abonnement $maandLabel',
-            'bedrag': abonnementBedrag,
-            'aantal': 1.0,
-          });
-        }
-
-        final bedrijfsPlanningen = planningLijst.where((p) {
-          final op = p['opdracht'];
-          if (op is! Map) return false;
-          final project = Map<String, dynamic>.from(op)['project'];
-          if (project is! Map) return false;
-          return _text(Map<String, dynamic>.from(project)['bedrijf_id']) ==
-              bedrijfId;
-        }).toList();
-
-        for (final taak in bedrijfsPlanningen) {
-          final opdracht = taak['opdracht'];
-          if (opdracht is! Map) continue;
-          final opMap = Map<String, dynamic>.from(opdracht);
-
-          if (_opdrachtAlGefactureerd(opMap)) continue;
-
-          final opdrachtId = _text(opMap['id']);
-          if (opdrachtId.isNotEmpty) {
-            inbegrepenOpdrachtIds.add(opdrachtId);
-          }
-
-          final isExtra = opMap['is_buiten_abonnement'] == true;
-          final freqType = _text(opMap['frequentie_type']).toLowerCase();
-          final isIncidenteel =
-              freqType == 'incidenteel' || freqType == 'eenmalig';
-          final project = opMap['project'];
-          final heeftAbonnement = project is Map &&
-              _text(Map<String, dynamic>.from(project)['offerte_id']).isNotEmpty;
-
-          if (heeftAbonnement && !isIncidenteel && !isExtra) continue;
-
-          double waarde =
-              double.tryParse(opMap['opdracht_waarde_ex_btw']?.toString() ?? '0') ??
-                  0.0;
-          if (waarde <= 0.0) {
-            waarde = double.tryParse(
-                  opMap['vaste_prijs_per_beurt']?.toString() ?? '0',
-                ) ??
-                0.0;
-          }
-          if (waarde <= 0.0) {
-            final uren = double.tryParse(
-                  opMap['verwachte_uren_totaal']?.toString() ?? '0',
-                ) ??
-                0.0;
-            var tarief = 0.0;
-            if (project is Map) {
-              tarief = double.tryParse(
-                    Map<String, dynamic>.from(project)['vastgelegd_uurtarief']
-                        ?.toString() ??
-                    '0',
-                  ) ??
-                  0.0;
-            }
-            waarde = uren * tarief;
-          }
-
-          if (waarde <= 0) continue;
-
-          var projectNaam = _text(opMap['bedrijfsnaam']);
-          if (project is Map) {
-            final pn =
-                _text(Map<String, dynamic>.from(project)['project_naam']);
-            if (pn.isNotEmpty) projectNaam = pn;
-          }
-          final datum = _parseDateOnly(taak['geplande_datum']);
-          final datumStr = datum != null
-              ? DateFormat('dd-MM-yyyy').format(datum)
-              : _text(taak['geplande_datum']);
-
-          if (isExtra || (!heeftAbonnement && !isIncidenteel)) {
-            extraBedrag += waarde;
-            regels.add({
-              'omschrijving': 'Extra werk $datumStr — $projectNaam',
-              'bedrag': waarde,
-              'aantal': 1.0,
-              'planning_id': _text(taak['id']),
-              'opdracht_id': _text(opMap['id']),
-            });
-          } else {
-            incidenteelBedrag += waarde;
-            regels.add({
-              'omschrijving': 'Incidenteel werk $datumStr — $projectNaam',
-              'bedrag': waarde,
-              'aantal': 1.0,
-              'planning_id': _text(taak['id']),
-              'opdracht_id': _text(opMap['id']),
-            });
-          }
-        }
-
-        final totaalBedrag =
-            abonnementBedrag + incidenteelBedrag + extraBedrag;
+        final abonnementBedrag = berekening.aboBedrag;
+        final extraBedrag = berekening.extraBedrag;
+        final totaalBedrag = abonnementBedrag + extraBedrag;
+        final regels = berekening.regels;
+        final inbegrepenOpdrachtIds = berekening.inbegrepenOpdrachtIds;
 
         if (totaalBedrag > 0 && regels.isNotEmpty) {
           nieuweConceptLijst.add({
             'id': 'klant_$bedrijfId',
             'klant_id': bedrijfId,
-            'bedrijfsnaam': _text(bedrijf['bedrijfsnaam']).isEmpty
+            'bedrijfsnaam': _text(klant['bedrijfsnaam']).isEmpty
                 ? 'Onbekend'
-                : _text(bedrijf['bedrijfsnaam']),
+                : _text(klant['bedrijfsnaam']),
             'type': 'verzameld',
             'abonnement': abonnementBedrag,
-            'incidenteel': incidenteelBedrag,
+            'incidenteel': 0.0,
             'extra': extraBedrag,
+            'aantal_extra_taken': berekening.aantalExtraTaken,
             'bedrag': totaalBedrag,
             'selected': true,
             'omschrijving': 'Facturatie $maandLabel',
@@ -1067,7 +743,11 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Er is niets te factureren voor deze maand.'),
+              content: Text(
+                'Geen factureerbaar werk gevonden voor deze maand. Dit kan komen '
+                'doordat alle taken al gefactureerd zijn, óf doordat er geen '
+                'facturabele extra opdrachten buiten het abonnement zijn.',
+              ),
             ),
           );
         }
@@ -1108,48 +788,166 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
       );
     }
 
-    final monthFirst =
-        DateTime(_geselecteerdeMaand.year, _geselecteerdeMaand.month);
-    final monthLast =
-        DateTime(_geselecteerdeMaand.year, _geselecteerdeMaand.month + 1, 0);
-    final maandLabel = _maandLabelNl(_geselecteerdeMaand);
-    var metOmzet = 0;
-    final klanten = <String>{};
-
-    for (final k in _klantenLijst) {
-      final id = _text(k['id']);
-      if (id.isEmpty || !_klantPassesFilter(id)) continue;
-      if (_trackerBedrijfIdsMaand.contains(id)) continue;
-      final b = _facturatieVoorKlant(
-        id,
-        monthFirst: monthFirst,
-        monthLast: monthLast,
-        maandLabel: maandLabel,
-        reedsGefactureerdeIds: _trackerBedrijfIdsMaand,
+    if (!_isMaandAfgesloten) {
+      return (
+        facturen: 0,
+        klanten: 0,
+        totaal: 0.0,
+        abonnement: 0,
+        extra: 0,
       );
-      if (b.totaal <= 0) continue;
-      metOmzet++;
-      klanten.add(id);
+    }
+
+    final filtered = _factureerbareKlanten
+        .where((k) => _klantPassesFilter(_text(k['bedrijf_id'])))
+        .toList();
+
+    var totaal = 0.0;
+    var metAbo = 0;
+    var metExtra = 0;
+    for (final k in filtered) {
+      final berekening = _berekenKlantFacturatie(
+        _takenVanKlantItem(k),
+        maandLabel: _maandLabelNl(_geselecteerdeMaand),
+      );
+      totaal += berekening.aboBedrag + berekening.extraBedrag;
+      if (berekening.aboBedrag > 0) metAbo++;
+      if (berekening.extraBedrag > 0) metExtra++;
     }
 
     return (
-      facturen: metOmzet,
-      klanten: klanten.length,
-      totaal: 0.0,
-      abonnement: metOmzet,
-      extra: 0,
+      facturen: filtered.length,
+      klanten: filtered.length,
+      totaal: totaal,
+      abonnement: metAbo,
+      extra: metExtra,
     );
   }
 
-  String _conceptOmschrijvingRegels(Map<String, dynamic> item) {
-    final parts = <String>[];
-    final abo = _asDouble(item['abonnement']);
-    final inc = _asDouble(item['incidenteel']);
-    final extra = _asDouble(item['extra']);
-    if (abo > 0) parts.add('abo ${_eur.format(abo)}');
-    if (inc > 0) parts.add('inc ${_eur.format(inc)}');
-    if (extra > 0) parts.add('extra ${_eur.format(extra)}');
-    return parts.isEmpty ? _text(item['omschrijving']) : parts.join(' · ');
+  Widget _buildKlantBedragRegel({
+    required String label,
+    required double bedrag,
+    required Color kleur,
+    bool vet = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        '$label €${bedrag.toStringAsFixed(2)}',
+        style: GoogleFonts.inter(
+          fontSize: vet ? 14 : 13,
+          fontWeight: vet ? FontWeight.w800 : FontWeight.w600,
+          color: kleur,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKlantFacturatieBreakdown({
+    required double aboBedrag,
+    required double extraBedrag,
+    required int aantalExtraTaken,
+    bool compact = false,
+  }) {
+    final totaal = aboBedrag + extraBedrag;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildKlantBedragRegel(
+          label: 'Vast Abonnement:',
+          bedrag: aboBedrag,
+          kleur: Colors.blue.shade700,
+        ),
+        _buildKlantBedragRegel(
+          label: 'Extra Opdrachten ($aantalExtraTaken):',
+          bedrag: extraBedrag,
+          kleur: Colors.green.shade700,
+        ),
+        if (!compact) ...[
+          const SizedBox(height: 4),
+          _buildKlantBedragRegel(
+            label: 'Totaal Factuur:',
+            bedrag: totaal,
+            kleur: Colors.indigo.shade800,
+            vet: true,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFactureerbareKlantenPreview() {
+    if (!_isMaandAfgesloten || _factureerbareKlanten.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final klanten = _factureerbareKlanten
+        .where((k) => _klantPassesFilter(_text(k['bedrijf_id'])))
+        .toList();
+    if (klanten.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Controle per klant',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w800,
+            fontSize: 14,
+            color: Colors.grey.shade700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: klanten.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final klant = klanten[index];
+            final taken = _takenVanKlantItem(klant);
+            final berekening = _berekenKlantFacturatie(
+              taken,
+              maandLabel: _maandLabelNl(_geselecteerdeMaand),
+            );
+            final aboBedrag = berekening.aboBedrag;
+            final extraBedrag = berekening.extraBedrag;
+            final aantalExtraTaken = berekening.aantalExtraTaken;
+
+            return Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _text(klant['bedrijfsnaam']).isEmpty
+                          ? 'Onbekende klant'
+                          : _text(klant['bedrijfsnaam']),
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildKlantFacturatieBreakdown(
+                      aboBedrag: aboBedrag,
+                      extraBedrag: extraBedrag,
+                      aantalExtraTaken: aantalExtraTaken,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
   }
 
   Future<void> _toonConceptPreviewModal() async {
@@ -1196,11 +994,34 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                         _text(item['bedrijfsnaam']),
                         style: GoogleFonts.inter(fontWeight: FontWeight.w700),
                       ),
-                      subtitle: Text(
-                        '${_eur.format(_asDouble(item['bedrag']))} · '
-                        '${_conceptOmschrijvingRegels(item)}',
-                        style: GoogleFonts.inter(fontSize: 13),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          _buildKlantFacturatieBreakdown(
+                            aboBedrag: _asDouble(item['abonnement']),
+                            extraBedrag: _asDouble(item['extra']),
+                            aantalExtraTaken: item['aantal_extra_taken'] is int
+                                ? item['aantal_extra_taken'] as int
+                                : int.tryParse(
+                                      item['aantal_extra_taken']?.toString() ??
+                                          '0',
+                                    ) ??
+                                    0,
+                            compact: true,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Totaal Factuur: ${_eur.format(_asDouble(item['bedrag']))}',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.indigo.shade800,
+                            ),
+                          ),
+                        ],
                       ),
+                      isThreeLine: true,
                       secondary: Icon(
                         Icons.receipt_long_outlined,
                         color: Colors.blue.shade700,
@@ -1292,6 +1113,7 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
 
     var aangemaakt = 0;
     final fouten = <String>[];
+    final verwerkteOpdrachtIds = <String>[];
 
     try {
       for (final concept in geselecteerdeConcepten) {
@@ -1323,6 +1145,22 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
             concept: concept,
           );
 
+          final opdrachtIdsRaw = concept['opdracht_ids'];
+          if (opdrachtIdsRaw is List) {
+            for (final id in opdrachtIdsRaw) {
+              final s = id.toString();
+              if (s.isNotEmpty) verwerkteOpdrachtIds.add(s);
+            }
+          }
+          final regelsRaw = concept['regels'];
+          if (regelsRaw is List) {
+            for (final regel in regelsRaw) {
+              if (regel is! Map) continue;
+              final oid = _text(regel['opdracht_id']);
+              if (oid.isNotEmpty) verwerkteOpdrachtIds.add(oid);
+            }
+          }
+
           // Waakhond pas na geslaagde factuur + regels (+ opdracht-koppeling).
           await _upsertWaakhondNaDefinitieveFactuur(concept);
 
@@ -1333,6 +1171,23 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
           );
           debugPrint('$st');
           fouten.add('${concept['bedrijfsnaam']}: $e');
+        }
+      }
+
+      if (verwerkteOpdrachtIds.isNotEmpty) {
+        try {
+          await AppSupabase.client
+              .from('opdrachten')
+              .update({
+                'is_gefactureerd': true,
+                'facturatie_status': 'gefactureerd',
+              })
+              .inFilter('id', verwerkteOpdrachtIds.toSet().toList());
+          debugPrint(
+            'Succes: ${verwerkteOpdrachtIds.toSet().length} opdrachten afgevinkt.',
+          );
+        } catch (e) {
+          debugPrint('Fout bij afvinken van opdrachten: $e');
         }
       }
 
@@ -1600,6 +1455,55 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
     );
   }
 
+  Widget _buildMaandNietAfgeslotenWaarschuwing() {
+    if (_isMaandAfgesloten) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lock_clock, color: Colors.orange.shade800),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Deze maand is nog niet afgesloten. Je kunt pas factureren als de '
+              'maand volledig voorbij is.',
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegeWerkHint() {
+    if (!_isMaandAfgesloten) return const SizedBox.shrink();
+
+    if (_factureerbareKlanten.isNotEmpty || _gefactureerdeKlanten.isNotEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return const Padding(
+      padding: EdgeInsets.all(24),
+      child: Text(
+        'Geen factureerbaar werk gevonden voor deze maand. Dit kan komen doordat '
+        'alle taken al gefactureerd zijn, óf doordat er geen facturabele extra '
+        'opdrachten buiten het abonnement zijn.',
+        style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
   Widget _buildConceptIndicatie() {
     if (_conceptFacturen.isEmpty) return const SizedBox.shrink();
     final stats = _previewStatistieken();
@@ -1664,9 +1568,8 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              'Eén verzamelfactuur per klant: abonnement plus losse taken '
-                              '(incidenteel/eenmalig, extra, of regulier zonder offerte via uren×tarief). '
-                              'Reeds gefactureerd (klant_facturaties) en €0 worden overgeslagen.',
+                              'Eén verzamelfactuur per klant: vast abonnement (maandprijs_ex_btw) '
+                              'plus extra opdrachten buiten het abonnement die facturabel zijn.',
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 color: Colors.grey.shade700,
@@ -1674,6 +1577,9 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                             ),
                             const SizedBox(height: 16),
                             _buildLiveAnalyticsKaartjes(),
+                            _buildLegeWerkHint(),
+                            const SizedBox(height: 16),
+                            _buildFactureerbareKlantenPreview(),
                             const SizedBox(height: 16),
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1690,10 +1596,11 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                               ],
                             ),
                             const SizedBox(height: 24),
+                            _buildMaandNietAfgeslotenWaarschuwing(),
                             Builder(
                               builder: (context) {
-                                final isMaandVoorbij = _isMaandVoorbij;
-                                final knopActief = isMaandVoorbij &&
+                                final isMaandAfgesloten = _isMaandAfgesloten;
+                                final knopActief = isMaandAfgesloten &&
                                     !_isDefinitiefBezig &&
                                     !_isLoading;
 
@@ -1702,7 +1609,7 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                                   height: 54,
                                   child: ElevatedButton.icon(
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: isMaandVoorbij
+                                      backgroundColor: isMaandAfgesloten
                                           ? Colors.blue.shade800
                                           : Colors.grey.shade400,
                                       foregroundColor: Colors.white,
@@ -1711,12 +1618,12 @@ class _InvoiceBulkRunScreenState extends State<InvoiceBulkRunScreen> {
                                       ),
                                     ),
                                     icon: Icon(
-                                      isMaandVoorbij
+                                      isMaandAfgesloten
                                           ? Icons.play_arrow
                                           : Icons.lock_clock,
                                     ),
                                     label: Text(
-                                      isMaandVoorbij
+                                      isMaandAfgesloten
                                           ? 'Bereken Concept Facturen'
                                           : 'De geselecteerde maand is nog niet afgesloten',
                                       style: const TextStyle(

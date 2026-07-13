@@ -77,6 +77,41 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     return s == 'true' || s == '1' || s == 'ja' || s == 'yes';
   }
 
+  /// Wiskundige maand (YYYY-MM), gelijk aan het formaat in de database/RPC.
+  String get _dbMaandSleutel => _maandSleutel;
+
+  /// BETAALD-status: match op operator + maand_sleutel (nooit op visuele maandtekst).
+  bool _isUitbetaald(Map<String, dynamic> item) {
+    final operatorId = _text(item['operator_id'] ?? item['id']);
+    final dbMaandSleutel = _dbMaandSleutel;
+
+    if (_asBool(item['is_betaald']) || item['is_uitbetaald'] == true) {
+      final itemMaand = _text(item['maand_sleutel']);
+      if (itemMaand.isEmpty || itemMaand == dbMaandSleutel) {
+        return true;
+      }
+    }
+
+    return _afgeslotenLoonstroken.any(
+      (u) =>
+          _text(u['operator_id']) == operatorId &&
+          _text(u['maand_sleutel']) == dbMaandSleutel &&
+          (_asBool(u['is_betaald']) || u['is_uitbetaald'] == true),
+    );
+  }
+
+  void _markeerLoonstrookAlsBetaaldInLijst({
+    required String operatorId,
+    required String dbMaandSleutel,
+  }) {
+    for (final row in _afgeslotenLoonstroken) {
+      if (_text(row['operator_id']) == operatorId &&
+          _text(row['maand_sleutel']) == dbMaandSleutel) {
+        row['is_betaald'] = true;
+      }
+    }
+  }
+
   String _operatorNaamUitLoonstrook(Map<String, dynamic> item) {
     final op = item['operator'];
     if (op is Map) {
@@ -93,7 +128,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
       _asDouble(item['berekend_bruto']);
 
   double _openstaandVoorschotVanItem(Map<String, dynamic> item) {
-    if (_asBool(item['is_betaald'])) {
+    if (_isUitbetaald(item)) {
       return _asDouble(item['verrekend_voorschot']);
     }
     final opId = _text(item['operator_id']);
@@ -145,45 +180,69 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     return map[operatorId] ?? 0;
   }
 
-  Future<void> _markeerAlsUitbetaald({
-    required String operatorId,
-    required double brutoLoon,
-  }) async {
+  Future<void> _markeerAlsUitbetaald(Map<String, dynamic> item) async {
+    final String safeOperatorId =
+        (item['operator_id'] ?? item['id']).toString();
+    final double safeBrutoLoon = double.tryParse(
+          item['berekend_bruto']?.toString() ?? '0',
+        ) ??
+        0.0;
+
     final String dbMaandSleutel =
         '${_geselecteerdeMaand.year}-${_geselecteerdeMaand.month.toString().padLeft(2, '0')}';
 
-    final response = await AppSupabase.client.rpc(
-      'betaal_salaris_uit',
-      params: {
-        'p_operator_id': operatorId,
-        'p_maand': dbMaandSleutel,
-        'p_bruto_loon': brutoLoon,
-      },
-    );
+    debugPrint('=== START UITBETALING RPC ===');
+    debugPrint('Operator ID: $safeOperatorId');
+    debugPrint('Maand: $dbMaandSleutel');
+    debugPrint('Bruto Loon: $safeBrutoLoon');
 
-    if (response == null || response is! Map || response['success'] != true) {
-      final msg = response is Map
-          ? _text(response['message']).isNotEmpty
-              ? _text(response['message'])
-              : 'Uitbetaling mislukt'
-          : 'Uitbetaling mislukt';
-      throw Exception(msg);
-    }
+    try {
+      final response = await AppSupabase.client.rpc(
+        'betaal_salaris_uit',
+        params: {
+          'p_operator_id': safeOperatorId,
+          'p_maand': dbMaandSleutel,
+          'p_bruto_loon': safeBrutoLoon,
+        },
+      );
 
-    final verrekend = _asDouble(response['verrekend']);
-    final netto = _asDouble(response['netto']);
+      debugPrint('RPC Response: $response');
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Succes! Netto: €${netto.toStringAsFixed(2)} '
-          '(Verrekend voorschot: €${verrekend.toStringAsFixed(2)})',
+      if (response == null || response is! Map || response['success'] != true) {
+        final msg = response is Map
+            ? _text(response['message']).isNotEmpty
+                ? _text(response['message'])
+                : 'Uitbetaling mislukt'
+            : 'Uitbetaling mislukt';
+        throw Exception(msg);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Salaris succesvol uitbetaald en verwerkt!'),
+          backgroundColor: Colors.green,
         ),
-        backgroundColor: Colors.green,
-      ),
-    );
-    await _loadData();
+      );
+
+      _markeerLoonstrookAlsBetaaldInLijst(
+        operatorId: safeOperatorId,
+        dbMaandSleutel: dbMaandSleutel,
+      );
+      if (mounted) setState(() {});
+
+      await _loadData();
+    } catch (e) {
+      debugPrint('=== RPC CRASH ===');
+      debugPrint(e.toString());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fout bij uitbetalen: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -241,6 +300,11 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
         _geselecteerdeOperatorFilterId = null;
         _loading = false;
       });
+      debugPrint(
+        'Salarisadmin: ${_afgeslotenLoonstroken.length} loonstroken voor '
+        '$maandSleutel — betaald: '
+        '${_afgeslotenLoonstroken.where(_isUitbetaald).length}',
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -257,7 +321,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     var nog = 0.0;
     for (final item in _afgeslotenLoonstroken) {
       totaalBruto += _asDouble(item['berekend_bruto']);
-      if (_asBool(item['is_betaald'])) {
+      if (_isUitbetaald(item)) {
         reeds += _nettoTeBetalenVanItem(item);
       } else {
         nog += _nettoTeBetalenVanItem(item);
@@ -351,22 +415,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
                       FilledButton(
                         onPressed: () async {
                           Navigator.pop(ctx);
-
-                          try {
-                            await _markeerAlsUitbetaald(
-                              operatorId: operatorId,
-                              brutoLoon: bruto,
-                            );
-                          } catch (e) {
-                            debugPrint('Fout bij uitbetalen via RPC: $e');
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Fout bij uitbetalen: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
+                          await _markeerAlsUitbetaald(item);
                         },
                         style: FilledButton.styleFrom(
                           minimumSize: const Size.fromHeight(52),
@@ -746,7 +795,7 @@ class _SalarisAdministratieScreenState extends State<SalarisAdministratieScreen>
     final brutoLoon = _brutoLoonVanItem(item);
     final openVoorschot = _openstaandVoorschotVanItem(item);
     final nettoTeBetalen = _nettoTeBetalenVanItem(item);
-    final isBetaald = _asBool(item['is_betaald']);
+    final isBetaald = _isUitbetaald(item);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),

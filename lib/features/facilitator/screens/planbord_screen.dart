@@ -2045,6 +2045,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
             'projecten(project_naam), '
             'opdracht_planning!opdracht_planning_opdracht_id_fkey(id, operator_id, status)',
           )
+          .neq('status', 'geannuleerd')
           .inFilter('status', ['open', 'deels_voltooid']);
 
       if (_selectedManualProjectId != null &&
@@ -2060,6 +2061,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
       final openList = (openResponse as List)
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
+          .where((task) => _text(task['status']).toLowerCase() != 'geannuleerd')
           .toList(growable: false);
 
       final groupedOpen = <DateTime, List<Map<String, dynamic>>>{};
@@ -4542,6 +4544,8 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     final isExtraWerk = _isTruthyDynamic(meta['is_buiten_abonnement']);
     final waardeEx = _asDouble(meta['opdracht_waarde_ex_btw']);
     final kortingEx = _asDouble(meta['korting_bedrag']);
+    var isFacturabel =
+        _text(meta['facturatie_status']).toLowerCase() == 'facturabel';
     final bedrijf = _text(item['bedrijfsnaam']).isEmpty
         ? 'Onbekende klant'
         : _text(item['bedrijfsnaam']);
@@ -4695,42 +4699,88 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                         ),
                         if (isExtraWerk) ...[
                           const Divider(height: 28),
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(
-                              Icons.receipt_long,
-                              color: Color(0xFF2E7D32),
-                            ),
-                            title: Text(
-                              'Extra werk (facturabel)',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Text(
-                                'Waarde: €${waardeEx.toStringAsFixed(2)} ex. btw | '
-                                'Korting toegepast: €${kortingEx.toStringAsFixed(2)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            trailing: TextButton(
-                              onPressed: opdrachtId.isEmpty
-                                  ? null
-                                  : () {
-                                      Navigator.of(ctx).pop();
-                                      WidgetsBinding.instance
-                                          .addPostFrameCallback((_) {
-                                        if (!mounted) return;
-                                        _geefKortingDialog(opdrachtId);
-                                      });
-                                    },
-                              child: const Text('Korting / crediteren'),
-                            ),
+                          StatefulBuilder(
+                            builder: (context, setSheetState) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    secondary: const Icon(
+                                      Icons.receipt_long,
+                                      color: Color(0xFF2E7D32),
+                                    ),
+                                    title: Text(
+                                      'Facturabel',
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      isFacturabel
+                                          ? 'Waarde: €${waardeEx.toStringAsFixed(2)} ex. btw | '
+                                              'Korting: €${kortingEx.toStringAsFixed(2)}'
+                                          : 'Niet facturabel (bijv. uitloop of service)',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    value: isFacturabel,
+                                    onChanged: opdrachtId.isEmpty
+                                        ? null
+                                        : (bool value) async {
+                                            setSheetState(
+                                              () => isFacturabel = value,
+                                            );
+                                            try {
+                                              await AppSupabase.client
+                                                  .from('opdrachten')
+                                                  .update({
+                                                'facturatie_status': value
+                                                    ? 'facturabel'
+                                                    : 'niet_facturabel',
+                                              }).eq('id', opdrachtId);
+                                              if (!mounted) return;
+                                              await _loadTasks();
+                                              await _fetchReedsGeplandeTakenVoorDag(
+                                                _selectedDay ?? _focusedDay,
+                                              );
+                                            } catch (e) {
+                                              if (!ctx.mounted) return;
+                                              setSheetState(
+                                                () => isFacturabel = !value,
+                                              );
+                                              ScaffoldMessenger.of(ctx)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Opslaan mislukt: $e',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                  ),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: opdrachtId.isEmpty
+                                          ? null
+                                          : () {
+                                              Navigator.of(ctx).pop();
+                                              WidgetsBinding.instance
+                                                  .addPostFrameCallback((_) {
+                                                if (!mounted) return;
+                                                _geefKortingDialog(opdrachtId);
+                                              });
+                                            },
+                                      child: const Text('Korting / crediteren'),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ],
                         const SizedBox(height: 8),
@@ -7175,6 +7225,8 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
 
   bool _isAfwijkendePrijs = false;
 
+  bool _isFacturabel = true;
+
   final TextEditingController _afwijkendePrijsController = TextEditingController();
 
   @override
@@ -7479,6 +7531,7 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
         'afwijkende_uren': true,
         'status': 'open',
         'is_buiten_abonnement': true,
+        'facturatie_status': _isFacturabel ? 'facturabel' : 'niet_facturabel',
         'frequentie_type': 'incidenteel',
       };
 
@@ -7836,6 +7889,20 @@ class _ExtraOpdrachtModalState extends State<_ExtraOpdrachtModal> {
                     ),
                   ),
 
+                SwitchListTile(
+                  title: const Text('Deze extra opdracht is facturabel'),
+                  subtitle: const Text(
+                    'Zet dit uit als dit service of uitloop is waarvoor geen extra '
+                    'kosten in rekening worden gebracht.',
+                  ),
+                  value: _isFacturabel,
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: _saving
+                      ? null
+                      : (bool value) {
+                          setState(() => _isFacturabel = value);
+                        },
+                ),
                 CheckboxListTile(
                   title: const Text('Afwijkende opdracht prijs'),
                   subtitle: const Text(

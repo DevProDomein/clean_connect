@@ -23,7 +23,7 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
 
   List<Map<String, dynamic>> _bedrijven = const [];
   List<Map<String, dynamic>> _offertesSigned = const [];
-  List<Map<String, dynamic>> _planningRows = const [];
+  List<Map<String, dynamic>> _opdrachtenMaand = const [];
   List<Map<String, dynamic>> _klantFacturaties = const [];
 
   final _eur = NumberFormat.currency(
@@ -88,23 +88,48 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
     return _asDouble(o['maandprijs_ex_btw']) > 0;
   }
 
-  bool _planningInSelectedMonth(Map<String, dynamic> row) {
-    final raw = row['geplande_datum'];
-    final d = _parseDateOnly(raw);
-    if (d == null) return false;
-    return d.year == _geselecteerdeMaand.year &&
-        d.month == _geselecteerdeMaand.month;
+  String? _bedrijfIdVanOpdracht(Map<String, dynamic> opMap) {
+    final project = opMap['project'] ?? opMap['projecten'];
+    if (project is Map) {
+      final id = _text(Map<String, dynamic>.from(project)['bedrijf_id']);
+      if (id.isNotEmpty) return id;
+    }
+    final direct = _text(opMap['bedrijf_id']);
+    return direct.isEmpty ? null : direct;
   }
 
-  String? _bedrijfIdVanPlanning(Map<String, dynamic> row) {
-    final op = row['opdracht'];
-    if (op is! Map) return null;
-    final m = Map<String, dynamic>.from(op);
-    final project = m['project'];
-    if (project is! Map) return null;
-    final bid = Map<String, dynamic>.from(project)['bedrijf_id'];
-    final id = _text(bid);
-    return id.isEmpty ? null : id;
+  String _bedrijfsnaamUitOpdracht(Map<String, dynamic> taak) {
+    final project = taak['project'] ?? taak['projecten'];
+    if (project is Map) {
+      final p = Map<String, dynamic>.from(project);
+      final bedrijven = p['bedrijven'];
+      if (bedrijven is Map) {
+        final naam = _text(Map<String, dynamic>.from(bedrijven)['bedrijfsnaam']);
+        if (naam.isNotEmpty) return naam;
+      }
+    }
+    final naam = _text(taak['bedrijfsnaam']);
+    return naam.isNotEmpty ? naam : 'Onbekende Klant';
+  }
+
+  String _klantKeyVanOpdracht(Map<String, dynamic> taak) {
+    final bedrijfId = _bedrijfIdVanOpdracht(taak);
+    if (bedrijfId != null && bedrijfId.isNotEmpty) return bedrijfId;
+    return _bedrijfsnaamUitOpdracht(taak);
+  }
+
+  bool _isTaakExtra(Map<String, dynamic> taak) {
+    if (_isBuitenAbonnement(taak)) return true;
+    return _text(taak['facturatie_status']).toLowerCase() == 'facturabel';
+  }
+
+  bool _isTaakAfgerond(Map<String, dynamic> taak) {
+    final status = _text(taak['status']).toLowerCase();
+    return status == 'afgerond' || status == 'voltooid';
+  }
+
+  bool _opdrachtHoortBijKlant(Map<String, dynamic> taak, String klantKey) {
+    return _klantKeyVanOpdracht(taak) == klantKey;
   }
 
   String _freqVanOpdracht(Map<String, dynamic> opMap) {
@@ -116,26 +141,6 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
     if (v is bool) return v;
     final s = _text(v).toLowerCase();
     return s == 'true' || s == '1' || s == 'ja';
-  }
-
-  double _planningRegelWaardeExBtw(Map<String, dynamic> row) {
-    final op = row['opdracht'];
-    if (op is! Map) return 0;
-    final opMap = Map<String, dynamic>.from(op);
-    final vast = _asDouble(opMap['opdracht_waarde_ex_btw']);
-    if (vast > 0) return vast;
-    final uren = _asDouble(row['gewerkte_uren_decimaal']);
-    final project = opMap['project'];
-    double tarief = 0;
-    if (project is Map) {
-      tarief = _asDouble(
-        Map<String, dynamic>.from(project)['vastgelegd_uurtarief'],
-      );
-    }
-    if (uren > 0 && tarief > 0) return uren * tarief;
-    final vasteBeurt = _asDouble(opMap['vaste_prijs_per_beurt']);
-    if (vasteBeurt > 0) return vasteBeurt;
-    return 0;
   }
 
   Map<String, Map<String, dynamic>> _facturatiesByBedrijf() {
@@ -163,20 +168,28 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
 
     var incidenteel = 0.0;
     var extra = 0.0;
-    for (final row in _planningRows) {
-      if (!_planningInSelectedMonth(row)) continue;
-      if (_bedrijfIdVanPlanning(row) != bedrijfId) continue;
-      final op = row['opdracht'];
-      if (op is! Map) continue;
-      final opMap = Map<String, dynamic>.from(op);
-      final waarde = _planningRegelWaardeExBtw(row);
-      if (waarde <= 0) continue;
+    for (final taak in _opdrachtenMaand) {
+      if (!_opdrachtHoortBijKlant(taak, bedrijfId)) continue;
+      if (!_isTaakAfgerond(taak)) continue;
 
-      if (_isBuitenAbonnement(opMap)) {
-        final korting = _asDouble(opMap['korting_bedrag']);
-        extra += (waarde - korting).clamp(0.0, double.infinity);
-      } else if (_freqVanOpdracht(opMap) == 'incidenteel') {
-        incidenteel += waarde;
+      final isExtra = _isTaakExtra(taak);
+      final freq = _freqVanOpdracht(taak);
+      final isIncidenteel = freq == 'incidenteel' || freq == 'eenmalig';
+
+      if (isExtra) {
+        final bedrag = double.tryParse(
+              taak['opdracht_waarde_ex_btw']?.toString() ?? '0',
+            ) ??
+            0.0;
+        if (bedrag > 0) extra += bedrag;
+      } else if (isIncidenteel) {
+        final vast = _asDouble(taak['opdracht_waarde_ex_btw']);
+        if (vast > 0) {
+          incidenteel += vast;
+          continue;
+        }
+        final vasteBeurt = _asDouble(taak['vaste_prijs_per_beurt']);
+        if (vasteBeurt > 0) incidenteel += vasteBeurt;
       }
     }
 
@@ -217,16 +230,26 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
           )
           .eq('status', 'signed');
 
-      final planningRes = await AppSupabase.client
-          .from('opdracht_planning')
+      final startStr = DateTime(
+        _geselecteerdeMaand.year,
+        _geselecteerdeMaand.month,
+        1,
+      ).toIso8601String().split('T')[0];
+      final endStr = DateTime(
+        _geselecteerdeMaand.year,
+        _geselecteerdeMaand.month + 1,
+        0,
+      ).toIso8601String().split('T')[0];
+
+      final opdrachtenRes = await AppSupabase.client
+          .from('opdrachten')
           .select(
-            'id, geplande_datum, uren_status, gewerkte_uren_decimaal, '
-            'opdracht:opdrachten!opdracht_planning_opdracht_id_fkey('
-            'id, frequentie_type, is_buiten_abonnement, opdracht_waarde_ex_btw, '
-            'vaste_prijs_per_beurt, korting_bedrag,'
-            'project:projecten(bedrijf_id, vastgelegd_uurtarief))',
+            '*, projecten(project_naam, bedrijf_id, bedrijven(bedrijfsnaam))',
           )
-          .eq('uren_status', 'geaccordeerd');
+          .inFilter('status', ['afgerond', 'voltooid'])
+          .eq('is_gefactureerd', false)
+          .gte('geplande_datum', startStr)
+          .lte('geplande_datum', endStr);
 
       List<Map<String, dynamic>> factRows = const [];
       try {
@@ -251,7 +274,7 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
-      final planning = (planningRes as List)
+      final opdrachten = (opdrachtenRes as List)
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
@@ -260,7 +283,7 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
       setState(() {
         _bedrijven = bedrijven;
         _offertesSigned = offertes;
-        _planningRows = planning;
+        _opdrachtenMaand = opdrachten;
         _klantFacturaties = factRows;
         _loading = false;
       });
@@ -342,14 +365,25 @@ class _FacturatieOverzichtScreenState extends State<FacturatieOverzichtScreen> {
       double totaal,
     })>[];
 
+    final klantNamen = <String, String>{};
     for (final b in _bedrijven) {
       final id = _text(b['id']);
       if (id.isEmpty) continue;
+      klantNamen[id] =
+          _text(b['bedrijfsnaam']).isEmpty ? 'Onbekend' : _text(b['bedrijfsnaam']);
+    }
+    for (final taak in _opdrachtenMaand) {
+      final key = _klantKeyVanOpdracht(taak);
+      klantNamen.putIfAbsent(key, () => _bedrijfsnaamUitOpdracht(taak));
+    }
+
+    for (final entry in klantNamen.entries) {
+      final id = entry.key;
       final calc = _berekenVoorBedrijf(id);
       if (calc.totaal <= 0.0001) continue;
       rijen.add((
         id: id,
-        naam: _text(b['bedrijfsnaam']).isEmpty ? 'Onbekend' : _text(b['bedrijfsnaam']),
+        naam: entry.value,
         abonnement: calc.abonnement,
         incidenteel: calc.incidenteel,
         extra: calc.extra,
