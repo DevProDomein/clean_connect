@@ -109,7 +109,7 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
       var query = AppSupabase.client
           .from('projecten')
           .select('*, bedrijven(bedrijfsnaam)')
-          .eq('status', 'actief');
+          .inFilter('status', ['actief', 'geannuleerd']);
 
       if (isFacilitator) {
         query = query.eq('facilitator_id', user.id);
@@ -151,8 +151,29 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
   Color _statusPillColor(String s) {
     final x = s.toLowerCase();
     if (x == 'actief') return _green;
+    if (x == 'geannuleerd') return _grey;
     if (x == 'afgerond' || x == 'gepauzeerd') return _grey;
     return _grey;
+  }
+
+  Widget _geannuleerdBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade400),
+      ),
+      child: Text(
+        'GEANNULEERD',
+        style: GoogleFonts.lato(
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          color: Colors.grey.shade700,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
   }
 
   void _openProjectDetail(String? projectId) {
@@ -274,6 +295,7 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
         : _text(p['project_naam']);
     final title = naam.isEmpty ? 'Naamloos project' : naam;
     final status = _text(p['status']).isEmpty ? 'actief' : _text(p['status']);
+    final isGeannuleerd = status.toLowerCase() == 'geannuleerd';
     final client = _clientName(p);
     final freq = _freqLabel(p);
     final start = _fmtDate(p['contract_startdatum']);
@@ -282,6 +304,93 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
     final pillColor = _statusPillColor(status);
     final statusLabel = status[0].toUpperCase() + status.substring(1);
 
+    final card = Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isGeannuleerd ? Colors.grey.shade100 : Colors.white,
+        borderRadius: BorderRadius.circular(_radius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isGeannuleerd ? 0.02 : 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.lato(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: isGeannuleerd ? _grey : _navy,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+              if (isGeannuleerd) ...[
+                const SizedBox(width: 8),
+                _geannuleerdBadge(),
+              ] else ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pillColor.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: GoogleFonts.lato(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: pillColor,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(Icons.business_outlined, size: 18, color: _muted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  client,
+                  style: GoogleFonts.lato(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: isGeannuleerd ? _grey : _navy,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$freq  ·  Start: $start  |  Eind: $eind',
+            style: GoogleFonts.lato(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              color: _muted,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -289,86 +398,9 @@ class _ProjectManagementScreenState extends State<ProjectManagementScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(_radius),
           onTap: () => _openProjectDetail(projectId),
-          child: Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(_radius),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: GoogleFonts.lato(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: _navy,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: pillColor.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        statusLabel,
-                        style: GoogleFonts.lato(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: pillColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(Icons.business_outlined, size: 18, color: _muted),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        client,
-                        style: GoogleFonts.lato(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: _navy,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '$freq  ·  Start: $start  |  Eind: $eind',
-                  style: GoogleFonts.lato(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    color: _muted,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
+          child: Opacity(
+            opacity: isGeannuleerd ? 0.6 : 1.0,
+            child: card,
           ),
         ),
       ),

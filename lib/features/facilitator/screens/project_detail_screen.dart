@@ -818,10 +818,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
     if (bevestigd != true || !mounted) return;
 
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      helpText: 'Vanaf wanneer stopt dit contract?',
+      confirmText: 'ANNULEER PROJECT',
+    );
+
+    if (pickedDate == null || !mounted) return;
+
+    final datumStr = pickedDate.toIso8601String().split('T')[0];
+
     try {
       await AppSupabase.client.rpc(
         'annuleer_project',
-        params: {'p_project_id': project['id']},
+        params: {
+          'p_project_id': project['id'],
+          'p_vanaf_datum': datumStr,
+        },
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

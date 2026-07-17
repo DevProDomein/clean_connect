@@ -61,6 +61,7 @@ opdrachten!opdracht_planning_opdracht_id_fkey(
         .select(_roosterPlanningSelect)
         .eq(OpdrachtPlanningTable.operatorId, operatorId)
         .neq(OpdrachtPlanningTable.status, OpdrachtPlanningStatus.geannuleerd)
+        .neq(OpdrachtPlanningTable.status, OpdrachtPlanningStatus.noShow)
         .or(orFilter)
         .order(OpdrachtPlanningTable.geplandeDatum, ascending: true)
         .order(OpdrachtPlanningTable.starttijd, ascending: true);
@@ -74,13 +75,19 @@ opdrachten!opdracht_planning_opdracht_id_fkey(
   static bool _isRoosterRowGeannuleerd(Map row) {
     final planningStatus =
         (row[OpdrachtPlanningTable.status] ?? '').toString().toLowerCase();
-    if (planningStatus == OpdrachtPlanningStatus.geannuleerd) return true;
+    if (planningStatus == OpdrachtPlanningStatus.geannuleerd ||
+        planningStatus == OpdrachtPlanningStatus.noShow) {
+      return true;
+    }
 
     final opdracht = row['opdrachten'] ?? row['opdracht'];
     if (opdracht is Map) {
       final opdrachtStatus =
           (opdracht[OpdrachtenTable.status] ?? '').toString().toLowerCase();
-      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd) return true;
+      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd ||
+          opdrachtStatus == OpdrachtPlanningStatus.noShow) {
+        return true;
+      }
     }
     return false;
   }

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../shared/agenda_personalia_helpers.dart';
 
@@ -85,6 +86,50 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
     return '—';
   }
 
+  bool _isUitgeslotenAgendaRij(Map<String, dynamic> row) {
+    final planningStatus = _agendaPlanningStatus(row);
+    if (planningStatus == OpdrachtPlanningStatus.geannuleerd ||
+        planningStatus == OpdrachtPlanningStatus.noShow) {
+      return true;
+    }
+
+    final opdrachtStatus = _agendaOpdrachtStatus(row);
+    if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd ||
+        opdrachtStatus == OpdrachtPlanningStatus.noShow) {
+      return true;
+    }
+
+    return false;
+  }
+
+  String _agendaPlanningStatus(Map<String, dynamic> row) {
+    final direct = (row['status'] ?? row['planning_status'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (direct.isNotEmpty) return direct;
+
+    final planning = row['opdracht_planning'];
+    if (planning is Map) {
+      return (planning['status'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+    }
+    return '';
+  }
+
+  String _agendaOpdrachtStatus(Map<String, dynamic> row) {
+    final opdracht = row['opdracht'] ?? row['opdrachten'];
+    if (opdracht is Map) {
+      return (opdracht['status'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+    }
+    return '';
+  }
+
   Future<void> _loadAgenda() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) {
@@ -112,7 +157,9 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
 
       if (!mounted) return;
       final raw = (res as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .where((row) => !_isUitgeslotenAgendaRij(row))
           .toList();
 
       List<Map<String, dynamic>> persoonlijkRaw = const [];
@@ -133,6 +180,7 @@ class _OperatorAgendaScreenState extends State<OperatorAgendaScreen> {
 
       final grouped = <DateTime, List<dynamic>>{};
       for (final row in raw) {
+        if (_isUitgeslotenAgendaRij(row)) continue;
         final day = _dayFromRow(row);
         if (day == null) continue;
         grouped.putIfAbsent(day, () => []).add(row);

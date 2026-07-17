@@ -129,6 +129,8 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
           .from('app_operator_vandaag')
           .select()
           .eq('operator_id', userId)
+          .neq('status', OpdrachtPlanningStatus.geannuleerd)
+          .neq('status', OpdrachtPlanningStatus.noShow)
           .order('geplande_datum', ascending: true)
           .order('rooster_starttijd', ascending: true);
       for (final row in vandaagRes as List) {
@@ -461,14 +463,19 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
   }
 
   bool _isRoosterItemGeannuleerd(Map<String, dynamic> task) {
-    if (_rawTaskStatus(task) == OpdrachtPlanningStatus.geannuleerd) {
+    final status = _rawTaskStatus(task);
+    if (status == OpdrachtPlanningStatus.geannuleerd ||
+        status == OpdrachtPlanningStatus.noShow) {
       return true;
     }
-    final opdracht = task['opdracht'];
+    final opdracht = task['opdracht'] ?? task['opdrachten'];
     if (opdracht is Map) {
       final opdrachtStatus =
           (opdracht['status'] ?? '').toString().trim().toLowerCase();
-      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd) return true;
+      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd ||
+          opdrachtStatus == OpdrachtPlanningStatus.noShow) {
+        return true;
+      }
     }
     return false;
   }
@@ -507,6 +514,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     for (final task in rawTaken) {
       final taakDag = _taskDayFromItem(task);
       if (taakDag == null) continue;
+      if (_isRoosterItemGeannuleerd(task)) continue;
       if (_isZelfdeKalenderdag(taakDag, vandaag)) {
         roosterLijst.add(task);
       }
@@ -532,6 +540,7 @@ class _OperatorRoosterScreenState extends State<OperatorRoosterScreen> {
     for (final task in rawTaken) {
       final taakDag = _taskDayFromItem(task);
       if (taakDag == null) continue;
+      if (_isRoosterItemGeannuleerd(task)) continue;
       final isVerleden = taakDag.isBefore(vandaag);
       final isVandaag = _isZelfdeKalenderdag(taakDag, vandaag);
       final isToekomst = taakDag.isAfter(vandaag);

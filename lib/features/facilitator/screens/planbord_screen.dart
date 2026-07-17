@@ -1000,7 +1000,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
             'voorkeur_aantal_operators, benodigde_operators, geplande_datum, '
             'opdracht_planning!opdracht_planning_opdracht_id_fkey(id, status), '
             'projecten(project_naam, uitvoer_adres_volledig, werk_regio, '
-            'frequentie_type)',
+            'frequentie_type, status)',
           )
           .inFilter('status', ['open', 'deels_voltooid'])
           .gte('geplande_datum', vandaag)
@@ -1091,6 +1091,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
         }
         if (_text(item['frequentie_type']).isEmpty) {
           item['frequentie_type'] = _text(representatieveTaak['frequentie_type']);
+        }
+        if (_text(item['status']).isEmpty) {
+          item['status'] = _text(projectData['status']);
         }
         item['totaal_open_taken'] = totaalOpen;
         item['open_taken'] = totaalOpen;
@@ -3038,6 +3041,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
     required Map<String, dynamic> project,
     required bool selected,
     required bool hasAssignedHours,
+    required bool isGeannuleerd,
     required VoidCallback? onTap,
     required ColorScheme cs,
     required bool isDark,
@@ -3054,7 +3058,7 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                         fallback: 1,
                       );
 
-                      return Padding(
+                      final tile = Padding(
       padding: const EdgeInsets.only(bottom: 12),
                         child: Material(
                           color: Colors.transparent,
@@ -3064,25 +3068,69 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
                             child: Container(
-              decoration: _smartPlannerPremiumCardDecoration(
-                selected: selected,
-                needsAttention: hasAssignedHours,
-              ),
+              decoration: isGeannuleerd
+                  ? BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.grey.shade400),
+                    )
+                  : _smartPlannerPremiumCardDecoration(
+                      selected: selected,
+                      needsAttention: hasAssignedHours,
+                    ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    projectName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                letterSpacing: -0.2,
-                                color: Colors.white,
-                                    ),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          projectName,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -0.2,
+                                            color: isGeannuleerd
+                                                ? Colors.grey.shade700
+                                                : Colors.white,
+                                            decoration: isGeannuleerd
+                                                ? TextDecoration.lineThrough
+                                                : TextDecoration.none,
+                                          ),
+                                        ),
+                                      ),
+                                      if (isGeannuleerd) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade200,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: Colors.grey.shade500,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'GEANNULEERD',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.grey.shade800,
+                                              letterSpacing: 0.4,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                             const SizedBox(height: 6),
                                   Text(
@@ -3090,7 +3138,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                                     style: GoogleFonts.inter(
                                       fontWeight: FontWeight.w700,
                                 fontSize: 13,
-                                color: Colors.white70,
+                                color: isGeannuleerd
+                                    ? Colors.grey.shade600
+                                    : Colors.white70,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -3099,7 +3149,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                                     style: GoogleFonts.inter(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
-                                color: Colors.white70,
+                                color: isGeannuleerd
+                                    ? Colors.grey.shade600
+                                    : Colors.white70,
                                     ),
                                   ),
                             const SizedBox(height: 8),
@@ -3109,7 +3161,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                                 vertical: 5,
                                 ),
                                     decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.14),
+                                color: isGeannuleerd
+                                    ? Colors.grey.shade200
+                                    : Colors.white.withValues(alpha: 0.14),
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
@@ -3117,7 +3171,9 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                                       style: GoogleFonts.inter(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w800,
-                                  color: Colors.white,
+                                  color: isGeannuleerd
+                                      ? Colors.grey.shade700
+                                      : Colors.white,
                                       ),
                                     ),
                                   ),
@@ -3129,6 +3185,8 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
         ),
                   ),
       );
+
+    return Opacity(opacity: isGeannuleerd ? 0.6 : 1.0, child: tile);
     }
 
   Widget _buildSmartPlannerTab(bool isDark) {
@@ -3338,6 +3396,8 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                       final hasAssignedHours =
                           project['heeft_aandacht_nodig'] == true ||
                           _asDouble(project['reeds_toegewezen_uren']) > 0;
+                      final isGeannuleerd =
+                          _text(project['status']).toLowerCase() == 'geannuleerd';
                       final selected =
                           selectedProjectId.isNotEmpty &&
                           projectId.isNotEmpty &&
@@ -3347,7 +3407,8 @@ class PlanbordTabsHostState extends State<PlanbordTabsHost> {
                         project: project,
                         selected: selected,
                         hasAssignedHours: hasAssignedHours,
-                        onTap: projectId.isEmpty
+                        isGeannuleerd: isGeannuleerd,
+                        onTap: isGeannuleerd || projectId.isEmpty
                             ? null
                             : () => _onProjectSelected(projectId),
                         cs: cs,

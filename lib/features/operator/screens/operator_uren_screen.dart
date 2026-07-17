@@ -112,6 +112,7 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
           )
           .eq('operator_id', uid)
           .neq('status', OpdrachtPlanningStatus.geannuleerd)
+          .neq('status', OpdrachtPlanningStatus.noShow)
           .order('geplande_datum', ascending: false)
           .limit(200);
 
@@ -305,13 +306,19 @@ class _OperatorUrenScreenState extends State<OperatorUrenScreen> {
   bool _isUrenShiftZichtbaar(Map<String, dynamic> shift) {
     final planningStatus =
         (shift['status'] ?? '').toString().trim().toLowerCase();
-    if (planningStatus == OpdrachtPlanningStatus.geannuleerd) return false;
+    if (planningStatus == OpdrachtPlanningStatus.geannuleerd ||
+        planningStatus == OpdrachtPlanningStatus.noShow) {
+      return false;
+    }
 
     final opdracht = shift['opdracht'];
     if (opdracht is Map) {
       final opdrachtStatus =
           (opdracht['status'] ?? '').toString().trim().toLowerCase();
-      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd) return false;
+      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd ||
+          opdrachtStatus == OpdrachtPlanningStatus.noShow) {
+        return false;
+      }
     }
     return true;
   }

@@ -245,7 +245,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
       dynamic q = AppSupabase.client
           .from('projecten')
           .select(select)
-          .eq('status', 'actief');
+          .inFilter('status', ['actief', 'geannuleerd']);
       if (isFac) {
         q = q.eq('facilitator_id', user.id);
       }
@@ -286,7 +286,7 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
         dynamic q = AppSupabase.client
             .from('projecten')
             .select(selectLoose)
-            .eq('status', 'actief');
+            .inFilter('status', ['actief', 'geannuleerd']);
         if (isFac) q = q.eq('facilitator_id', user.id);
         if (_searchQuery.isNotEmpty) {
           final esc = _searchQuery.replaceAll('%', r'\%');
@@ -840,9 +840,113 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
         ? _text(o?['contract_type'])
         : 'eenmalig';
     final projectId = _text(p['id']);
+    final isGeannuleerd = _text(p['status']).toLowerCase() == 'geannuleerd';
     final pandUrl = _pandFotoUrl(p);
     final logoUrl = _bedrijfLogoUrl(p);
     final thumbUrl = pandUrl ?? logoUrl;
+
+    final cardContent = _Card(
+      backgroundColor: isGeannuleerd ? Colors.grey.shade100 : Colors.white,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          NetworkRoundedImage(
+            imageUrl: thumbUrl,
+            fallbackLetter: klant,
+            width: 60,
+            height: 60,
+            borderRadius: 12,
+            accentColor: isGeannuleerd ? _muted : _blue,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: GoogleFonts.lato(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: isGeannuleerd ? _muted : _navy,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                    if (isGeannuleerd) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade400),
+                        ),
+                        child: Text(
+                          'GEANNULEERD',
+                          style: GoogleFonts.lato(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.grey.shade700,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.apartment_outlined,
+                        size: 16, color: _muted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        klant,
+                        style: GoogleFonts.lato(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isGeannuleerd ? _muted : _navy),
+                      ),
+                    ),
+                  ],
+                ),
+                if (regio.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    regio,
+                    style: GoogleFonts.lato(
+                        fontSize: 12,
+                        color: _muted,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+                if (!isGeannuleerd) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      if (freq.isNotEmpty)
+                        _pill(freq, const Color(0xFF0EA5E9)),
+                      _pill(contractType, const Color(0xFF7C3AED)),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -851,74 +955,9 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(_radius),
           onTap: () => _openProjectDetail(projectId),
-          child: _Card(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                NetworkRoundedImage(
-                  imageUrl: thumbUrl,
-                  fallbackLetter: klant,
-                  width: 60,
-                  height: 60,
-                  borderRadius: 12,
-                  accentColor: _blue,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: GoogleFonts.lato(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: _navy,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.apartment_outlined,
-                              size: 16, color: _muted),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              klant,
-                              style: GoogleFonts.lato(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: _navy),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (regio.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          regio,
-                          style: GoogleFonts.lato(
-                              fontSize: 12,
-                              color: _muted,
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          if (freq.isNotEmpty)
-                            _pill(freq, const Color(0xFF0EA5E9)),
-                          _pill(contractType, const Color(0xFF7C3AED)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          child: Opacity(
+            opacity: isGeannuleerd ? 0.6 : 1.0,
+            child: cardContent,
           ),
         ),
       ),
@@ -945,15 +984,16 @@ class _ProjectOverviewScreenState extends State<ProjectOverviewScreen> {
 }
 
 class _Card extends StatelessWidget {
-  const _Card({required this.child});
+  const _Card({required this.child, this.backgroundColor = Colors.white});
   final Widget child;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(

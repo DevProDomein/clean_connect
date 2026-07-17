@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/contracts/supabase_v1_contract.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../../../shared/layouts/mobile_nav_buffer.dart';
 import '../../../providers/user_provider.dart';
@@ -108,6 +109,27 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
     if (raw <= 10.5) return raw;
     if (raw <= 100) return raw / 10.0;
     return raw / 10.0;
+  }
+
+  bool _isUitgeslotenPlanningRij(Map<String, dynamic> row) {
+    final status = (row['status'] ?? row['planning_status'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (status == OpdrachtPlanningStatus.geannuleerd ||
+        status == OpdrachtPlanningStatus.noShow) {
+      return true;
+    }
+    final opdracht = row['opdracht'] ?? row['opdrachten'];
+    if (opdracht is Map) {
+      final opdrachtStatus =
+          (opdracht['status'] ?? '').toString().trim().toLowerCase();
+      if (opdrachtStatus == OpdrachtPlanningStatus.geannuleerd ||
+          opdrachtStatus == OpdrachtPlanningStatus.noShow) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Map<String, dynamic>? _parseVolgendeKlus(dynamic raw) {
@@ -248,10 +270,13 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen>
             .from('app_operator_vandaag')
             .select()
             .eq('operator_id', uid)
+            .neq('status', OpdrachtPlanningStatus.geannuleerd)
+            .neq('status', OpdrachtPlanningStatus.noShow)
             .order('rooster_starttijd', ascending: true);
         final todayStr = DateTime.now().toIso8601String().substring(0, 10);
         for (final row in tv as List) {
           final m = Map<String, dynamic>.from(row as Map);
+          if (_isUitgeslotenPlanningRij(m)) continue;
           final gd = m['geplande_datum']?.toString() ?? '';
           final dateHead = gd.length >= 10 ? gd.substring(0, 10) : gd;
           if (dateHead == todayStr) vandaag.add(m);
